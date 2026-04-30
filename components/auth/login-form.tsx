@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
@@ -13,7 +12,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 
 export function LoginForm() {
-  const router = useRouter()
   const [serverMessage, setServerMessage] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -32,6 +30,7 @@ export function LoginForm() {
     try {
       const response = await fetch("/api/auth/signin", {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
         },
@@ -47,8 +46,7 @@ export function LoginForm() {
 
       setServerMessage(data.message ?? "Signed in successfully.")
       form.reset({ email: values.email, password: "" })
-      router.push(data.role === "ADMIN" ? "/admin" : "/")
-      router.refresh()
+      window.location.assign("/")
     } catch {
       setServerError("Unable to reach the server. Please try again.")
     }

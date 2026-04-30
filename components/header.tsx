@@ -139,9 +139,11 @@ export function Header() {
             <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
               <Link href="/contact">Contact</Link>
             </Button>
-            <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
-              <Link href="/admin">Admin</Link>
-            </Button>
+            {user?.role === "ADMIN" ? (
+              <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
+                <Link href="/admin">Admin</Link>
+              </Button>
+            ) : null}
           </nav>
         </div>
 

@@ -1,17 +1,8 @@
-import { Pool, type PoolClient, type PoolConfig, type QueryResultRow } from "pg"
-import { existsSync, readFileSync } from "node:fs"
+import { readFileSync, existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
-type ConnectionConfig = {
-  user: string
-  password: string
-  host: string
-  port: number
-  database: string
-}
-
-function readEnvConnectionConfig(): ConnectionConfig {
+export function readConnectionConfig() {
   const direct = {
     user: process.env.PGUSER,
     password: process.env.PGPASSWORD,
@@ -33,7 +24,7 @@ function readEnvConnectionConfig(): ConnectionConfig {
   const connectionString = process.env.DB_CONNECTION_STRING
   if (!connectionString) {
     throw new Error(
-      "Database connection is not configured. Set PGUSER/PGPASSWORD/PGHOST/PGPORT/PGDATABASE or DB_CONNECTION_STRING.",
+      "Set PGUSER/PGPASSWORD/PGHOST/PGPORT/PGDATABASE or DB_CONNECTION_STRING.",
     )
   }
 
@@ -47,7 +38,7 @@ function readEnvConnectionConfig(): ConnectionConfig {
   }
 }
 
-function sslModeFromConnectionString(): string | null {
+function sslModeFromConnectionString() {
   const cs = process.env.DB_CONNECTION_STRING
   if (!cs) return null
   try {
@@ -57,18 +48,12 @@ function sslModeFromConnectionString(): string | null {
   }
 }
 
-/**
- * SSL for `pg`:
- * - Custom CA: set PGSSLROOTCERT, or place a cert at ~/.cloud-certs/root.crt (e.g. Yandex Cloud).
- * - No custom file (Vercel, Neon, etc.): TLS with the default CA store if PGSSLMODE=require,
- *   VERCEL=1, or sslmode=require in DB_CONNECTION_STRING.
- * - Self-signed / non-public CA without a PEM file: PGSSL_NO_VERIFY=1 or PGSSLMODE=no-verify.
- */
-function resolveSsl(): PoolConfig["ssl"] | undefined {
+/** @returns {import('pg').ClientConfig['ssl'] | undefined} */
+export function resolvePgSsl() {
   const explicitPath = process.env.PGSSLROOTCERT
   const defaultCloudPath = join(homedir(), ".cloud-certs", "root.crt")
 
-  let certPath: string | undefined
+  let certPath
   if (explicitPath) {
     certPath = explicitPath
   } else if (existsSync(defaultCloudPath)) {
@@ -113,44 +98,4 @@ function resolveSsl(): PoolConfig["ssl"] | undefined {
   }
 
   return undefined
-}
-
-const config = readEnvConnectionConfig()
-
-const globalForPg = globalThis as unknown as { pgPool?: Pool }
-
-export const pool: Pool =
-  globalForPg.pgPool ??
-  new Pool({
-    ...config,
-    max: 10,
-    ssl: resolveSsl(),
-  })
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPg.pgPool = pool
-}
-
-export async function query<T extends QueryResultRow = QueryResultRow>(
-  text: string,
-  params: unknown[] = [],
-) {
-  return pool.query<T>(text, params as never[])
-}
-
-export async function withTransaction<T>(
-  fn: (client: PoolClient) => Promise<T>,
-) {
-  const client = await pool.connect()
-  try {
-    await client.query("BEGIN")
-    const result = await fn(client)
-    await client.query("COMMIT")
-    return result
-  } catch (error) {
-    await client.query("ROLLBACK")
-    throw error
-  } finally {
-    client.release()
-  }
 }

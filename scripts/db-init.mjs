@@ -1,62 +1,22 @@
 import "dotenv/config"
-import { readFileSync, existsSync } from "node:fs"
-import { homedir } from "node:os"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { randomUUID } from "node:crypto"
 import bcrypt from "bcryptjs"
 import { Client } from "pg"
+import { readConnectionConfig, resolvePgSsl } from "./pg-connection.mjs"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(__dirname, "..")
 const schemaPath = join(projectRoot, "db", "schema.sql")
 
-function resolveConnectionConfig() {
-  const direct = {
-    user: process.env.PGUSER,
-    password: process.env.PGPASSWORD,
-    host: process.env.PGHOST,
-    port: process.env.PGPORT,
-    database: process.env.PGDATABASE,
-  }
-
-  if (direct.user && direct.password && direct.host && direct.database) {
-    return {
-      user: direct.user,
-      password: direct.password,
-      host: direct.host,
-      port: Number(direct.port || "5432"),
-      database: direct.database,
-    }
-  }
-
-  const connectionString = process.env.DB_CONNECTION_STRING
-  if (!connectionString) {
-    console.error(
-      "Database connection is not configured. Set PGUSER/PGPASSWORD/PGHOST/PGPORT/PGDATABASE or DB_CONNECTION_STRING.",
-    )
-    process.exit(1)
-  }
-
-  const parsed = new URL(connectionString)
-  return {
-    user: decodeURIComponent(parsed.username),
-    password: decodeURIComponent(parsed.password),
-    host: parsed.hostname,
-    port: Number(parsed.port || "5432"),
-    database: parsed.pathname.replace(/^\//, ""),
-  }
-}
-
-const rootCertPath =
-  process.env.PGSSLROOTCERT ?? join(homedir(), ".cloud-certs", "root.crt")
-
-if (!existsSync(rootCertPath)) {
-  console.error(`Root certificate not found at ${rootCertPath}`)
+let config
+try {
+  config = readConnectionConfig()
+} catch (e) {
+  console.error(e instanceof Error ? e.message : e)
   process.exit(1)
 }
-
-const config = resolveConnectionConfig()
 
 const client = new Client({
   user: config.user,
@@ -64,10 +24,7 @@ const client = new Client({
   host: config.host,
   port: config.port,
   database: config.database,
-  ssl: {
-    rejectUnauthorized: true,
-    ca: readFileSync(rootCertPath, "utf8"),
-  },
+  ssl: resolvePgSsl(),
 })
 
 const sampleVideos = [

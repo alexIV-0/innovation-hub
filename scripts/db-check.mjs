@@ -1,8 +1,6 @@
 import "dotenv/config"
-import { readFileSync, existsSync } from "node:fs"
-import { homedir } from "node:os"
-import { join } from "node:path"
 import { Client } from "pg"
+import { readConnectionConfig, resolvePgSsl } from "./pg-connection.mjs"
 
 function mask(value) {
   if (!value) return "(empty)"
@@ -10,12 +8,12 @@ function mask(value) {
   return `${value.length}ch:${value.slice(0, 2)}***${value.slice(-2)}`
 }
 
-const cfg = {
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-  host: process.env.PGHOST,
-  port: Number(process.env.PGPORT || "5432"),
-  database: process.env.PGDATABASE,
+let cfg
+try {
+  cfg = readConnectionConfig()
+} catch (e) {
+  console.error(e instanceof Error ? e.message : e)
+  process.exit(1)
 }
 
 console.log("Loaded env:")
@@ -25,20 +23,9 @@ console.log("  PGHOST     =", cfg.host)
 console.log("  PGPORT     =", cfg.port)
 console.log("  PGDATABASE =", cfg.database)
 
-const rootCertPath =
-  process.env.PGSSLROOTCERT ?? join(homedir(), ".cloud-certs", "root.crt")
-
-if (!existsSync(rootCertPath)) {
-  console.error(`Root cert not found at ${rootCertPath}`)
-  process.exit(1)
-}
-
 const client = new Client({
   ...cfg,
-  ssl: {
-    rejectUnauthorized: true,
-    ca: readFileSync(rootCertPath, "utf8"),
-  },
+  ssl: resolvePgSsl(),
 })
 
 try {

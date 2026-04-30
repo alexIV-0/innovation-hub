@@ -1,5 +1,7 @@
 import { z } from "zod"
 import { NextResponse } from "next/server"
+import { hashPassword } from "@/lib/auth"
+import { createUser, findUserByEmail } from "@/lib/repositories/users"
 
 const signupRequestSchema = z.object({
   fullName: z.string().min(2),
@@ -21,9 +23,44 @@ export async function POST(request: Request) {
     )
   }
 
+  const email = parsed.data.email.toLowerCase()
+  const existing = await findUserByEmail(email)
+  if (existing) {
+    return NextResponse.json(
+      { message: "User with this email already exists." },
+      { status: 409 },
+    )
+  }
+
+  try {
+    const passwordHash = await hashPassword(parsed.data.password)
+    await createUser({
+      fullName: parsed.data.fullName,
+      email,
+      passwordHash,
+    })
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: string }).code === "23505"
+    ) {
+      return NextResponse.json(
+        { message: "User with this email already exists." },
+        { status: 409 },
+      )
+    }
+
+    return NextResponse.json(
+      { message: "Unable to create account right now." },
+      { status: 500 },
+    )
+  }
+
   return NextResponse.json(
     {
-      message: `Account for ${parsed.data.fullName} created successfully (mock).`,
+      message: `Account for ${parsed.data.fullName} created successfully.`,
     },
     { status: 201 },
   )

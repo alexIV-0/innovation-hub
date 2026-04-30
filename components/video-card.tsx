@@ -3,9 +3,9 @@
 import { useRef, useState } from "react"
 import Link from "next/link"
 import { Play } from "lucide-react"
-import type { Video } from "@/lib/videos"
+import type { VideoCardItem } from "@/lib/content-types"
 
-export function VideoCard({ video }: { video: Video }) {
+export function VideoCard({ video }: { video: VideoCardItem }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isHovered, setIsHovered] = useState(false)
 

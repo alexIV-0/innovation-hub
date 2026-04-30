@@ -6,7 +6,10 @@
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:init": "node scripts/db-init.mjs",
+    "db:reset": "node scripts/db-init.mjs --reset",
+    "db:check": "node scripts/db-check.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -38,15 +41,18 @@
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
     "autoprefixer": "^10.4.20",
+    "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.1.1",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.5.1",
     "input-otp": "1.4.1",
+    "jose": "^6.2.2",
     "lucide-react": "^0.544.0",
     "next": "^16.2.4",
     "next-themes": "^0.4.6",
+    "pg": "^8.20.0",
     "react": "19.2.3",
     "react-day-picker": "8.10.1",
     "react-dom": "19.2.3",
@@ -62,8 +68,10 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.13",
     "@types/node": "^22",
+    "@types/pg": "^8.15.6",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
+    "dotenv": "^17.2.4",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
     "typescript": "5.7.3"

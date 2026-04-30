@@ -1,49 +1,14 @@
-"use client"
-
-import { videos } from "@/lib/videos"
 import { VideoCard } from "@/components/video-card"
 import { Lightbulb } from "lucide-react"
+import type { IdeaCardItem, VideoCardItem } from "@/lib/content-types"
 
-const ideas = [
-  {
-    id: 1,
-    title: "AI-Powered Video Summarization",
-    description: "Automatically generate concise summaries of long-form video content using machine learning algorithms.",
-    category: "AI/ML",
-  },
-  {
-    id: 2,
-    title: "Interactive Video Annotations",
-    description: "Allow viewers to add timestamps, notes, and collaborative comments directly on video timelines.",
-    category: "UX",
-  },
-  {
-    id: 3,
-    title: "Real-time Translation Overlay",
-    description: "Implement live subtitle translation for multilingual accessibility in video content.",
-    category: "Accessibility",
-  },
-  {
-    id: 4,
-    title: "Smart Content Recommendations",
-    description: "Build a recommendation engine that suggests related videos based on viewing patterns and preferences.",
-    category: "AI/ML",
-  },
-  {
-    id: 5,
-    title: "Video Analytics Dashboard",
-    description: "Create comprehensive analytics for tracking engagement, watch time, and viewer behavior.",
-    category: "Analytics",
-  },
-  {
-    id: 6,
-    title: "Collaborative Editing Platform",
-    description: "Enable multiple users to edit and review video projects simultaneously in real-time.",
-    category: "Collaboration",
-  },
-]
-
-export function VideoGrid() {
+export function VideoGrid({
+  videos,
+  ideas,
+}: {
+  videos: VideoCardItem[]
+  ideas: IdeaCardItem[]
+}) {
   return (
     <section className="mx-auto max-w-6xl px-6 py-12">
       <div id="videos" className="mb-14">

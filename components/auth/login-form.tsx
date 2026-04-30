@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
@@ -12,6 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 
 export function LoginForm() {
+  const router = useRouter()
   const [serverMessage, setServerMessage] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -36,7 +38,7 @@ export function LoginForm() {
         body: JSON.stringify(values),
       })
 
-      const data = (await response.json()) as { message?: string }
+      const data = (await response.json()) as { message?: string; role?: "USER" | "ADMIN" }
 
       if (!response.ok) {
         setServerError(data.message ?? "Sign in failed. Please try again.")
@@ -45,6 +47,8 @@ export function LoginForm() {
 
       setServerMessage(data.message ?? "Signed in successfully.")
       form.reset({ email: values.email, password: "" })
+      router.push(data.role === "ADMIN" ? "/admin" : "/")
+      router.refresh()
     } catch {
       setServerError("Unable to reach the server. Please try again.")
     }

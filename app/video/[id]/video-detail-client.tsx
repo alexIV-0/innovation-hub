@@ -6,14 +6,14 @@ import { VideoPlayer } from "@/components/video-player"
 import { VideoCard } from "@/components/video-card"
 import { Header } from "@/components/header"
 import { FooterSection } from "@/components/footer-section"
-import type { Video } from "@/lib/videos"
+import type { VideoCardItem } from "@/lib/content-types"
 
 export function VideoDetailClient({
   video,
   relatedVideos,
 }: {
-  video: Video
-  relatedVideos: Video[]
+  video: VideoCardItem
+  relatedVideos: VideoCardItem[]
 }) {
   const router = useRouter()
 

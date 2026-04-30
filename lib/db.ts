@@ -57,12 +57,20 @@ function sslModeFromConnectionString(): string | null {
   }
 }
 
+/** PEM from Vercel/env (use literal newlines or \\n in the secret). */
+function readCaFromEnv(): string | undefined {
+  const raw = process.env.PGSSL_CA ?? process.env.DATABASE_SSL_CA
+  if (!raw?.trim()) return undefined
+  return raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw
+}
+
 /**
  * SSL for `pg`:
- * - Custom CA: set PGSSLROOTCERT, or place a cert at ~/.cloud-certs/root.crt (e.g. Yandex Cloud).
- * - No custom file (Vercel, Neon, etc.): TLS with the default CA store if PGSSLMODE=require,
- *   VERCEL=1, or sslmode=require in DB_CONNECTION_STRING.
- * - Self-signed / non-public CA without a PEM file: PGSSL_NO_VERIFY=1 or PGSSLMODE=no-verify.
+ * - Custom CA file: PGSSLROOTCERT or ~/.cloud-certs/root.crt (e.g. Yandex Cloud local).
+ * - Custom CA PEM on Vercel: PGSSL_CA or DATABASE_SSL_CA (paste root bundle).
+ * - Encrypted without CA (self-signed chain): PGSSLMODE=require / VERCEL / sslmode=require
+ *   uses TLS with rejectUnauthorized:false unless PGSSL_REJECT_UNAUTHORIZED=1 or sslmode=verify-full.
+ * - Opt out: PGSSL_NO_VERIFY=1, PGSSLMODE=no-verify, or DATABASE_SSL=false.
  */
 function resolveSsl(): PoolConfig["ssl"] | undefined {
   const explicitPath = process.env.PGSSLROOTCERT
@@ -87,6 +95,11 @@ function resolveSsl(): PoolConfig["ssl"] | undefined {
     }
   }
 
+  const caPem = readCaFromEnv()
+  if (caPem) {
+    return { ca: caPem, rejectUnauthorized: true }
+  }
+
   const fromUrl = sslModeFromConnectionString()
   const mode =
     process.env.PGSSLMODE ?? fromUrl ?? (process.env.VERCEL ? "require" : undefined)
@@ -103,13 +116,19 @@ function resolveSsl(): PoolConfig["ssl"] | undefined {
     return { rejectUnauthorized: false }
   }
 
+  const strictVerify =
+    process.env.PGSSL_REJECT_UNAUTHORIZED === "1" ||
+    process.env.PGSSL_REJECT_UNAUTHORIZED === "true" ||
+    mode === "verify-full" ||
+    fromUrl === "verify-full"
+
   if (
     mode === "require" ||
     mode === "verify-ca" ||
     mode === "verify-full" ||
     process.env.DATABASE_SSL === "true"
   ) {
-    return { rejectUnauthorized: true }
+    return { rejectUnauthorized: strictVerify }
   }
 
   return undefined

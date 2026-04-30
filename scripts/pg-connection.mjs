@@ -48,6 +48,12 @@ function sslModeFromConnectionString() {
   }
 }
 
+function readCaFromEnv() {
+  const raw = process.env.PGSSL_CA ?? process.env.DATABASE_SSL_CA
+  if (!raw?.trim()) return undefined
+  return raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw
+}
+
 /** @returns {import('pg').ClientConfig['ssl'] | undefined} */
 export function resolvePgSsl() {
   const explicitPath = process.env.PGSSLROOTCERT
@@ -72,6 +78,11 @@ export function resolvePgSsl() {
     }
   }
 
+  const caPem = readCaFromEnv()
+  if (caPem) {
+    return { ca: caPem, rejectUnauthorized: true }
+  }
+
   const fromUrl = sslModeFromConnectionString()
   const mode =
     process.env.PGSSLMODE ?? fromUrl ?? (process.env.VERCEL ? "require" : undefined)
@@ -88,13 +99,19 @@ export function resolvePgSsl() {
     return { rejectUnauthorized: false }
   }
 
+  const strictVerify =
+    process.env.PGSSL_REJECT_UNAUTHORIZED === "1" ||
+    process.env.PGSSL_REJECT_UNAUTHORIZED === "true" ||
+    mode === "verify-full" ||
+    fromUrl === "verify-full"
+
   if (
     mode === "require" ||
     mode === "verify-ca" ||
     mode === "verify-full" ||
     process.env.DATABASE_SSL === "true"
   ) {
-    return { rejectUnauthorized: true }
+    return { rejectUnauthorized: strictVerify }
   }
 
   return undefined

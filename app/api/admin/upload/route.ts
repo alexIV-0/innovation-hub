@@ -20,8 +20,8 @@ import {
 } from "@/lib/s3-upload-policy"
 
 export const runtime = "nodejs"
-/** Long uploads (large video) — relevant on serverless hosts that enforce a default cap. */
-export const maxDuration = 600
+/** Vercel Hobby allows 1–300s; other plans may allow more via dashboard. */
+export const maxDuration = 300
 
 function inferredPathStyleObjectUrl(bucket: string, key: string): string | null {
   const endpoint = process.env.AWS_ENDPOINT_URL?.trim().replace(/\/+$/, "")

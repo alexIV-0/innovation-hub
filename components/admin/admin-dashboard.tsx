@@ -233,7 +233,7 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       const uploadUrl = new URL("/api/admin/upload", window.location.origin).toString()
 
       const abort = new AbortController()
-      const abortTimer = window.setTimeout(() => abort.abort(), 600_000)
+      const abortTimer = window.setTimeout(() => abort.abort(), 300_000)
 
       let uploadRes: Response
       try {
@@ -250,7 +250,7 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
         setStatus(
           undefined,
           aborted
-            ? "Upload timed out after 10 minutes."
+            ? "Upload timed out after 5 minutes."
             : isNetwork
               ? "Network error while uploading (connection closed or reset). Try a smaller file, or check dev server / reverse proxy body and timeout limits."
               : err instanceof Error

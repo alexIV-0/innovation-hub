@@ -10,9 +10,12 @@
     "lint": "next lint",
     "db:init": "node scripts/db-init.mjs",
     "db:reset": "node scripts/db-init.mjs --reset",
-    "db:check": "node scripts/db-check.mjs"
+    "db:check": "node scripts/db-check.mjs",
+    "s3:ensure-prefix": "node scripts/s3-ensure-prefix.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.787.0",
+    "@aws-sdk/s3-request-presigner": "^3.787.0",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",

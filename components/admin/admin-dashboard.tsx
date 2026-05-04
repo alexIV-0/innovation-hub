@@ -175,6 +175,141 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     await loadAll()
   }
 
+  const mimeForThumbnailUpload = (file: File): string | null => {
+    if (
+      ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)
+    ) {
+      return file.type
+    }
+    const lower = file.name.toLowerCase()
+    if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg"
+    if (lower.endsWith(".png")) return "image/png"
+    if (lower.endsWith(".webp")) return "image/webp"
+    if (lower.endsWith(".gif")) return "image/gif"
+    return null
+  }
+
+  const mimeForVideoUpload = (file: File): string | null => {
+    if (["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
+      return file.type
+    }
+    const lower = file.name.toLowerCase()
+    if (lower.endsWith(".mp4")) return "video/mp4"
+    if (lower.endsWith(".webm")) return "video/webm"
+    if (lower.endsWith(".mov")) return "video/quicktime"
+    return null
+  }
+
+  const uploadAssetToVideoForm = async (field: "thumbnail" | "videoUrl") => {
+    try {
+      const input = document.createElement("input")
+      input.type = "file"
+      input.accept =
+        field === "thumbnail"
+          ? "image/jpeg,image/png,image/webp,image/gif"
+          : "video/mp4,video/webm,video/quicktime,.mov"
+
+      await new Promise<void>((resolvePick) => {
+        input.onchange = () => resolvePick()
+        input.click()
+      })
+
+      const file = input.files?.[0]
+      if (!file) return
+
+      setStatus()
+
+      const contentType =
+        field === "thumbnail" ? mimeForThumbnailUpload(file) : mimeForVideoUpload(file)
+
+      if (!contentType) {
+        setStatus(undefined, "Unsupported file type for this field.")
+        return
+      }
+
+      const formData = new FormData()
+      formData.set("file", file, file.name)
+
+      const uploadUrl = new URL("/api/admin/upload", window.location.origin).toString()
+
+      const abort = new AbortController()
+      const abortTimer = window.setTimeout(() => abort.abort(), 600_000)
+
+      let uploadRes: Response
+      try {
+        uploadRes = await fetch(uploadUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          body: formData,
+          signal: abort.signal,
+        })
+      } catch (err) {
+        const aborted = err instanceof DOMException && err.name === "AbortError"
+        const isNetwork =
+          err instanceof TypeError && err.message === "Failed to fetch"
+        setStatus(
+          undefined,
+          aborted
+            ? "Upload timed out after 10 minutes."
+            : isNetwork
+              ? "Network error while uploading (connection closed or reset). Try a smaller file, or check dev server / reverse proxy body and timeout limits."
+              : err instanceof Error
+                ? err.message
+                : "Upload failed before a response was received.",
+        )
+        return
+      } finally {
+        window.clearTimeout(abortTimer)
+      }
+
+      let uploadPayload: unknown
+      try {
+        uploadPayload = await uploadRes.json()
+      } catch {
+        setStatus(
+          undefined,
+          `Upload response was not JSON (HTTP ${uploadRes.status}). The server or proxy may have cut off the request.`,
+        )
+        return
+      }
+
+      if (!uploadRes.ok) {
+        const msg =
+          typeof uploadPayload === "object" &&
+          uploadPayload !== null &&
+          "message" in uploadPayload &&
+          typeof uploadPayload.message === "string"
+            ? uploadPayload.message
+            : `Upload failed (${uploadRes.status}).`
+        setStatus(undefined, msg)
+        return
+      }
+
+      if (
+        typeof uploadPayload !== "object" ||
+        uploadPayload === null ||
+        typeof (uploadPayload as { publicUrl?: unknown }).publicUrl !== "string"
+      ) {
+        setStatus(undefined, "Upload succeeded but no public URL was returned.")
+        return
+      }
+
+      const { publicUrl } = uploadPayload as { publicUrl: string }
+
+      setVideoForm((prev) =>
+        field === "thumbnail"
+          ? { ...prev, thumbnail: publicUrl }
+          : { ...prev, videoUrl: publicUrl },
+      )
+      setStatus("Uploaded to S3; URL copied into field.")
+    } catch (err) {
+      setStatus(
+        undefined,
+        err instanceof Error ? err.message : "Unexpected error during upload.",
+      )
+    }
+  }
+
   const editVideo = async (video: AdminVideo) => {
     const title = window.prompt("Video title", video.title)
     if (!title) return
@@ -315,21 +450,45 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
               </div>
               <div className="space-y-1">
                 <Label>Thumbnail URL</Label>
-                <Input
-                  value={videoForm.thumbnail}
-                  onChange={(event) =>
-                    setVideoForm((prev) => ({ ...prev, thumbnail: event.target.value }))
-                  }
-                />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    className="sm:flex-1"
+                    value={videoForm.thumbnail}
+                    onChange={(event) =>
+                      setVideoForm((prev) => ({ ...prev, thumbnail: event.target.value }))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={loading}
+                    onClick={() => void uploadAssetToVideoForm("thumbnail")}
+                  >
+                    Upload…
+                  </Button>
+                </div>
               </div>
               <div className="space-y-1">
                 <Label>Video URL</Label>
-                <Input
-                  value={videoForm.videoUrl}
-                  onChange={(event) =>
-                    setVideoForm((prev) => ({ ...prev, videoUrl: event.target.value }))
-                  }
-                />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    className="sm:flex-1"
+                    value={videoForm.videoUrl}
+                    onChange={(event) =>
+                      setVideoForm((prev) => ({ ...prev, videoUrl: event.target.value }))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={loading}
+                    onClick={() => void uploadAssetToVideoForm("videoUrl")}
+                  >
+                    Upload…
+                  </Button>
+                </div>
               </div>
               <div className="space-y-1">
                 <Label>Duration</Label>

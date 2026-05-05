@@ -3,7 +3,6 @@
  * No bucket CORS is required for this flow (unlike presigned browser PUT to the storage host).
  */
 import { randomUUID } from "node:crypto"
-import { Readable } from "node:stream"
 import { PutObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
@@ -33,7 +32,11 @@ function inferredPathStyleObjectUrl(bucket: string, key: string): string | null 
   return `${endpoint}/${path}`
 }
 
-export async function POST(request: NextRequest) {
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ message }, { status })
+}
+
+async function runUpload(request: NextRequest): Promise<Response> {
   const auth = await requireAdminApi(request)
   if (auth instanceof NextResponse) return auth
 
@@ -43,41 +46,54 @@ export async function POST(request: NextRequest) {
   try {
     formData = await request.formData()
   } catch {
-    return NextResponse.json(
-      { message: "Could not read upload body (size or format)." },
-      { status: 400 },
-    )
+    return jsonError("Could not read upload body (size or format).", 400)
   }
 
-  const file = formData.get("file")
-  if (!file || !(file instanceof File)) {
-    return NextResponse.json({ message: "Missing multipart field \"file\"." }, { status: 400 })
+  const raw = formData.get("file")
+  if (!raw || !(raw instanceof Blob)) {
+    return jsonError('Missing multipart field "file" or not a binary part.', 400)
   }
 
-  if (file.size > maxBytes) {
-    return NextResponse.json(
-      { message: `File too large (max ${maxBytes} bytes).` },
-      { status: 413 },
-    )
+  const fileName = raw instanceof File ? raw.name : "upload"
+  const size = raw.size
+
+  if (size > maxBytes) {
+    return jsonError(`File too large (max ${maxBytes} bytes).`, 413)
   }
 
-  const contentType = resolveUploadContentType({ name: file.name, type: file.type })
+  const contentType = resolveUploadContentType({
+    name: fileName,
+    type: raw.type,
+  })
   if (!contentType) {
-    return NextResponse.json(
-      { message: "Unsupported file type for upload." },
-      { status: 400 },
-    )
+    return jsonError("Unsupported file type for upload.", 400)
   }
 
-  const bucket = getS3Bucket()
-  const key = buildS3ObjectKey(`${randomUUID()}-${safeBaseFileName(file.name)}`)
+  let bucket: string
+  let key: string
+  try {
+    bucket = getS3Bucket()
+    key = buildS3ObjectKey(`${randomUUID()}-${safeBaseFileName(fileName)}`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Storage configuration error."
+    return jsonError(msg, 500)
+  }
 
-  const client = getS3Client()
+  let client: ReturnType<typeof getS3Client>
+  try {
+    client = getS3Client()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "S3 client configuration error."
+    return jsonError(msg, 500)
+  }
 
-  const webStream = file.stream()
-  const body = Readable.fromWeb(
-    webStream as import("stream/web").ReadableStream<Uint8Array>,
-  )
+  let body: Buffer
+  try {
+    body = Buffer.from(await raw.arrayBuffer())
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Could not read file bytes."
+    return jsonError(msg, 400)
+  }
 
   try {
     await client.send(
@@ -85,7 +101,6 @@ export async function POST(request: NextRequest) {
         Bucket: bucket,
         Key: key,
         Body: body,
-        ContentLength: file.size,
         ContentType: contentType,
       }),
     )
@@ -111,6 +126,17 @@ export async function POST(request: NextRequest) {
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : "S3 upload failed."
-    return NextResponse.json({ message: msg }, { status: 502 })
+    return jsonError(msg, 502)
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    return await runUpload(request)
+  } catch (e) {
+    console.error("[api/admin/upload]", e)
+    const msg =
+      e instanceof Error ? e.message : "Unexpected error in upload handler."
+    return jsonError(msg, 500)
   }
 }

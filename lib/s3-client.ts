@@ -12,13 +12,19 @@ export function getS3Client(): S3Client {
   if (client) return client
 
   const accessKeyId =
-    process.env.AWS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID ?? ""
+    process.env.S3_KEY_ID ??
+    process.env.AWS_KEY_ID ??
+    process.env.AWS_ACCESS_KEY_ID ??
+    ""
   const secretAccessKey =
-    process.env.AWS_SECRET_KEY ?? process.env.AWS_SECRET_ACCESS_KEY ?? ""
+    process.env.S3_SECRET_KEY ??
+    process.env.AWS_SECRET_KEY ??
+    process.env.AWS_SECRET_ACCESS_KEY ??
+    ""
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(
-      "S3 credentials missing: set AWS_KEY_ID and AWS_SECRET_KEY (or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY).",
+      "S3 credentials missing: set S3_KEY_ID and S3_SECRET_KEY (or AWS_KEY_ID/AWS_SECRET_KEY, or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY).",
     )
   }
 

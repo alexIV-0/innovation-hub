@@ -2,67 +2,127 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Film,
+  Lightbulb,
+  Loader2,
+  LogOut,
+  Plus,
+  Search,
+  Users,
+} from "lucide-react"
+import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { AdminConfirmDialog } from "./admin-confirm-dialog"
+import { AdminIdeaCard } from "./admin-idea-card"
+import { AdminIdeaDialog } from "./admin-idea-dialog"
+import { AdminUserRow } from "./admin-user-row"
+import { AdminVideoCard } from "./admin-video-card"
+import { AdminVideoDialog } from "./admin-video-dialog"
+import type {
+  AdminIdea,
+  AdminUser,
+  AdminVideo,
+  IdeaDraft,
+  VideoDraft,
+} from "./admin-types"
 
-type AdminVideo = {
-  id: string
+type ConfirmState = {
+  open: boolean
   title: string
-  description: string
-  thumbnail: string
-  videoUrl: string
-  duration: string
-  category: string
-  isPublished: boolean
-  sortOrder: number
+  description?: string
+  confirmLabel?: string
+  destructive?: boolean
+  action: () => Promise<void> | void
 }
 
-type AdminIdea = {
-  id: string
-  title: string
-  description: string
-  category: string
-  isPublished: boolean
-  sortOrder: number
-}
-
-type AdminUser = {
-  id: string
-  fullName: string
-  email: string
-  role: "USER" | "ADMIN"
-  isActive: boolean
-  createdAt: string
-}
-
-const emptyVideo = {
+const initialConfirm: ConfirmState = {
+  open: false,
   title: "",
   description: "",
-  thumbnail: "",
-  videoUrl: "",
-  duration: "",
-  category: "",
+  action: () => {},
 }
 
-const emptyIdea = {
-  title: "",
-  description: "",
-  category: "",
+type StatCardProps = {
+  label: string
+  value: number
+  icon: React.ReactNode
+  accent: string
+}
+
+function StatCard({ label, value, icon, accent }: StatCardProps) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{label}</p>
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-xl ${accent}`}
+        >
+          {icon}
+        </div>
+      </div>
+      <p className="mt-2 font-display text-3xl font-bold text-foreground">
+        {value}
+      </p>
+    </div>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+        {icon}
+      </div>
+      <div className="space-y-1">
+        <p className="font-display text-lg font-semibold text-foreground">
+          {title}
+        </p>
+        <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
+      </div>
+      {action}
+    </div>
+  )
 }
 
 export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   const router = useRouter()
+
   const [videos, setVideos] = useState<AdminVideo[]>([])
   const [ideas, setIdeas] = useState<AdminIdea[]>([])
   const [users, setUsers] = useState<AdminUser[]>([])
-  const [videoForm, setVideoForm] = useState(emptyVideo)
-  const [ideaForm, setIdeaForm] = useState(emptyIdea)
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [initialLoading, setInitialLoading] = useState(true)
+
+  const [videoDialog, setVideoDialog] = useState<{
+    open: boolean
+    mode: "create" | "edit"
+    video?: AdminVideo
+  }>({ open: false, mode: "create" })
+
+  const [ideaDialog, setIdeaDialog] = useState<{
+    open: boolean
+    mode: "create" | "edit"
+    idea?: AdminIdea
+  }>({ open: false, mode: "create" })
+
+  const [confirm, setConfirm] = useState<ConfirmState>(initialConfirm)
+
+  const [videoQuery, setVideoQuery] = useState("")
+  const [ideaQuery, setIdeaQuery] = useState("")
+  const [userQuery, setUserQuery] = useState("")
 
   const sortedVideos = useMemo(
     () => [...videos].sort((a, b) => a.sortOrder - b.sortOrder),
@@ -73,15 +133,37 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     [ideas],
   )
 
-  const setStatus = (successMessage?: string, failureMessage?: string) => {
-    setMessage(successMessage ?? null)
-    setError(failureMessage ?? null)
-  }
+  const filteredVideos = useMemo(() => {
+    const q = videoQuery.trim().toLowerCase()
+    if (!q) return sortedVideos
+    return sortedVideos.filter(
+      (v) =>
+        v.title.toLowerCase().includes(q) ||
+        v.category.toLowerCase().includes(q),
+    )
+  }, [sortedVideos, videoQuery])
+
+  const filteredIdeas = useMemo(() => {
+    const q = ideaQuery.trim().toLowerCase()
+    if (!q) return sortedIdeas
+    return sortedIdeas.filter(
+      (i) =>
+        i.title.toLowerCase().includes(q) ||
+        i.category.toLowerCase().includes(q),
+    )
+  }, [sortedIdeas, ideaQuery])
+
+  const filteredUsers = useMemo(() => {
+    const q = userQuery.trim().toLowerCase()
+    if (!q) return users
+    return users.filter(
+      (u) =>
+        u.fullName.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q),
+    )
+  }, [users, userQuery])
 
   const loadAll = async () => {
-    setLoading(true)
-    setStatus()
-
     try {
       const [videosRes, ideasRes, usersRes] = await Promise.all([
         fetch("/api/admin/videos"),
@@ -90,7 +172,7 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       ])
 
       if (!videosRes.ok || !ideasRes.ok || !usersRes.ok) {
-        throw new Error("Unable to load admin data.")
+        throw new Error("load")
       }
 
       const [videosData, ideasData, usersData] = await Promise.all([
@@ -103,50 +185,63 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       setIdeas(ideasData)
       setUsers(usersData)
     } catch {
-      setStatus(undefined, "Failed to load admin data.")
+      toast.error("Could not load admin data. Please refresh.")
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
     }
   }
 
   useEffect(() => {
     loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const submitVideo = async () => {
-    setStatus()
-    const response = await fetch("/api/admin/videos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...videoForm, isPublished: true }),
-    })
+  const submitVideo = async (
+    draft: VideoDraft,
+    id?: string,
+  ): Promise<boolean> => {
+    const isEdit = Boolean(id)
+    const response = await fetch(
+      isEdit ? `/api/admin/videos/${id}` : "/api/admin/videos",
+      {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isEdit ? draft : { ...draft, isPublished: true }),
+      },
+    )
 
     if (!response.ok) {
-      setStatus(undefined, "Could not create video.")
-      return
+      toast.error(isEdit ? "Could not save changes." : "Could not add video.")
+      return false
     }
 
-    setVideoForm(emptyVideo)
-    setStatus("Video created successfully.")
+    toast.success(isEdit ? "Video updated." : "Video added.")
     await loadAll()
+    return true
   }
 
-  const submitIdea = async () => {
-    setStatus()
-    const response = await fetch("/api/admin/ideas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...ideaForm, isPublished: true }),
-    })
+  const submitIdea = async (
+    draft: IdeaDraft,
+    id?: string,
+  ): Promise<boolean> => {
+    const isEdit = Boolean(id)
+    const response = await fetch(
+      isEdit ? `/api/admin/ideas/${id}` : "/api/admin/ideas",
+      {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isEdit ? draft : { ...draft, isPublished: true }),
+      },
+    )
 
     if (!response.ok) {
-      setStatus(undefined, "Could not create idea.")
-      return
+      toast.error(isEdit ? "Could not save changes." : "Could not add idea.")
+      return false
     }
 
-    setIdeaForm(emptyIdea)
-    setStatus("Idea created successfully.")
+    toast.success(isEdit ? "Idea updated." : "Idea added.")
     await loadAll()
+    return true
   }
 
   const patchVideo = async (id: string, payload: Partial<AdminVideo>) => {
@@ -156,10 +251,11 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       body: JSON.stringify(payload),
     })
     if (!response.ok) {
-      setStatus(undefined, "Failed to update video.")
-      return
+      toast.error("Could not update the video.")
+      return false
     }
     await loadAll()
+    return true
   }
 
   const patchIdea = async (id: string, payload: Partial<AdminIdea>) => {
@@ -169,180 +265,11 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       body: JSON.stringify(payload),
     })
     if (!response.ok) {
-      setStatus(undefined, "Failed to update idea.")
-      return
+      toast.error("Could not update the idea.")
+      return false
     }
     await loadAll()
-  }
-
-  const mimeForThumbnailUpload = (file: File): string | null => {
-    if (
-      ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)
-    ) {
-      return file.type
-    }
-    const lower = file.name.toLowerCase()
-    if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg"
-    if (lower.endsWith(".png")) return "image/png"
-    if (lower.endsWith(".webp")) return "image/webp"
-    if (lower.endsWith(".gif")) return "image/gif"
-    return null
-  }
-
-  const mimeForVideoUpload = (file: File): string | null => {
-    if (["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
-      return file.type
-    }
-    const lower = file.name.toLowerCase()
-    if (lower.endsWith(".mp4")) return "video/mp4"
-    if (lower.endsWith(".webm")) return "video/webm"
-    if (lower.endsWith(".mov")) return "video/quicktime"
-    return null
-  }
-
-  const uploadAssetToVideoForm = async (field: "thumbnail" | "videoUrl") => {
-    try {
-      const input = document.createElement("input")
-      input.type = "file"
-      input.accept =
-        field === "thumbnail"
-          ? "image/jpeg,image/png,image/webp,image/gif"
-          : "video/mp4,video/webm,video/quicktime,.mov"
-
-      await new Promise<void>((resolvePick) => {
-        input.onchange = () => resolvePick()
-        input.click()
-      })
-
-      const file = input.files?.[0]
-      if (!file) return
-
-      setStatus()
-
-      const contentType =
-        field === "thumbnail" ? mimeForThumbnailUpload(file) : mimeForVideoUpload(file)
-
-      if (!contentType) {
-        setStatus(undefined, "Unsupported file type for this field.")
-        return
-      }
-
-      const formData = new FormData()
-      formData.set("file", file, file.name)
-
-      const uploadUrl = new URL("/api/admin/upload", window.location.origin).toString()
-
-      const abort = new AbortController()
-      const abortTimer = window.setTimeout(() => abort.abort(), 300_000)
-
-      let uploadRes: Response
-      try {
-        uploadRes = await fetch(uploadUrl, {
-          method: "POST",
-          credentials: "same-origin",
-          body: formData,
-          signal: abort.signal,
-        })
-      } catch (err) {
-        const aborted = err instanceof DOMException && err.name === "AbortError"
-        const isNetwork =
-          err instanceof TypeError && err.message === "Failed to fetch"
-        setStatus(
-          undefined,
-          aborted
-            ? "Upload timed out after 5 minutes."
-            : isNetwork
-              ? "Network error while uploading (connection closed or reset). Try a smaller file, or check dev server / reverse proxy body and timeout limits."
-              : err instanceof Error
-                ? err.message
-                : "Upload failed before a response was received.",
-        )
-        return
-      } finally {
-        window.clearTimeout(abortTimer)
-      }
-
-      let uploadPayload: unknown
-      try {
-        uploadPayload = await uploadRes.json()
-      } catch {
-        setStatus(
-          undefined,
-          `Upload response was not JSON (HTTP ${uploadRes.status}). The server or proxy may have cut off the request.`,
-        )
-        return
-      }
-
-      if (!uploadRes.ok) {
-        const msg =
-          typeof uploadPayload === "object" &&
-          uploadPayload !== null &&
-          "message" in uploadPayload &&
-          typeof uploadPayload.message === "string"
-            ? uploadPayload.message
-            : `Upload failed (${uploadRes.status}).`
-        setStatus(undefined, msg)
-        return
-      }
-
-      if (
-        typeof uploadPayload !== "object" ||
-        uploadPayload === null ||
-        typeof (uploadPayload as { publicUrl?: unknown }).publicUrl !== "string"
-      ) {
-        setStatus(undefined, "Upload succeeded but no public URL was returned.")
-        return
-      }
-
-      const { publicUrl } = uploadPayload as { publicUrl: string }
-
-      setVideoForm((prev) =>
-        field === "thumbnail"
-          ? { ...prev, thumbnail: publicUrl }
-          : { ...prev, videoUrl: publicUrl },
-      )
-      setStatus("Uploaded to S3; URL copied into field.")
-    } catch (err) {
-      setStatus(
-        undefined,
-        err instanceof Error ? err.message : "Unexpected error during upload.",
-      )
-    }
-  }
-
-  const editVideo = async (video: AdminVideo) => {
-    const title = window.prompt("Video title", video.title)
-    if (!title) return
-    const description = window.prompt("Video description", video.description)
-    if (!description) return
-    const category = window.prompt("Category", video.category)
-    if (!category) return
-    const duration = window.prompt("Duration", video.duration)
-    if (!duration) return
-    const thumbnail = window.prompt("Thumbnail URL", video.thumbnail)
-    if (!thumbnail) return
-    const videoUrl = window.prompt("Video URL", video.videoUrl)
-    if (!videoUrl) return
-
-    await patchVideo(video.id, {
-      title,
-      description,
-      category,
-      duration,
-      thumbnail,
-      videoUrl,
-    })
-  }
-
-  const editIdea = async (idea: AdminIdea) => {
-    const title = window.prompt("Idea title", idea.title)
-    if (!title) return
-    const description = window.prompt("Idea description", idea.description)
-    if (!description) return
-    const category = window.prompt("Category", idea.category)
-    if (!category) return
-
-    await patchIdea(idea.id, { title, description, category })
+    return true
   }
 
   const reorder = async (
@@ -356,7 +283,7 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       body: JSON.stringify({ id, direction }),
     })
     if (!response.ok) {
-      setStatus(undefined, "Failed to reorder.")
+      toast.error("Could not change the order.")
       return
     }
     await loadAll()
@@ -367,9 +294,10 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       method: "DELETE",
     })
     if (!response.ok) {
-      setStatus(undefined, "Failed to delete.")
+      toast.error("Could not delete.")
       return
     }
+    toast.success(type === "videos" ? "Video deleted." : "Idea deleted.")
     await loadAll()
   }
 
@@ -380,7 +308,7 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
       body: JSON.stringify(payload),
     })
     if (!response.ok) {
-      setStatus(undefined, "Failed to update user.")
+      toast.error("Could not update the user.")
       return
     }
     await loadAll()
@@ -389,11 +317,19 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
   const deleteUser = async (id: string) => {
     const response = await fetch(`/api/admin/users/${id}`, { method: "DELETE" })
     if (!response.ok) {
-      setStatus(undefined, "Failed to delete user.")
+      toast.error("Could not delete the user.")
       return
     }
+    toast.success("User deleted.")
     await loadAll()
   }
+
+  const askConfirm = (state: Omit<ConfirmState, "open">) => {
+    setConfirm({ ...state, open: true })
+  }
+
+  const closeConfirm = (open: boolean) =>
+    setConfirm((prev) => ({ ...prev, open }))
 
   const signOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" })
@@ -401,325 +337,335 @@ export function AdminDashboard({ currentUserId }: { currentUserId: string }) {
     router.refresh()
   }
 
+  const publishedVideos = videos.filter((v) => v.isPublished).length
+  const publishedIdeas = ideas.filter((i) => i.isPublished).length
+  const activeUsers = users.filter((u) => u.isActive).length
+
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between rounded-md border border-border bg-card p-4">
-        <div>
-          <p className="font-medium">Content and user management</p>
+    <section className="space-y-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-gradient-to-br from-card to-card/50 p-5">
+        <div className="space-y-1">
+          <p className="font-display text-base font-semibold text-foreground">
+            Welcome back
+          </p>
           <p className="text-sm text-muted-foreground">
-            Create, update, publish, sort, and delete records.
+            Manage your videos, ideas, and people in one place.
           </p>
         </div>
-        <Button variant="outline" onClick={signOut}>
-          Sign Out
+        <Button variant="outline" onClick={signOut} className="gap-2">
+          <LogOut className="h-4 w-4" />
+          Sign out
         </Button>
       </div>
 
-      {loading ? <p className="text-sm text-muted-foreground">Loading...</p> : null}
-      {message ? <p className="text-sm text-primary">{message}</p> : null}
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Videos"
+          value={videos.length}
+          icon={<Film className="h-4 w-4" />}
+          accent="bg-primary/15 text-primary"
+        />
+        <StatCard
+          label="Ideas"
+          value={ideas.length}
+          icon={<Lightbulb className="h-4 w-4" />}
+          accent="bg-amber-400/15 text-amber-300"
+        />
+        <StatCard
+          label="People"
+          value={users.length}
+          icon={<Users className="h-4 w-4" />}
+          accent="bg-emerald-400/15 text-emerald-300"
+        />
+      </div>
 
       <Tabs defaultValue="videos" className="w-full">
-        <TabsList>
-          <TabsTrigger value="videos">Videos</TabsTrigger>
-          <TabsTrigger value="ideas">Ideas</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
+        <TabsList className="h-11 rounded-xl bg-muted/40 p-1">
+          <TabsTrigger
+            value="videos"
+            className="gap-2 rounded-lg px-4 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            <Film className="h-4 w-4" />
+            Videos
+            <Badge
+              variant="secondary"
+              className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[10px]"
+            >
+              {publishedVideos}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger
+            value="ideas"
+            className="gap-2 rounded-lg px-4 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            <Lightbulb className="h-4 w-4" />
+            Ideas
+            <Badge
+              variant="secondary"
+              className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[10px]"
+            >
+              {publishedIdeas}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger
+            value="users"
+            className="gap-2 rounded-lg px-4 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            <Users className="h-4 w-4" />
+            People
+            <Badge
+              variant="secondary"
+              className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[10px]"
+            >
+              {activeUsers}
+            </Badge>
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="videos" className="space-y-4">
-          <div className="rounded-md border border-border bg-card p-4">
-            <p className="mb-4 text-sm font-medium">Create video</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Title</Label>
-                <Input
-                  value={videoForm.title}
-                  onChange={(event) =>
-                    setVideoForm((prev) => ({ ...prev, title: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Category</Label>
-                <Input
-                  value={videoForm.category}
-                  onChange={(event) =>
-                    setVideoForm((prev) => ({ ...prev, category: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Thumbnail URL</Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    className="sm:flex-1"
-                    value={videoForm.thumbnail}
-                    onChange={(event) =>
-                      setVideoForm((prev) => ({ ...prev, thumbnail: event.target.value }))
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0"
-                    disabled={loading}
-                    onClick={() => void uploadAssetToVideoForm("thumbnail")}
-                  >
-                    Upload…
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label>Video URL</Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    className="sm:flex-1"
-                    value={videoForm.videoUrl}
-                    onChange={(event) =>
-                      setVideoForm((prev) => ({ ...prev, videoUrl: event.target.value }))
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0"
-                    disabled={loading}
-                    onClick={() => void uploadAssetToVideoForm("videoUrl")}
-                  >
-                    Upload…
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label>Duration</Label>
-                <Input
-                  value={videoForm.duration}
-                  onChange={(event) =>
-                    setVideoForm((prev) => ({ ...prev, duration: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1 md:col-span-2">
-                <Label>Description</Label>
-                <Textarea
-                  value={videoForm.description}
-                  onChange={(event) =>
-                    setVideoForm((prev) => ({ ...prev, description: event.target.value }))
-                  }
-                />
-              </div>
+        <TabsContent value="videos" className="mt-6 space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={videoQuery}
+                onChange={(event) => setVideoQuery(event.target.value)}
+                placeholder="Search videos…"
+                className="pl-9"
+              />
             </div>
-            <Button className="mt-3" onClick={submitVideo}>
-              Add Video
+            <Button
+              onClick={() => setVideoDialog({ open: true, mode: "create" })}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              New video
             </Button>
           </div>
 
-          <div className="space-y-3">
-            {sortedVideos.map((video) => (
-              <div
-                key={video.id}
-                className="rounded-md border border-border bg-card p-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{video.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {video.category} | order {video.sortOrder}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => reorder("videos", video.id, "up")}
-                    >
-                      Up
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => reorder("videos", video.id, "down")}
-                    >
-                      Down
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => editVideo(video)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        patchVideo(video.id, { isPublished: !video.isPublished })
-                      }
-                    >
-                      {video.isPublished ? "Unpublish" : "Publish"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => {
-                        if (window.confirm("Delete this video?")) {
-                          void deleteEntity("videos", video.id)
-                        }
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="ideas" className="space-y-4">
-          <div className="rounded-md border border-border bg-card p-4">
-            <p className="mb-4 text-sm font-medium">Create idea</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <Label>Title</Label>
-                <Input
-                  value={ideaForm.title}
-                  onChange={(event) =>
-                    setIdeaForm((prev) => ({ ...prev, title: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Category</Label>
-                <Input
-                  value={ideaForm.category}
-                  onChange={(event) =>
-                    setIdeaForm((prev) => ({ ...prev, category: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-1 md:col-span-2">
-                <Label>Description</Label>
-                <Textarea
-                  value={ideaForm.description}
-                  onChange={(event) =>
-                    setIdeaForm((prev) => ({ ...prev, description: event.target.value }))
-                  }
-                />
-              </div>
+          {initialLoading ? (
+            <div className="flex items-center justify-center rounded-2xl border border-border bg-card/40 py-16 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading…
             </div>
-            <Button className="mt-3" onClick={submitIdea}>
-              Add Idea
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            {sortedIdeas.map((idea) => (
-              <div key={idea.id} className="rounded-md border border-border bg-card p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="font-medium">{idea.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {idea.category} | order {idea.sortOrder}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => reorder("ideas", idea.id, "up")}
-                    >
-                      Up
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => reorder("ideas", idea.id, "down")}
-                    >
-                      Down
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => editIdea(idea)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => patchIdea(idea.id, { isPublished: !idea.isPublished })}
-                    >
-                      {idea.isPublished ? "Unpublish" : "Publish"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => {
-                        if (window.confirm("Delete this idea?")) {
-                          void deleteEntity("ideas", idea.id)
-                        }
-                      }}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="users" className="space-y-3">
-          {users.map((user) => (
-            <div key={user.id} className="rounded-md border border-border bg-card p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-medium">{user.fullName}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {user.email}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {user.role} | {user.isActive ? "active" : "inactive"} |{" "}
-                    {new Date(user.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
+          ) : filteredVideos.length === 0 ? (
+            <EmptyState
+              icon={<Film className="h-5 w-5" />}
+              title={videos.length === 0 ? "No videos yet" : "Nothing matches"}
+              description={
+                videos.length === 0
+                  ? "Add your first video to bring the homepage to life."
+                  : "Try a different search term."
+              }
+              action={
+                videos.length === 0 ? (
                   <Button
-                    size="sm"
-                    variant="outline"
                     onClick={() =>
-                      patchUser(user.id, { role: user.role === "ADMIN" ? "USER" : "ADMIN" })
+                      setVideoDialog({ open: true, mode: "create" })
                     }
+                    className="gap-2"
                   >
-                    Role: {user.role === "ADMIN" ? "Set USER" : "Set ADMIN"}
+                    <Plus className="h-4 w-4" />
+                    Add a video
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => patchUser(user.id, { isActive: !user.isActive })}
-                    disabled={user.id === currentUserId}
-                  >
-                    {user.isActive ? "Deactivate" : "Activate"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={user.id === currentUserId}
-                    onClick={() => {
-                      if (window.confirm("Delete this user?")) {
-                        void deleteUser(user.id)
-                      }
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
+                ) : null
+              }
+            />
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredVideos.map((video) => (
+                <AdminVideoCard
+                  key={video.id}
+                  video={video}
+                  onEdit={() =>
+                    setVideoDialog({ open: true, mode: "edit", video })
+                  }
+                  onTogglePublish={() =>
+                    void patchVideo(video.id, { isPublished: !video.isPublished })
+                  }
+                  onMove={(direction) => void reorder("videos", video.id, direction)}
+                  onDelete={() =>
+                    askConfirm({
+                      title: "Delete this video?",
+                      description: `“${video.title}” will be removed permanently.`,
+                      confirmLabel: "Delete video",
+                      destructive: true,
+                      action: () => deleteEntity("videos", video.id),
+                    })
+                  }
+                />
+              ))}
             </div>
-          ))}
+          )}
+        </TabsContent>
+
+        <TabsContent value="ideas" className="mt-6 space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={ideaQuery}
+                onChange={(event) => setIdeaQuery(event.target.value)}
+                placeholder="Search ideas…"
+                className="pl-9"
+              />
+            </div>
+            <Button
+              onClick={() => setIdeaDialog({ open: true, mode: "create" })}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              New idea
+            </Button>
+          </div>
+
+          {initialLoading ? (
+            <div className="flex items-center justify-center rounded-2xl border border-border bg-card/40 py-16 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : filteredIdeas.length === 0 ? (
+            <EmptyState
+              icon={<Lightbulb className="h-5 w-5" />}
+              title={ideas.length === 0 ? "No ideas yet" : "Nothing matches"}
+              description={
+                ideas.length === 0
+                  ? "Capture sparks of inspiration so they don't get lost."
+                  : "Try a different search term."
+              }
+              action={
+                ideas.length === 0 ? (
+                  <Button
+                    onClick={() =>
+                      setIdeaDialog({ open: true, mode: "create" })
+                    }
+                    className="gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add an idea
+                  </Button>
+                ) : null
+              }
+            />
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredIdeas.map((idea) => (
+                <AdminIdeaCard
+                  key={idea.id}
+                  idea={idea}
+                  onEdit={() =>
+                    setIdeaDialog({ open: true, mode: "edit", idea })
+                  }
+                  onTogglePublish={() =>
+                    void patchIdea(idea.id, { isPublished: !idea.isPublished })
+                  }
+                  onMove={(direction) => void reorder("ideas", idea.id, direction)}
+                  onDelete={() =>
+                    askConfirm({
+                      title: "Delete this idea?",
+                      description: `“${idea.title}” will be removed permanently.`,
+                      confirmLabel: "Delete idea",
+                      destructive: true,
+                      action: () => deleteEntity("ideas", idea.id),
+                    })
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="users" className="mt-6 space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={userQuery}
+                onChange={(event) => setUserQuery(event.target.value)}
+                placeholder="Search by name or email…"
+                className="pl-9"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {filteredUsers.length} of {users.length}
+            </p>
+          </div>
+
+          {initialLoading ? (
+            <div className="flex items-center justify-center rounded-2xl border border-border bg-card/40 py-16 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <EmptyState
+              icon={<Users className="h-5 w-5" />}
+              title={users.length === 0 ? "No people yet" : "Nothing matches"}
+              description={
+                users.length === 0
+                  ? "Once people sign up they will appear here."
+                  : "Try a different search term."
+              }
+            />
+          ) : (
+            <div className="space-y-3">
+              {filteredUsers.map((user) => (
+                <AdminUserRow
+                  key={user.id}
+                  user={user}
+                  isCurrent={user.id === currentUserId}
+                  onToggleRole={() =>
+                    void patchUser(user.id, {
+                      role: user.role === "ADMIN" ? "USER" : "ADMIN",
+                    })
+                  }
+                  onToggleActive={() =>
+                    void patchUser(user.id, { isActive: !user.isActive })
+                  }
+                  onDelete={() =>
+                    askConfirm({
+                      title: "Delete this account?",
+                      description: `${user.fullName || user.email} will lose access immediately.`,
+                      confirmLabel: "Delete account",
+                      destructive: true,
+                      action: () => deleteUser(user.id),
+                    })
+                  }
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
+
+      <AdminVideoDialog
+        open={videoDialog.open}
+        mode={videoDialog.mode}
+        initialVideo={videoDialog.video}
+        onOpenChange={(open) =>
+          setVideoDialog((prev) => ({ ...prev, open }))
+        }
+        onSubmit={submitVideo}
+      />
+
+      <AdminIdeaDialog
+        open={ideaDialog.open}
+        mode={ideaDialog.mode}
+        initialIdea={ideaDialog.idea}
+        onOpenChange={(open) => setIdeaDialog((prev) => ({ ...prev, open }))}
+        onSubmit={submitIdea}
+      />
+
+      <AdminConfirmDialog
+        open={confirm.open}
+        title={confirm.title}
+        description={confirm.description}
+        confirmLabel={confirm.confirmLabel}
+        destructive={confirm.destructive}
+        onConfirm={async () => {
+          await confirm.action()
+          closeConfirm(false)
+        }}
+        onOpenChange={closeConfirm}
+      />
     </section>
   )
 }

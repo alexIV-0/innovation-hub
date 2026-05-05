@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Space_Grotesk, Inter } from 'next/font/google'
 
 import './globals.css'
+import { Toaster } from '@/components/ui/sonner'
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -29,6 +30,7 @@ export default function RootLayout({
         className={`${spaceGrotesk.variable} ${inter.variable} min-h-screen font-sans antialiased`}
       >
         {children}
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   )

@@ -138,17 +138,30 @@ const config = readEnvConnectionConfig()
 
 const globalForPg = globalThis as unknown as { pgPool?: Pool }
 
+/**
+ * On serverless (Vercel) each warm container reuses the module instance,
+ * so we cache the pool on globalThis to avoid leaking connections across
+ * invocations. Keep `max` small: each concurrent container holds its own
+ * pool, and the upstream DB has a hard cap on `max_connections`.
+ */
+function readPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
 export const pool: Pool =
   globalForPg.pgPool ??
   new Pool({
     ...config,
-    max: 10,
+    max: readPositiveInt("PG_POOL_MAX", 3),
+    idleTimeoutMillis: readPositiveInt("PG_POOL_IDLE_MS", 10_000),
+    connectionTimeoutMillis: readPositiveInt("PG_POOL_CONN_MS", 8_000),
     ssl: resolveSsl(),
   })
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPg.pgPool = pool
-}
+globalForPg.pgPool = pool
 
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,

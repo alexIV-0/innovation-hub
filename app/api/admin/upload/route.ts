@@ -1,9 +1,16 @@
 /**
- * Same-origin admin upload: browser sends multipart to Next, server writes to S3.
- * No bucket CORS is required for this flow (unlike presigned browser PUT to the storage host).
+ * Same-origin admin upload: browser sends the raw file as the request body
+ * (NOT multipart). The server pipes that ReadableStream straight into S3
+ * via @aws-sdk/lib-storage `Upload` (multipart, streamed, auto-retry).
+ *
+ * This avoids buffering large videos in server memory and lets the client
+ * report real upload progress via XMLHttpRequest.upload.onprogress.
+ *
+ * No bucket CORS is required for this flow (unlike presigned browser PUT
+ * to the storage host).
  */
 import { randomUUID } from "node:crypto"
-import { PutObjectCommand } from "@aws-sdk/client-s3"
+import { Upload } from "@aws-sdk/lib-storage"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import {
@@ -36,37 +43,47 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ message }, { status })
 }
 
+function decodeFileNameHeader(value: string | null): string {
+  if (!value) return "upload"
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 async function runUpload(request: NextRequest): Promise<Response> {
   const auth = await requireAdminApi(request)
   if (auth instanceof NextResponse) return auth
 
   const maxBytes = getMaxUploadBytes()
 
-  let formData: FormData
-  try {
-    formData = await request.formData()
-  } catch {
-    return jsonError("Could not read upload body (size or format).", 400)
-  }
+  const url = new URL(request.url)
+  const fileNameRaw =
+    url.searchParams.get("fileName") ??
+    request.headers.get("x-file-name") ??
+    "upload"
+  const fileName = decodeFileNameHeader(fileNameRaw)
 
-  const raw = formData.get("file")
-  if (!raw || !(raw instanceof Blob)) {
-    return jsonError('Missing multipart field "file" or not a binary part.', 400)
-  }
-
-  const fileName = raw instanceof File ? raw.name : "upload"
-  const size = raw.size
-
-  if (size > maxBytes) {
-    return jsonError(`File too large (max ${maxBytes} bytes).`, 413)
-  }
-
+  const headerType = request.headers.get("content-type") ?? ""
   const contentType = resolveUploadContentType({
     name: fileName,
-    type: raw.type,
+    type: headerType,
   })
   if (!contentType) {
     return jsonError("Unsupported file type for upload.", 400)
+  }
+
+  const declaredLength = Number.parseInt(
+    request.headers.get("content-length") ?? "",
+    10,
+  )
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    return jsonError(`File too large (max ${maxBytes} bytes).`, 413)
+  }
+
+  if (!request.body) {
+    return jsonError("Empty request body.", 400)
   }
 
   let bucket: string
@@ -87,23 +104,27 @@ async function runUpload(request: NextRequest): Promise<Response> {
     return jsonError(msg, 500)
   }
 
-  let body: Buffer
   try {
-    body = Buffer.from(await raw.arrayBuffer())
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Could not read file bytes."
-    return jsonError(msg, 400)
-  }
-
-  try {
-    await client.send(
-      new PutObjectCommand({
+    /**
+     * Stream the request body straight to S3 in 8 MB parts, up to 4 parts
+     * in flight. lib-storage handles multipart create/complete and retries
+     * failed parts automatically, which is much more reliable than a single
+     * PutObjectCommand for large videos.
+     */
+    const upload = new Upload({
+      client,
+      params: {
         Bucket: bucket,
         Key: key,
-        Body: body,
+        Body: request.body,
         ContentType: contentType,
-      }),
-    )
+      },
+      partSize: 8 * 1024 * 1024,
+      queueSize: 4,
+      leavePartsOnError: false,
+    })
+
+    await upload.done()
 
     const publicUrl =
       publicObjectUrlForKey(key) ?? inferredPathStyleObjectUrl(bucket, key)

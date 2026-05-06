@@ -42,6 +42,104 @@ function inferMime(file: File, kind: DropzoneKind): string | null {
   return null
 }
 
+type UploadResult = {
+  publicUrl: string
+}
+
+/**
+ * Uploads `file` to /api/admin/upload as a raw body (not multipart) so the
+ * server can stream it straight to S3 and we can show real upload progress.
+ *
+ * Resolves with the server response on 2xx. Rejects on network error,
+ * abort, non-2xx status, or unparseable response.
+ */
+function uploadWithProgress({
+  file,
+  contentType,
+  onProgress,
+  signal,
+}: {
+  file: File
+  contentType: string
+  onProgress: (loaded: number, total: number) => void
+  signal: AbortSignal
+}): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"))
+      return
+    }
+
+    const xhr = new XMLHttpRequest()
+    const url = `/api/admin/upload?fileName=${encodeURIComponent(file.name)}`
+
+    xhr.open("POST", url, true)
+    xhr.responseType = "json"
+    xhr.withCredentials = true
+    xhr.setRequestHeader("Content-Type", contentType)
+    xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name))
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(event.loaded, event.total)
+      }
+    }
+
+    xhr.onload = () => {
+      const status = xhr.status
+      const payload = xhr.response as
+        | { publicUrl?: unknown; message?: unknown }
+        | null
+
+      if (status >= 200 && status < 300) {
+        if (payload && typeof payload.publicUrl === "string") {
+          resolve({ publicUrl: payload.publicUrl })
+        } else {
+          reject(new Error("Upload succeeded but no publicUrl was returned."))
+        }
+        return
+      }
+
+      const message =
+        payload && typeof payload.message === "string"
+          ? payload.message
+          : `Upload failed (HTTP ${status || "network"}).`
+      reject(new Error(message))
+    }
+
+    xhr.onerror = () => {
+      reject(new Error("Network error during upload."))
+    }
+
+    xhr.ontimeout = () => {
+      reject(new Error("Upload timed out."))
+    }
+
+    xhr.onabort = () => {
+      reject(new DOMException("Aborted", "AbortError"))
+    }
+
+    const onAbort = () => {
+      try {
+        xhr.abort()
+      } catch {
+        /* noop */
+      }
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
+
+    xhr.send(file)
+  })
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB"]
+  const i = Math.min(units.length - 1, Math.floor(Math.log10(bytes) / 3))
+  const value = bytes / 10 ** (i * 3)
+  return `${value.toFixed(value >= 100 || i === 0 ? 0 : 1)} ${units[i]}`
+}
+
 type Props = {
   kind: DropzoneKind
   label: string
@@ -60,13 +158,19 @@ export function AdminMediaDropzone({
   className,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [progress, setProgress] = useState<{
+    loaded: number
+    total: number
+  } | null>(null)
   const [localPreview, setLocalPreview] = useState<string | null>(null)
 
   useEffect(() => {
     return () => {
       if (localPreview) URL.revokeObjectURL(localPreview)
+      abortRef.current?.abort()
     }
   }, [localPreview])
 
@@ -88,40 +192,37 @@ export function AdminMediaDropzone({
         return previewUrl
       })
       setIsUploading(true)
+      setProgress({ loaded: 0, total: file.size })
 
       const toastId = toast.loading(
         kind === "image" ? "Uploading image…" : "Uploading video…",
+        { description: `${file.name} · ${formatBytes(file.size)}` },
       )
 
+      abortRef.current?.abort()
+      const abort = new AbortController()
+      abortRef.current = abort
+      const timer = window.setTimeout(() => abort.abort(), 30 * 60_000)
+
       try {
-        const formData = new FormData()
-        formData.set("file", file, file.name)
+        const result = await uploadWithProgress({
+          file,
+          contentType: mime,
+          signal: abort.signal,
+          onProgress: (loaded, total) => {
+            setProgress({ loaded, total })
+            const percent = total > 0 ? Math.floor((loaded / total) * 100) : 0
+            toast.loading(
+              kind === "image" ? "Uploading image…" : "Uploading video…",
+              {
+                id: toastId,
+                description: `${file.name} · ${percent}% (${formatBytes(loaded)} / ${formatBytes(total)})`,
+              },
+            )
+          },
+        })
 
-        const abort = new AbortController()
-        const timer = window.setTimeout(() => abort.abort(), 300_000)
-
-        let response: Response
-        try {
-          response = await fetch("/api/admin/upload", {
-            method: "POST",
-            credentials: "same-origin",
-            body: formData,
-            signal: abort.signal,
-          })
-        } finally {
-          window.clearTimeout(timer)
-        }
-
-        const payload = await response.json().catch(() => null)
-        if (!response.ok || !payload || typeof payload.publicUrl !== "string") {
-          const msg =
-            payload && typeof payload.message === "string"
-              ? payload.message
-              : "Upload failed. Please try again."
-          throw new Error(msg)
-        }
-
-        onChange(payload.publicUrl)
+        onChange(result.publicUrl)
         toast.success("Upload complete", {
           id: toastId,
           description: file.name,
@@ -130,7 +231,7 @@ export function AdminMediaDropzone({
         const aborted = err instanceof DOMException && err.name === "AbortError"
         toast.error(
           aborted
-            ? "Upload took too long and was cancelled."
+            ? "Upload was cancelled."
             : err instanceof Error
               ? err.message
               : "Upload failed. Please try again.",
@@ -141,7 +242,12 @@ export function AdminMediaDropzone({
           return null
         })
       } finally {
+        window.clearTimeout(timer)
+        if (abortRef.current === abort) {
+          abortRef.current = null
+        }
         setIsUploading(false)
+        setProgress(null)
       }
     },
     [kind, onChange],
@@ -152,6 +258,7 @@ export function AdminMediaDropzone({
   }, [])
 
   const handleClear = useCallback(() => {
+    abortRef.current?.abort()
     onChange("")
     setLocalPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
@@ -171,6 +278,10 @@ export function AdminMediaDropzone({
 
   const previewSrc = localPreview ?? (value ? value : null)
   const hasPreview = Boolean(previewSrc)
+  const percent =
+    progress && progress.total > 0
+      ? Math.min(100, Math.floor((progress.loaded / progress.total) * 100))
+      : null
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -240,16 +351,30 @@ export function AdminMediaDropzone({
                 className="gap-1.5"
               >
                 <X className="h-3.5 w-3.5" />
-                Remove
+                {isUploading ? "Cancel" : "Remove"}
               </Button>
             </div>
 
             {isUploading ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 backdrop-blur-sm">
                 <div className="flex items-center gap-2 rounded-full bg-card/80 px-4 py-2 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  Uploading…
+                  {percent !== null ? `Uploading ${percent}%` : "Uploading…"}
                 </div>
+                {progress ? (
+                  <div className="w-3/4 max-w-xs">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-primary transition-[width] duration-150"
+                        style={{ width: `${percent ?? 0}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-center text-[11px] text-muted-foreground">
+                      {formatBytes(progress.loaded)} /{" "}
+                      {formatBytes(progress.total)}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </>
@@ -272,7 +397,9 @@ export function AdminMediaDropzone({
             <div className="space-y-1">
               <p className="text-sm font-medium text-foreground">
                 {isUploading
-                  ? "Uploading…"
+                  ? percent !== null
+                    ? `Uploading ${percent}%`
+                    : "Uploading…"
                   : kind === "image"
                     ? "Drag an image here, or click to browse"
                     : "Drag a video here, or click to browse"}

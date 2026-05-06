@@ -34,14 +34,9 @@ import {
 
 export const runtime = "nodejs"
 
-function inferredPathStyleObjectUrl(bucket: string, key: string): string | null {
-  const endpoint = process.env.AWS_ENDPOINT_URL?.trim().replace(/\/+$/, "")
-  if (!endpoint) return null
-  const path = `${bucket}/${key}`
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/")
-  return `${endpoint}/${path}`
+function appMediaUrl(request: NextRequest, key: string): string {
+  const encodedKeyPath = key.split("/").map((segment) => encodeURIComponent(segment)).join("/")
+  return new URL(`/api/media/${encodedKeyPath}`, request.url).toString()
 }
 
 export async function POST(request: NextRequest) {
@@ -95,8 +90,7 @@ export async function POST(request: NextRequest) {
   try {
     const uploadUrl = await getSignedUrl(client, command, { expiresIn: 900 })
 
-    const publicUrl =
-      publicObjectUrlForKey(key) ?? inferredPathStyleObjectUrl(bucket, key)
+    const publicUrl = publicObjectUrlForKey(key) ?? appMediaUrl(request, key)
 
     return NextResponse.json({
       uploadUrl,

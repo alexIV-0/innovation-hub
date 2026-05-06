@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { query, withTransaction } from "@/lib/db"
 import type { VideoRecord } from "@/lib/domain-types"
+import { normalizeMediaDisplayUrl } from "@/lib/s3-config"
 
 const VIDEO_FIELDS = `
   id,
@@ -16,11 +17,19 @@ const VIDEO_FIELDS = `
   updated_at AS "updatedAt"
 `
 
+function mapMediaUrls(video: VideoRecord): VideoRecord {
+  return {
+    ...video,
+    thumbnail: normalizeMediaDisplayUrl(video.thumbnail),
+    videoUrl: normalizeMediaDisplayUrl(video.videoUrl),
+  }
+}
+
 export async function listVideos(): Promise<VideoRecord[]> {
   const result = await query<VideoRecord>(
     `SELECT ${VIDEO_FIELDS} FROM videos ORDER BY sort_order ASC, created_at ASC`,
   )
-  return result.rows
+  return result.rows.map(mapMediaUrls)
 }
 
 export async function listPublishedVideos(): Promise<VideoRecord[]> {
@@ -30,7 +39,7 @@ export async function listPublishedVideos(): Promise<VideoRecord[]> {
       WHERE is_published = true
       ORDER BY sort_order ASC, created_at ASC`,
   )
-  return result.rows
+  return result.rows.map(mapMediaUrls)
 }
 
 export async function findPublishedVideoById(
@@ -42,7 +51,8 @@ export async function findPublishedVideoById(
       WHERE id = $1 AND is_published = true`,
     [id],
   )
-  return result.rows[0] ?? null
+  const video = result.rows[0]
+  return video ? mapMediaUrls(video) : null
 }
 
 export async function listRelatedPublishedVideos(
@@ -57,7 +67,7 @@ export async function listRelatedPublishedVideos(
       LIMIT $2`,
     [excludeId, limit],
   )
-  return result.rows
+  return result.rows.map(mapMediaUrls)
 }
 
 export async function createVideo(input: {
@@ -93,7 +103,7 @@ export async function createVideo(input: {
       nextSortOrder,
     ],
   )
-  return result.rows[0]
+  return mapMediaUrls(result.rows[0])
 }
 
 export async function updateVideo(
@@ -131,7 +141,8 @@ export async function updateVideo(
       input.isPublished ?? null,
     ],
   )
-  return result.rows[0] ?? null
+  const video = result.rows[0]
+  return video ? mapMediaUrls(video) : null
 }
 
 export async function deleteVideo(id: string) {

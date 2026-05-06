@@ -29,14 +29,9 @@ export const runtime = "nodejs"
 /** Vercel Hobby allows 1–300s; other plans may allow more via dashboard. */
 export const maxDuration = 300
 
-function inferredPathStyleObjectUrl(bucket: string, key: string): string | null {
-  const endpoint = process.env.AWS_ENDPOINT_URL?.trim().replace(/\/+$/, "")
-  if (!endpoint) return null
-  const path = `${bucket}/${key}`
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/")
-  return `${endpoint}/${path}`
+function appMediaUrl(request: NextRequest, key: string): string {
+  const encodedKeyPath = key.split("/").map((segment) => encodeURIComponent(segment)).join("/")
+  return new URL(`/api/media/${encodedKeyPath}`, request.url).toString()
 }
 
 function jsonError(message: string, status: number) {
@@ -126,19 +121,7 @@ async function runUpload(request: NextRequest): Promise<Response> {
 
     await upload.done()
 
-    const publicUrl =
-      publicObjectUrlForKey(key) ?? inferredPathStyleObjectUrl(bucket, key)
-
-    if (!publicUrl) {
-      return NextResponse.json(
-        {
-          message:
-            "Upload succeeded but public URL is unknown: set NEXT_PUBLIC_S3_PUBLIC_BASE_URL or AWS_ENDPOINT_URL.",
-          key,
-        },
-        { status: 502 },
-      )
-    }
+    const publicUrl = publicObjectUrlForKey(key) ?? appMediaUrl(request, key)
 
     return NextResponse.json({
       key,

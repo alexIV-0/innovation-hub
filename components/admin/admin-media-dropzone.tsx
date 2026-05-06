@@ -111,23 +111,48 @@ function putToS3({
       if (event.lengthComputable) onProgress(event.loaded, event.total)
     }
 
+    /**
+     * Try to extract a useful error message from S3's XML body. Storage
+     * providers return things like:
+     *   <Error><Code>SignatureDoesNotMatch</Code><Message>...</Message>...
+     */
+    const extractS3Error = (raw: string): string => {
+      if (!raw) return ""
+      const code = raw.match(/<Code>([^<]+)<\/Code>/i)?.[1]
+      const message = raw.match(/<Message>([^<]+)<\/Message>/i)?.[1]
+      if (code || message) {
+        return [code, message].filter(Boolean).join(": ")
+      }
+      return raw.slice(0, 240)
+    }
+
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve()
-      } else {
-        reject(
-          new Error(
-            `S3 rejected the upload (HTTP ${xhr.status}). ${xhr.responseText?.slice(0, 200) ?? ""}`.trim(),
-          ),
-        )
+        return
       }
-    }
-    xhr.onerror = () =>
+      const detail = extractS3Error(xhr.responseText ?? "")
       reject(
         new Error(
-          "Network error while uploading to storage. Check bucket CORS for this origin.",
+          `Storage rejected the upload (HTTP ${xhr.status})${
+            detail ? ` — ${detail}` : ""
+          }.`,
         ),
       )
+    }
+    xhr.onerror = () => {
+      // status is 0 here. If responseText is empty too, the response was
+      // blocked before our JS could read it (typical CORS-on-error case
+      // with S3-compatible providers that omit CORS headers on 4xx).
+      const detail = extractS3Error(xhr.responseText ?? "")
+      reject(
+        new Error(
+          detail
+            ? `Storage rejected the upload — ${detail}.`
+            : "Network/CORS error while uploading to storage. Check the browser devtools network tab for the failing PUT request and confirm bucket CORS allows this origin.",
+        ),
+      )
+    }
     xhr.ontimeout = () => reject(new Error("Upload to storage timed out."))
     xhr.onabort = () => reject(new DOMException("Aborted", "AbortError"))
 

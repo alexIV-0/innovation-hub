@@ -12,7 +12,8 @@
     "db:reset": "node scripts/db-init.mjs --reset",
     "db:check": "node scripts/db-check.mjs",
     "s3:ensure-prefix": "node scripts/s3-ensure-prefix.mjs",
-    "s3:set-cors": "node scripts/s3-set-cors.mjs"
+    "s3:set-cors": "node scripts/s3-set-cors.mjs",
+    "s3:test-upload": "node scripts/s3-test-presigned-upload.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",

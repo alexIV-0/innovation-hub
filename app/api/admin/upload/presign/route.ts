@@ -1,10 +1,20 @@
 /**
- * Presigned PUT URL for uploading directly to S3 from a client.
+ * Presigned PUT URL for uploading directly to S3 (Nebius Object Storage)
+ * from the browser.
  *
- * Browser uploads from your app origin to the storage endpoint require **CORS**
- * on the bucket (methods PUT/OPTIONS, header Content-Type, allowed origins).
- * For uploads from the admin UI, prefer same-origin `POST /api/admin/upload`
- * instead, which avoids CORS entirely.
+ * Notes for S3-compatible providers (Nebius in particular):
+ *  - The bucket MUST have CORS allowing PUT from the app origin
+ *    (run `pnpm s3:set-cors`).
+ *  - We deliberately do NOT pass ContentType to PutObjectCommand. If we did,
+ *    Content-Type would be added to SignedHeaders, and the browser would
+ *    have to send a byte-identical Content-Type or the upload would fail
+ *    with SignatureDoesNotMatch *after* the body finishes uploading
+ *    (manifests as a CORS / "network error" in XHR). S3 still stores the
+ *    Content-Type the browser actually sends — it just isn't part of the
+ *    signature.
+ *  - Flexible checksums are disabled at the client level (see lib/s3-client.ts)
+ *    so x-amz-sdk-checksum-algorithm / x-amz-checksum-* are never added to
+ *    SignedHeaders either.
  */
 import { randomUUID } from "node:crypto"
 import { PutObjectCommand } from "@aws-sdk/client-s3"
@@ -21,6 +31,8 @@ import {
   isAllowedUploadContentType,
   safeBaseFileName,
 } from "@/lib/s3-upload-policy"
+
+export const runtime = "nodejs"
 
 function inferredPathStyleObjectUrl(bucket: string, key: string): string | null {
   const endpoint = process.env.AWS_ENDPOINT_URL?.trim().replace(/\/+$/, "")
@@ -69,10 +81,13 @@ export async function POST(request: NextRequest) {
   const bucket = getS3Bucket()
   const key = buildS3ObjectKey(`${randomUUID()}-${safeBaseFileName(fileName)}`)
 
+  /**
+   * Intentionally do NOT pass ContentType here — see file header comment.
+   * The browser will send Content-Type on the actual PUT and S3 will store it.
+   */
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: key,
-    ContentType: contentType,
   })
 
   const client = getS3Client()

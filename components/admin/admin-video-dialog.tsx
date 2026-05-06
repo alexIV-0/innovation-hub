@@ -85,7 +85,10 @@ export function AdminVideoDialog({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent
+        className="max-h-[90vh] max-w-3xl overflow-y-auto"
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{titleText}</DialogTitle>
           <DialogDescription>

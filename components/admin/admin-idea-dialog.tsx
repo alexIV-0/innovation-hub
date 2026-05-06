@@ -77,7 +77,10 @@ export function AdminIdeaDialog({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent
+        className="max-w-lg"
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{titleText}</DialogTitle>
           <DialogDescription>

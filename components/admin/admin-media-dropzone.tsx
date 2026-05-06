@@ -42,28 +42,61 @@ function inferMime(file: File, kind: DropzoneKind): string | null {
   return null
 }
 
-type UploadResult = {
-  publicUrl: string
+type PresignResponse = {
+  uploadUrl: string
+  publicUrl: string | null
+  method: "PUT"
+  contentType: string
+  key: string
+}
+
+async function requestPresign(file: File, contentType: string) {
+  const response = await fetch("/api/admin/upload/presign", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fileName: file.name, contentType }),
+  })
+
+  const payload = (await response.json().catch(() => null)) as
+    | (PresignResponse & { message?: string })
+    | { message?: string }
+    | null
+
+  if (!response.ok || !payload || !("uploadUrl" in payload)) {
+    const msg =
+      payload && typeof payload.message === "string"
+        ? payload.message
+        : `Could not prepare upload (HTTP ${response.status}).`
+    throw new Error(msg)
+  }
+
+  if (!payload.publicUrl) {
+    throw new Error(
+      "Server did not return a public URL for the uploaded object.",
+    )
+  }
+
+  return payload as PresignResponse & { publicUrl: string }
 }
 
 /**
- * Uploads `file` to /api/admin/upload as a raw body (not multipart) so the
- * server can stream it straight to S3 and we can show real upload progress.
- *
- * Resolves with the server response on 2xx. Rejects on network error,
- * abort, non-2xx status, or unparseable response.
+ * PUTs `file` directly to S3 at `uploadUrl` (presigned), reporting upload
+ * progress. Resolves on 2xx, rejects on abort/network/non-2xx.
  */
-function uploadWithProgress({
+function putToS3({
   file,
+  uploadUrl,
   contentType,
   onProgress,
   signal,
 }: {
   file: File
+  uploadUrl: string
   contentType: string
   onProgress: (loaded: number, total: number) => void
   signal: AbortSignal
-}): Promise<UploadResult> {
+}): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
       reject(new DOMException("Aborted", "AbortError"))
@@ -71,53 +104,32 @@ function uploadWithProgress({
     }
 
     const xhr = new XMLHttpRequest()
-    const url = `/api/admin/upload?fileName=${encodeURIComponent(file.name)}`
-
-    xhr.open("POST", url, true)
-    xhr.responseType = "json"
-    xhr.withCredentials = true
+    xhr.open("PUT", uploadUrl, true)
     xhr.setRequestHeader("Content-Type", contentType)
-    xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name))
 
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        onProgress(event.loaded, event.total)
-      }
+      if (event.lengthComputable) onProgress(event.loaded, event.total)
     }
 
     xhr.onload = () => {
-      const status = xhr.status
-      const payload = xhr.response as
-        | { publicUrl?: unknown; message?: unknown }
-        | null
-
-      if (status >= 200 && status < 300) {
-        if (payload && typeof payload.publicUrl === "string") {
-          resolve({ publicUrl: payload.publicUrl })
-        } else {
-          reject(new Error("Upload succeeded but no publicUrl was returned."))
-        }
-        return
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        reject(
+          new Error(
+            `S3 rejected the upload (HTTP ${xhr.status}). ${xhr.responseText?.slice(0, 200) ?? ""}`.trim(),
+          ),
+        )
       }
-
-      const message =
-        payload && typeof payload.message === "string"
-          ? payload.message
-          : `Upload failed (HTTP ${status || "network"}).`
-      reject(new Error(message))
     }
-
-    xhr.onerror = () => {
-      reject(new Error("Network error during upload."))
-    }
-
-    xhr.ontimeout = () => {
-      reject(new Error("Upload timed out."))
-    }
-
-    xhr.onabort = () => {
-      reject(new DOMException("Aborted", "AbortError"))
-    }
+    xhr.onerror = () =>
+      reject(
+        new Error(
+          "Network error while uploading to storage. Check bucket CORS for this origin.",
+        ),
+      )
+    xhr.ontimeout = () => reject(new Error("Upload to storage timed out."))
+    xhr.onabort = () => reject(new DOMException("Aborted", "AbortError"))
 
     const onAbort = () => {
       try {
@@ -167,12 +179,24 @@ export function AdminMediaDropzone({
   } | null>(null)
   const [localPreview, setLocalPreview] = useState<string | null>(null)
 
+  /**
+   * Revoke the object URL whenever the local preview changes.
+   * Do NOT touch abortRef here — that fires on every preview change and
+   * would abort the upload we just started.
+   */
   useEffect(() => {
     return () => {
       if (localPreview) URL.revokeObjectURL(localPreview)
-      abortRef.current?.abort()
     }
   }, [localPreview])
+
+  /** Abort an in-flight upload only on actual unmount. */
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      abortRef.current = null
+    }
+  }, [])
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -205,8 +229,14 @@ export function AdminMediaDropzone({
       const timer = window.setTimeout(() => abort.abort(), 30 * 60_000)
 
       try {
-        const result = await uploadWithProgress({
+        const presign = await requestPresign(file, mime)
+        if (abort.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError")
+        }
+
+        await putToS3({
           file,
+          uploadUrl: presign.uploadUrl,
           contentType: mime,
           signal: abort.signal,
           onProgress: (loaded, total) => {
@@ -222,7 +252,7 @@ export function AdminMediaDropzone({
           },
         })
 
-        onChange(result.publicUrl)
+        onChange(presign.publicUrl)
         toast.success("Upload complete", {
           id: toastId,
           description: file.name,
@@ -346,7 +376,6 @@ export function AdminMediaDropzone({
                 type="button"
                 variant="destructive"
                 size="sm"
-                disabled={isUploading}
                 onClick={handleClear}
                 className="gap-1.5"
               >

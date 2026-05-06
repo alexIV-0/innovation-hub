@@ -43,6 +43,22 @@ export function getS3Client(): S3Client {
       secretAccessKey,
     },
     forcePathStyle,
+    /**
+     * Disable the SDK's flexible-checksum middleware. Since
+     * @aws-sdk/client-s3 3.731+ the default ("WHEN_SUPPORTED") adds
+     * x-amz-sdk-checksum-algorithm / x-amz-checksum-crc32 to the SIGNED
+     * headers of presigned PUT URLs. Browsers don't send those headers
+     * on a presigned PUT, so the upload's full body is accepted but the
+     * final response is rejected as a signature mismatch — which surfaces
+     * as a CORS / network error in XHR.
+     *
+     * Many S3-compatible providers (incl. Nebius) also do not implement
+     * the flexible-checksum extension at all, so disabling here is the
+     * safe default for both same-origin Upload() and presigned PUT.
+     * https://github.com/aws/aws-sdk-js-v3/issues/6810
+     */
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   })
 
   return client

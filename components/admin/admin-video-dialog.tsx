@@ -110,6 +110,9 @@ export function AdminVideoDialog({
             helperText="Plays on the detail page"
             value={draft.videoUrl}
             onChange={(url) => setDraft((prev) => ({ ...prev, videoUrl: url }))}
+            onVideoDurationDetected={(duration) =>
+              setDraft((prev) => ({ ...prev, duration }))
+            }
           />
         </div>
 
@@ -140,7 +143,7 @@ export function AdminVideoDialog({
             <Label htmlFor="video-duration">Duration</Label>
             <Input
               id="video-duration"
-              placeholder="e.g. 4:32"
+              placeholder="Auto from video file (editable)"
               value={draft.duration}
               onChange={(event) =>
                 setDraft((prev) => ({ ...prev, duration: event.target.value }))

@@ -10,26 +10,46 @@
 
 @layer base {
   :root {
-    --background: 222 30% 9%;
-    --foreground: 215 18% 92%;
-    --card: 222 24% 12%;
-    --card-foreground: 215 18% 92%;
-    --popover: 222 24% 12%;
-    --popover-foreground: 215 18% 92%;
-    --primary: 210 62% 60%;
-    --primary-foreground: 220 38% 10%;
-    --secondary: 220 20% 17%;
-    --secondary-foreground: 215 18% 84%;
-    --muted: 220 18% 17%;
-    --muted-foreground: 215 14% 62%;
-    --accent: 210 62% 60%;
+    --background: 226 31% 7%;
+    --foreground: 210 33% 96%;
+    --card: 225 24% 11%;
+    --card-foreground: 214 20% 90%;
+    --popover: 225 24% 11%;
+    --popover-foreground: 214 20% 90%;
+    --primary: 214 88% 66%;
+    --primary-foreground: 224 44% 11%;
+    --secondary: 225 17% 16%;
+    --secondary-foreground: 214 23% 84%;
+    --muted: 225 18% 14%;
+    --muted-foreground: 215 13% 65%;
+    --accent: 214 88% 66%;
     --accent-foreground: 220 38% 10%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 14% 24%;
-    --input: 220 14% 24%;
-    --ring: 210 62% 60%;
-    --radius: 0.5rem;
+    --border: 224 18% 23%;
+    --input: 224 18% 23%;
+    --ring: 214 88% 66%;
+    --surface-1: 225 30% 9%;
+    --surface-2: 225 24% 12%;
+    --surface-3: 224 20% 16%;
+    --surface-overlay: 220 35% 6%;
+    --success: 150 72% 47%;
+    --warning: 40 90% 58%;
+    --info: 204 94% 60%;
+    --chart-1: 214 88% 66%;
+    --chart-2: 276 90% 72%;
+    --chart-3: 174 75% 45%;
+    --chart-4: 42 95% 58%;
+    --chart-5: 344 88% 63%;
+    --sidebar-background: 226 28% 9%;
+    --sidebar-foreground: 214 20% 88%;
+    --sidebar-primary: 214 88% 66%;
+    --sidebar-primary-foreground: 224 44% 11%;
+    --sidebar-accent: 225 22% 15%;
+    --sidebar-accent-foreground: 214 20% 88%;
+    --sidebar-border: 224 18% 20%;
+    --sidebar-ring: 214 88% 66%;
+    --radius: 0.75rem;
   }
 }
 
@@ -39,5 +59,81 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(1300px 700px at 10% -15%, hsl(var(--primary) / 0.17), transparent 50%),
+      radial-gradient(1100px 680px at 90% -35%, hsl(276 90% 72% / 0.14), transparent 52%),
+      linear-gradient(to bottom, hsl(var(--background)) 0%, hsl(224 31% 7%) 100%);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .section-shell {
+    @apply mx-auto w-full max-w-7xl px-6 lg:px-10;
+  }
+
+  .section-space {
+    @apply py-16 md:py-24 lg:py-32;
+  }
+
+  .section-space-tight {
+    @apply py-12 md:py-16 lg:py-20;
+  }
+
+  .type-eyebrow {
+    @apply text-xs uppercase tracking-[0.2em] text-muted-foreground md:text-sm;
+  }
+
+  .type-display {
+    @apply font-display text-5xl font-semibold leading-[1.02] tracking-[-0.02em] text-balance md:text-6xl xl:text-7xl;
+  }
+
+  .type-h1 {
+    @apply font-display text-4xl font-semibold leading-[1.06] tracking-[-0.02em] text-balance md:text-5xl;
+  }
+
+  .type-h2 {
+    @apply font-display text-3xl font-semibold leading-[1.1] tracking-[-0.015em] text-balance md:text-4xl xl:text-5xl;
+  }
+
+  .type-body {
+    @apply text-base leading-relaxed text-muted-foreground md:text-lg;
+  }
+
+  .premium-glass {
+    @apply border border-white/10 bg-white/[0.03] backdrop-blur-xl;
+  }
+
+  .premium-card {
+    @apply rounded-2xl border border-border/80 bg-[hsl(var(--surface-2))]/80 shadow-[0_12px_60px_-28px_hsl(220_90%_65%_/_0.35)];
+  }
+
+  .spotlight-band {
+    @apply relative overflow-hidden;
+  }
+
+  .spotlight-band::before {
+    content: "";
+    position: absolute;
+    inset: -45% -10% auto -10%;
+    height: 120%;
+    background: radial-gradient(ellipse at top, hsl(var(--primary) / 0.18), transparent 55%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .noise-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.08;
+    mix-blend-mode: soft-light;
+    background-image: radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.22) 1px, transparent 0);
+    background-size: 3px 3px;
+  }
+
+  .divider-line {
+    @apply h-px w-full bg-gradient-to-r from-transparent via-border to-transparent;
   }
 }

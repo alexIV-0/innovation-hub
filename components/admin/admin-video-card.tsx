@@ -42,7 +42,20 @@ export function AdminVideoCard({
 
   return (
     <div
-      className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5"
+      className="group relative overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 cursor-pointer"
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        const target = event.target as HTMLElement
+        if (target.closest("[data-no-edit]")) return
+        onEdit()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onEdit()
+        }
+      }}
       onMouseEnter={() => {
         setHovered(true)
         videoRef.current?.play().catch(() => {})
@@ -61,8 +74,18 @@ export function AdminVideoCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={video.thumbnail}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl brightness-50"
+          />
+        ) : null}
+
+        {video.thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={video.thumbnail}
             alt={video.title}
-            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+            className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${
               hovered ? "opacity-0" : "opacity-100"
             }`}
           />
@@ -80,7 +103,7 @@ export function AdminVideoCard({
             loop
             playsInline
             preload="none"
-            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+            className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${
               hovered ? "opacity-100" : "opacity-0"
             }`}
           />
@@ -134,6 +157,7 @@ export function AdminVideoCard({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
+              data-no-edit
               size="icon"
               variant="ghost"
               className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"

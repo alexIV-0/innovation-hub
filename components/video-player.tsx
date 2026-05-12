@@ -39,14 +39,22 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
     return `${mins}:${secs.toString().padStart(2, "0")}`
   }
 
-  const togglePlay = () => {
-    if (!videoRef.current) return
+  const togglePlay = async () => {
+    const video = videoRef.current
+    if (!video) return
     if (isPlaying) {
-      videoRef.current.pause()
-    } else {
-      videoRef.current.play()
+      video.pause()
+      setIsPlaying(false)
+      return
     }
-    setIsPlaying(!isPlaying)
+    try {
+      await video.play()
+      setIsPlaying(true)
+    } catch {
+      // Autoplay blocked or playback rejected; keep UI in paused state so
+      // the user can retry rather than showing a fake "playing" indicator.
+      setIsPlaying(false)
+    }
   }
 
   const toggleMute = () => {
@@ -57,20 +65,24 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
 
   const toggleFullscreen = async () => {
     if (!containerRef.current) return
-    if (!document.fullscreenElement) {
-      await containerRef.current.requestFullscreen()
-      setIsFullscreen(true)
-    } else {
-      await document.exitFullscreen()
-      setIsFullscreen(false)
+    try {
+      if (!document.fullscreenElement) {
+        await containerRef.current.requestFullscreen()
+      } else {
+        await document.exitFullscreen()
+      }
+    } catch {
+      // The fullscreenchange listener below will reconcile state regardless.
     }
   }
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!videoRef.current) return
+    const video = videoRef.current
+    if (!video) return
+    if (!Number.isFinite(video.duration) || video.duration <= 0) return
     const rect = e.currentTarget.getBoundingClientRect()
-    const pos = (e.clientX - rect.left) / rect.width
-    videoRef.current.currentTime = pos * videoRef.current.duration
+    const pos = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+    video.currentTime = pos * video.duration
   }
 
   const handleMouseMove = useCallback(() => {
@@ -86,7 +98,11 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
     if (!video) return
 
     const onTimeUpdate = () => {
-      setProgress((video.currentTime / video.duration) * 100)
+      if (!Number.isFinite(video.duration) || video.duration <= 0) {
+        setProgress(0)
+      } else {
+        setProgress((video.currentTime / video.duration) * 100)
+      }
       setCurrentTime(formatTime(video.currentTime))
     }
     const onLoadedMetadata = () => {
@@ -99,16 +115,32 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
       setIsPlaying(false)
       setShowControls(true)
     }
+    const onPause = () => setIsPlaying(false)
+    const onPlay = () => setIsPlaying(true)
 
     video.addEventListener("timeupdate", onTimeUpdate)
     video.addEventListener("loadedmetadata", onLoadedMetadata)
     video.addEventListener("ended", onEnded)
+    video.addEventListener("pause", onPause)
+    video.addEventListener("play", onPlay)
 
     return () => {
       video.removeEventListener("timeupdate", onTimeUpdate)
       video.removeEventListener("loadedmetadata", onLoadedMetadata)
       video.removeEventListener("ended", onEnded)
+      video.removeEventListener("pause", onPause)
+      video.removeEventListener("play", onPlay)
     }
+  }, [])
+
+  // Keep the fullscreen icon in sync when the user presses Esc or the
+  // browser changes fullscreen state outside of our toggle button.
+  useEffect(() => {
+    const onChange = () => {
+      setIsFullscreen(document.fullscreenElement === containerRef.current)
+    }
+    document.addEventListener("fullscreenchange", onChange)
+    return () => document.removeEventListener("fullscreenchange", onChange)
   }, [])
 
   useEffect(() => {

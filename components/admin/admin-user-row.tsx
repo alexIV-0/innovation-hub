@@ -114,7 +114,10 @@ export function AdminUserRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onClick={onToggleRole}>
+          <DropdownMenuItem
+            onClick={onToggleRole}
+            disabled={isCurrent && user.role === "ADMIN"}
+          >
             {user.role === "ADMIN" ? (
               <>
                 <ShieldOff className="h-4 w-4" />

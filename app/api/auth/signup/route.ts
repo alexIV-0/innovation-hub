@@ -4,9 +4,9 @@ import { hashPassword } from "@/lib/auth"
 import { createUser, findUserByEmail } from "@/lib/repositories/users"
 
 const signupRequestSchema = z.object({
-  fullName: z.string().min(2),
-  email: z.string().email(),
-  password: z.string().min(8),
+  fullName: z.string().min(2).max(120),
+  email: z.string().email().max(254),
+  password: z.string().min(8).max(72),
 })
 
 export async function POST(request: Request) {

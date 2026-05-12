@@ -2,11 +2,15 @@ import { randomUUID } from "node:crypto"
 import { query, withTransaction } from "@/lib/db"
 import type { IdeaRecord } from "@/lib/domain-types"
 import type { ReorderResult } from "@/lib/repositories/videos"
+import { normalizeMediaDisplayUrl } from "@/lib/s3-config"
 
 const IDEA_FIELDS = `
   id,
   title,
   description,
+  thumbnail,
+  video_url AS "videoUrl",
+  duration,
   category,
   is_published AS "isPublished",
   sort_order AS "sortOrder",
@@ -14,11 +18,23 @@ const IDEA_FIELDS = `
   updated_at AS "updatedAt"
 `
 
+function mapMediaUrls(idea: IdeaRecord): IdeaRecord {
+  return {
+    ...idea,
+    thumbnail: idea.thumbnail
+      ? normalizeMediaDisplayUrl(idea.thumbnail)
+      : "",
+    videoUrl: idea.videoUrl
+      ? normalizeMediaDisplayUrl(idea.videoUrl)
+      : "",
+  }
+}
+
 export async function listIdeas(): Promise<IdeaRecord[]> {
   const result = await query<IdeaRecord>(
     `SELECT ${IDEA_FIELDS} FROM ideas ORDER BY sort_order ASC, created_at ASC`,
   )
-  return result.rows
+  return result.rows.map(mapMediaUrls)
 }
 
 export async function listPublishedIdeas(): Promise<IdeaRecord[]> {
@@ -28,12 +44,15 @@ export async function listPublishedIdeas(): Promise<IdeaRecord[]> {
       WHERE is_published = true
       ORDER BY sort_order ASC, created_at ASC`,
   )
-  return result.rows
+  return result.rows.map(mapMediaUrls)
 }
 
 export async function createIdea(input: {
   title: string
   description: string
+  thumbnail: string
+  videoUrl: string
+  duration: string
   category: string
   isPublished: boolean
 }): Promise<IdeaRecord> {
@@ -42,9 +61,10 @@ export async function createIdea(input: {
   // collide on MAX() reads (see videos repo for the same pattern).
   const result = await query<IdeaRecord>(
     `INSERT INTO ideas (
-        id, title, description, category, is_published, sort_order
+        id, title, description, thumbnail, video_url, duration, category,
+        is_published, sort_order
      ) VALUES (
-        $1, $2, $3, $4, $5,
+        $1, $2, $3, $4, $5, $6, $7, $8,
         (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM ideas)
      )
      RETURNING ${IDEA_FIELDS}`,
@@ -52,11 +72,14 @@ export async function createIdea(input: {
       id,
       input.title,
       input.description,
+      input.thumbnail,
+      input.videoUrl,
+      input.duration,
       input.category,
       input.isPublished,
     ],
   )
-  return result.rows[0]
+  return mapMediaUrls(result.rows[0])
 }
 
 export async function updateIdea(
@@ -64,6 +87,9 @@ export async function updateIdea(
   input: Partial<{
     title: string
     description: string
+    thumbnail: string
+    videoUrl: string
+    duration: string
     category: string
     isPublished: boolean
   }>,
@@ -72,8 +98,11 @@ export async function updateIdea(
     `UPDATE ideas
         SET title        = COALESCE($2, title),
             description  = COALESCE($3, description),
-            category     = COALESCE($4, category),
-            is_published = COALESCE($5, is_published),
+            thumbnail    = COALESCE($4, thumbnail),
+            video_url    = COALESCE($5, video_url),
+            duration     = COALESCE($6, duration),
+            category     = COALESCE($7, category),
+            is_published = COALESCE($8, is_published),
             updated_at   = NOW()
       WHERE id = $1
       RETURNING ${IDEA_FIELDS}`,
@@ -81,11 +110,15 @@ export async function updateIdea(
       id,
       input.title ?? null,
       input.description ?? null,
+      input.thumbnail ?? null,
+      input.videoUrl ?? null,
+      input.duration ?? null,
       input.category ?? null,
       input.isPublished ?? null,
     ],
   )
-  return result.rows[0] ?? null
+  const idea = result.rows[0]
+  return idea ? mapMediaUrls(idea) : null
 }
 
 export async function deleteIdea(id: string) {

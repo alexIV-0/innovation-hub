@@ -83,16 +83,32 @@ export async function createUser(input: {
 
 export async function updateUser(
   id: string,
-  input: { role?: UserRole; isActive?: boolean },
+  input: {
+    fullName?: string
+    email?: string
+    passwordHash?: string
+    role?: UserRole
+    isActive?: boolean
+  },
 ): Promise<UserRecord | null> {
   const result = await query<UserRecord>(
     `UPDATE users
-        SET role       = COALESCE($2, role),
-            is_active  = COALESCE($3, is_active),
-            updated_at = NOW()
+        SET full_name     = COALESCE($2, full_name),
+            email         = COALESCE($3, email),
+            password_hash = COALESCE($4, password_hash),
+            role          = COALESCE($5, role),
+            is_active     = COALESCE($6, is_active),
+            updated_at    = NOW()
       WHERE id = $1
       RETURNING ${PUBLIC_USER_FIELDS}`,
-    [id, input.role ?? null, input.isActive ?? null],
+    [
+      id,
+      input.fullName ?? null,
+      input.email ?? null,
+      input.passwordHash ?? null,
+      input.role ?? null,
+      input.isActive ?? null,
+    ],
   )
   return result.rows[0] ?? null
 }

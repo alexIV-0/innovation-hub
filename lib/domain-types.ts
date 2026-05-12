@@ -31,6 +31,9 @@ export type IdeaRecord = {
   id: string
   title: string
   description: string
+  thumbnail: string
+  videoUrl: string
+  duration: string
   category: string
   isPublished: boolean
   sortOrder: number

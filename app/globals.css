@@ -136,4 +136,28 @@
   .divider-line {
     @apply h-px w-full bg-gradient-to-r from-transparent via-border to-transparent;
   }
+
+  .scrollbar-elegant {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border) / 0.6) transparent;
+  }
+  .scrollbar-elegant::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-elegant::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-elegant::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border) / 0.6);
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  .scrollbar-elegant::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.55);
+  }
+  .scrollbar-elegant::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }

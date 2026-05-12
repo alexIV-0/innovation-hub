@@ -37,5 +37,13 @@ CREATE TABLE IF NOT EXISTS ideas (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Idempotent migration: ideas grew media fields so the admin uses one unified
+-- "content" form for both kinds. Defaults are empty strings to keep existing
+-- rows valid and the public renderer (which still ignores these for ideas)
+-- unaffected.
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS thumbnail TEXT NOT NULL DEFAULT '';
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS video_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE ideas ADD COLUMN IF NOT EXISTS duration  TEXT NOT NULL DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS ideas_published_sort_idx
   ON ideas (is_published, sort_order, created_at);

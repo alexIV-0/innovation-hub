@@ -37,7 +37,22 @@ export function AdminIdeaCard({
   onDelete,
 }: Props) {
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-5 transition-all hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5">
+    <div
+      className="group relative flex flex-col overflow-hidden rounded-2xl border border-border bg-card p-5 transition-all hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 cursor-pointer"
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        const target = event.target as HTMLElement
+        if (target.closest("[data-no-edit]")) return
+        onEdit()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onEdit()
+        }
+      }}
+    >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Lightbulb className="h-5 w-5" />
@@ -54,6 +69,7 @@ export function AdminIdeaCard({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
+                data-no-edit
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"

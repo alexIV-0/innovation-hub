@@ -12,7 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { LogIn, LogOut, User } from "lucide-react"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { LogIn, LogOut, Menu, User } from "lucide-react"
 import type { UserRole } from "@/lib/domain-types"
 
 type SessionUser = {
@@ -120,27 +121,28 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/70 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 lg:px-10">
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-              <span className="font-display text-lg font-bold text-primary-foreground">IH</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/15">
+              <span className="font-display text-sm font-bold text-primary">IH</span>
             </div>
+            <span className="font-display text-sm tracking-[0.08em] text-foreground/90">Innovation Hub</span>
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">
-            <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
+            <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
               <Link href="/about">About</Link>
             </Button>
-            <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
-              <Link href="/">Project</Link>
+            <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
+              <Link href="/#showcase">Showcase</Link>
             </Button>
-            <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
+            <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
               <Link href="/contact">Contact</Link>
             </Button>
             {user?.role === "ADMIN" ? (
-              <Button variant="ghost" className="text-muted-foreground hover:text-foreground" asChild>
+              <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
                 <Link href="/admin">Admin</Link>
               </Button>
             ) : null}
@@ -148,6 +150,37 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full md:hidden" aria-label="Open menu">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="border-border/70 bg-surface-1/95 backdrop-blur-xl">
+              <SheetHeader>
+                <SheetTitle className="font-display text-2xl text-foreground">Navigation</SheetTitle>
+              </SheetHeader>
+              <div className="mt-8 grid gap-2">
+                <Button variant="ghost" className="justify-start rounded-full" asChild>
+                  <Link href="/">Home</Link>
+                </Button>
+                <Button variant="ghost" className="justify-start rounded-full" asChild>
+                  <Link href="/about">About</Link>
+                </Button>
+                <Button variant="ghost" className="justify-start rounded-full" asChild>
+                  <Link href="/#showcase">Showcase</Link>
+                </Button>
+                <Button variant="ghost" className="justify-start rounded-full" asChild>
+                  <Link href="/contact">Contact</Link>
+                </Button>
+                <div className="mt-4">
+                  <Button className="w-full rounded-full" asChild>
+                    <Link href="/register">Get Early Access</Link>
+                  </Button>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
           {user === undefined ? (
             <div className="h-10 w-[7.5rem] animate-pulse rounded-md bg-muted/60" aria-hidden />
           ) : user ? (
@@ -157,18 +190,19 @@ export function Header() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-muted-foreground hover:text-foreground"
+                className="hidden rounded-full text-muted-foreground hover:text-foreground sm:inline-flex"
                 asChild
               >
                 <Link href="/login">
                   <LogIn className="mr-2 h-4 w-4" />
-                  <span className="hidden sm:inline">Sign In</span>
+                  <span>Sign In</span>
                 </Link>
               </Button>
-              <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>
+              <Button size="sm" className="rounded-full bg-primary text-primary-foreground shadow-glow-soft hover:bg-primary/90" asChild>
                 <Link href="/register">
                   <User className="mr-2 h-4 w-4" />
-                  <span className="hidden sm:inline">Register</span>
+                  <span className="hidden sm:inline">Get Access</span>
+                  <span className="sm:hidden">Join</span>
                 </Link>
               </Button>
             </>

@@ -183,7 +183,47 @@ type Props = {
   helperText?: string
   value: string
   onChange: (publicUrl: string) => void
+  onVideoDurationDetected?: (duration: string) => void
   className?: string
+}
+
+function formatDurationLabel(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }
+  return `${minutes}:${secs.toString().padStart(2, "0")}`
+}
+
+async function readVideoDuration(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const previewUrl = URL.createObjectURL(file)
+    const video = document.createElement("video")
+    video.preload = "metadata"
+    video.src = previewUrl
+    video.muted = true
+    video.playsInline = true
+
+    const cleanup = () => {
+      URL.revokeObjectURL(previewUrl)
+      video.removeAttribute("src")
+      video.load()
+    }
+
+    video.onloadedmetadata = () => {
+      const duration = Number.isFinite(video.duration) ? video.duration : 0
+      cleanup()
+      resolve(duration > 0 ? formatDurationLabel(duration) : null)
+    }
+    video.onerror = () => {
+      cleanup()
+      resolve(null)
+    }
+  })
 }
 
 export function AdminMediaDropzone({
@@ -192,6 +232,7 @@ export function AdminMediaDropzone({
   helperText,
   value,
   onChange,
+  onVideoDurationDetected,
   className,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -240,6 +281,14 @@ export function AdminMediaDropzone({
         if (prev) URL.revokeObjectURL(prev)
         return previewUrl
       })
+
+      if (kind === "video" && onVideoDurationDetected) {
+        const durationLabel = await readVideoDuration(file)
+        if (durationLabel) {
+          onVideoDurationDetected(durationLabel)
+        }
+      }
+
       setIsUploading(true)
       setProgress({ loaded: 0, total: file.size })
 
@@ -305,7 +354,7 @@ export function AdminMediaDropzone({
         setProgress(null)
       }
     },
-    [kind, onChange],
+    [kind, onChange, onVideoDurationDetected],
   )
 
   const handlePick = useCallback(() => {

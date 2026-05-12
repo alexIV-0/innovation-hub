@@ -18,7 +18,20 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
   const [duration, setDuration] = useState("0:00")
   const [showControls, setShowControls] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [aspectRatio, setAspectRatio] = useState<number | null>(null)
   const hideTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const maxPlayerHeight = "72vh"
+  const playerStyle = aspectRatio
+    ? {
+        aspectRatio: `${aspectRatio}`,
+        maxHeight: maxPlayerHeight,
+        width: `min(100%, calc(${maxPlayerHeight} * ${aspectRatio}))`,
+      }
+    : {
+        aspectRatio: "16 / 9",
+        maxHeight: maxPlayerHeight,
+        width: "100%",
+      }
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -78,6 +91,9 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
     }
     const onLoadedMetadata = () => {
       setDuration(formatTime(video.duration))
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        setAspectRatio(video.videoWidth / video.videoHeight)
+      }
     }
     const onEnded = () => {
       setIsPlaying(false)
@@ -104,7 +120,8 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
   return (
     <div
       ref={containerRef}
-      className="group relative aspect-video w-full overflow-hidden rounded-lg bg-card"
+      className="group relative mx-auto w-full overflow-hidden rounded-lg bg-card"
+      style={playerStyle}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
         if (isPlaying) setShowControls(false)
@@ -114,7 +131,7 @@ export function VideoPlayer({ src, poster }: VideoPlayerProps) {
         ref={videoRef}
         src={src}
         poster={poster}
-        className="h-full w-full object-cover cursor-pointer"
+        className="h-full w-full object-contain cursor-pointer"
         onClick={togglePlay}
         playsInline
       />

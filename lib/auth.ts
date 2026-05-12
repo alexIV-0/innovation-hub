@@ -11,17 +11,25 @@ type SessionPayload = {
   email: string
 }
 
+let cachedSecret: Uint8Array | null = null
+let cachedSecretSource: string | null = null
+
 function getJwtSecret() {
-  const secret = process.env.SESSION_SECRET
-  if (secret) {
-    return new TextEncoder().encode(secret)
+  const secret =
+    process.env.SESSION_SECRET ??
+    (process.env.NODE_ENV !== "production" ? "dev-session-secret-change-me" : null)
+
+  if (!secret) {
+    throw new Error("SESSION_SECRET is not configured")
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    return new TextEncoder().encode("dev-session-secret-change-me")
+  // Cache the encoded secret so we don't re-encode on every JWT op, but
+  // invalidate the cache if the env var changes between calls (HMR/tests).
+  if (!cachedSecret || cachedSecretSource !== secret) {
+    cachedSecret = new TextEncoder().encode(secret)
+    cachedSecretSource = secret
   }
-
-  throw new Error("SESSION_SECRET is not configured")
+  return cachedSecret
 }
 
 export async function hashPassword(password: string) {

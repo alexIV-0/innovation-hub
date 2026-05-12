@@ -19,13 +19,16 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function VideoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const video = await findPublishedVideoById(id)
+  // listRelatedPublishedVideos already excludes `id`, so kicking it off in
+  // parallel with the lookup is safe and saves a DB round-trip.
+  const [video, relatedVideos] = await Promise.all([
+    findPublishedVideoById(id),
+    listRelatedPublishedVideos(id, 3),
+  ])
 
   if (!video) {
     notFound()
   }
-
-  const relatedVideos = await listRelatedPublishedVideos(video.id, 3)
 
   return <VideoDetailClient video={video} relatedVideos={relatedVideos} />
 }

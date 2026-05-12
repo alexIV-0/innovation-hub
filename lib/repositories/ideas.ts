@@ -38,15 +38,15 @@ export async function createIdea(input: {
   isPublished: boolean
 }): Promise<IdeaRecord> {
   const id = randomUUID()
-  const max = await query<{ max: number | null }>(
-    `SELECT MAX(sort_order) AS max FROM ideas`,
-  )
-  const nextSortOrder = (max.rows[0]?.max ?? 0) + 10
-
+  // Atomic: compute the next sort_order inline so concurrent inserts can't
+  // collide on MAX() reads (see videos repo for the same pattern).
   const result = await query<IdeaRecord>(
     `INSERT INTO ideas (
         id, title, description, category, is_published, sort_order
-     ) VALUES ($1,$2,$3,$4,$5,$6)
+     ) VALUES (
+        $1, $2, $3, $4, $5,
+        (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM ideas)
+     )
      RETURNING ${IDEA_FIELDS}`,
     [
       id,
@@ -54,7 +54,6 @@ export async function createIdea(input: {
       input.description,
       input.category,
       input.isPublished,
-      nextSortOrder,
     ],
   )
   return result.rows[0]

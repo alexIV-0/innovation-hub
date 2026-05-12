@@ -80,16 +80,16 @@ export async function createVideo(input: {
   isPublished: boolean
 }): Promise<VideoRecord> {
   const id = randomUUID()
-  const max = await query<{ max: number | null }>(
-    `SELECT MAX(sort_order) AS max FROM videos`,
-  )
-  const nextSortOrder = (max.rows[0]?.max ?? 0) + 10
-
+  // Compute next sort_order in the same statement so two concurrent inserts
+  // can never read the same MAX() and collide on the resulting value.
   const result = await query<VideoRecord>(
     `INSERT INTO videos (
         id, title, description, thumbnail, video_url, duration, category,
         is_published, sort_order
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM videos)
+     )
      RETURNING ${VIDEO_FIELDS}`,
     [
       id,
@@ -100,7 +100,6 @@ export async function createVideo(input: {
       input.duration,
       input.category,
       input.isPublished,
-      nextSortOrder,
     ],
   )
   return mapMediaUrls(result.rows[0])

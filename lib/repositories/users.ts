@@ -46,6 +46,25 @@ export async function listUsers(): Promise<UserRecord[]> {
   return result.rows
 }
 
+/** Counts active admins, optionally excluding a given user id. */
+export async function countActiveAdmins(excludeUserId?: string): Promise<number> {
+  if (excludeUserId) {
+    const result = await query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count
+         FROM users
+        WHERE role = 'ADMIN' AND is_active = TRUE AND id <> $1`,
+      [excludeUserId],
+    )
+    return result.rows[0]?.count ?? 0
+  }
+  const result = await query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count
+       FROM users
+      WHERE role = 'ADMIN' AND is_active = TRUE`,
+  )
+  return result.rows[0]?.count ?? 0
+}
+
 export async function createUser(input: {
   fullName: string
   email: string

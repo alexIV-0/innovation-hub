@@ -2,6 +2,7 @@
 
 import {
   MoreHorizontal,
+  Pencil,
   ShieldCheck,
   ShieldOff,
   Trash2,
@@ -23,6 +24,7 @@ import type { AdminUser } from "./admin-types"
 type Props = {
   user: AdminUser
   isCurrent: boolean
+  onEdit: () => void
   onToggleRole: () => void
   onToggleActive: () => void
   onDelete: () => void
@@ -50,12 +52,28 @@ function formatDate(value: string) {
 export function AdminUserRow({
   user,
   isCurrent,
+  onEdit,
   onToggleRole,
   onToggleActive,
   onDelete,
 }: Props) {
   return (
-    <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:bg-card/70">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        const target = event.target as HTMLElement
+        if (target.closest("[data-no-edit]")) return
+        onEdit()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onEdit()
+        }
+      }}
+      className="flex cursor-pointer items-center gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-card/70"
+    >
       <Avatar className="h-10 w-10 border border-border/60">
         <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
           {avatarLetter(user.fullName || user.email)}
@@ -105,6 +123,7 @@ export function AdminUserRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
+            data-no-edit
             size="icon"
             variant="ghost"
             className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
@@ -114,6 +133,11 @@ export function AdminUserRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="h-4 w-4" />
+            Edit profile
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={onToggleRole}
             disabled={isCurrent && user.role === "ADMIN"}

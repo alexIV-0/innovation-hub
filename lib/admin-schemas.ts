@@ -38,10 +38,32 @@ export const videoCreateSchema = z.object({
 
 export const videoUpdateSchema = videoCreateSchema.partial()
 
+/** Same shape as `mediaUrlSchema` but allows the empty string. Used for ideas
+ * where media is optional — we still want to validate non-empty values. */
+const optionalMediaUrlSchema = z
+  .string()
+  .refine(
+    (value) => {
+      if (value === "") return true
+      const trimmed = value.trim()
+      if (trimmed.startsWith("/api/media/")) return true
+      try {
+        const parsed = new URL(trimmed)
+        return parsed.protocol === "http:" || parsed.protocol === "https:"
+      } catch {
+        return false
+      }
+    },
+    "Must be empty, an http(s) URL or an /api/media/... path.",
+  )
+
 export const ideaCreateSchema = z.object({
   title: z.string().min(2),
-  description: z.string().min(10),
-  category: z.string().min(2),
+  description: z.string().min(1),
+  thumbnail: optionalMediaUrlSchema.default(""),
+  videoUrl: optionalMediaUrlSchema.default(""),
+  duration: z.string().default(""),
+  category: z.string().min(1),
   isPublished: z.boolean().default(true),
 })
 
@@ -52,7 +74,23 @@ export const reorderSchema = z.object({
   direction: z.enum(["up", "down"]),
 })
 
+export const userCreateSchema = z.object({
+  fullName: z.string().min(2, "Full name must be at least 2 characters.").max(120),
+  email: z.string().email("Enter a valid email address.").max(254),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters.")
+    .max(72, "Password must be at most 72 characters."),
+  role: z.enum(["USER", "ADMIN"]).default("USER"),
+  isActive: z.boolean().default(true),
+})
+
+/** Update lets admins rename, change email, optionally rotate the password,
+ * promote/demote, and toggle active. Empty/omitted password = keep existing. */
 export const userUpdateSchema = z.object({
+  fullName: z.string().min(2).max(120).optional(),
+  email: z.string().email().max(254).optional(),
+  password: z.string().min(8).max(72).optional(),
   role: z.enum(["USER", "ADMIN"]).optional(),
   isActive: z.boolean().optional(),
 })

@@ -156,12 +156,16 @@ async function seedIdeas() {
   for (const i of sampleIdeas) {
     await client.query(
       `INSERT INTO ideas (
-          id, title, description, category, is_published, sort_order
-       ) VALUES ($1,$2,$3,$4,$5,$6)`,
+          id, title, description, thumbnail, video_url, duration, category,
+          is_published, sort_order
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
         randomUUID(),
         i.title,
         i.description,
+        "",
+        "",
+        "",
         i.category,
         true,
         i.sortOrder,

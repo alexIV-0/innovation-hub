@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { userUpdateSchema } from "@/lib/admin-schemas"
+import { hashPassword } from "@/lib/auth"
 import {
   countActiveAdmins,
   deleteUser,
+  findUserByEmail,
   findUserById,
   updateUser,
 } from "@/lib/repositories/users"
@@ -57,12 +59,56 @@ export async function PATCH(
     }
   }
 
-  const user = await updateUser(id, parsed.data)
-  if (!user) {
-    return NextResponse.json({ message: "User not found." }, { status: 404 })
+  // Email change: lowercase, ensure no other account already uses it.
+  let nextEmail: string | undefined
+  if (parsed.data.email !== undefined) {
+    nextEmail = parsed.data.email.toLowerCase()
+    const conflict = await findUserByEmail(nextEmail)
+    if (conflict && conflict.id !== id) {
+      return NextResponse.json(
+        { message: "Another account already uses this email." },
+        { status: 409 },
+      )
+    }
   }
 
-  return NextResponse.json(user)
+  // Password rotation: only hash when a non-empty value is provided.
+  let nextPasswordHash: string | undefined
+  if (parsed.data.password !== undefined && parsed.data.password.length > 0) {
+    nextPasswordHash = await hashPassword(parsed.data.password)
+  }
+
+  try {
+    const user = await updateUser(id, {
+      fullName: parsed.data.fullName,
+      email: nextEmail,
+      passwordHash: nextPasswordHash,
+      role: parsed.data.role,
+      isActive: parsed.data.isActive,
+    })
+
+    if (!user) {
+      return NextResponse.json({ message: "User not found." }, { status: 404 })
+    }
+
+    return NextResponse.json(user)
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: string }).code === "23505"
+    ) {
+      return NextResponse.json(
+        { message: "Another account already uses this email." },
+        { status: 409 },
+      )
+    }
+    return NextResponse.json(
+      { message: "Could not update user." },
+      { status: 500 },
+    )
+  }
 }
 
 export async function DELETE(

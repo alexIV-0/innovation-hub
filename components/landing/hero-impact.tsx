@@ -30,7 +30,7 @@ export function HeroImpact({
       <div className="absolute bottom-10 right-[8%] -z-10 h-56 w-56 animate-float rounded-full bg-indigo-500/20 blur-3xl" />
 
       <div className="section-shell py-16 md:py-20 lg:py-24">
-        <motion.div
+        {/* <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -77,7 +77,7 @@ export function HeroImpact({
               </div>
             ))}
           </div>
-        </motion.div>
+        </motion.div> */}
 
         <motion.div
           initial={{ opacity: 0, y: 18 }}

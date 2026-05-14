@@ -57,10 +57,10 @@ export default async function Home() {
           ideaCount={ideas.length}
           totalMinutes={totalMinutes}
         />
-        <CapabilitiesSection />
+        {/* <CapabilitiesSection /> */}
         <InteractiveShowcaseSection videos={videos} ideas={ideas} />
-        <ConversionCTASection />
-        <FinalEmotionalCTASection />
+        {/* <ConversionCTASection />
+        <FinalEmotionalCTASection /> */}
       </main>
       <FooterSection />
     </div>

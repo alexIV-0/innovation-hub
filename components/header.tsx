@@ -13,12 +13,46 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { LogIn, LogOut, Menu, User } from "lucide-react"
+import { ChevronDown, LogIn, LogOut, Menu, User } from "lucide-react"
 import type { UserRole } from "@/lib/domain-types"
 
 type SessionUser = {
   email: string
   role: UserRole
+}
+
+const TOOL_LINKS = [
+  { label: "Coverly", href: "https://coverly.pro" },
+  { label: "Video Parser", href: "https://ai-video-parse-frontend-yglmi.ondigitalocean.app/" },
+  { label: "Translate", href: "https://ai-video-parse-frontend-yglmi.ondigitalocean.app/translate" },
+  { label: "Re-Voice", href: "https://ai-video-parse-frontend-yglmi.ondigitalocean.app/revoice" },
+  { label: "Text Editor", href: "https://ai-video-parse-frontend-yglmi.ondigitalocean.app/editor" },
+] as const
+
+function ToolsMenu() {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          className="rounded-full text-muted-foreground hover:text-foreground"
+          type="button"
+        >
+          Tools
+          <ChevronDown className="ml-1 h-4 w-4 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        {TOOL_LINKS.map((tool) => (
+          <DropdownMenuItem key={tool.href} asChild>
+            <a href={tool.href} target="_blank" rel="noopener noreferrer">
+              {tool.label}
+            </a>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 function splitEmail(email: string) {
@@ -141,6 +175,7 @@ export function Header() {
             <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
               <Link href="/contact">Contact</Link>
             </Button>
+            <ToolsMenu />
             {user?.role === "ADMIN" ? (
               <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
                 <Link href="/admin">Admin</Link>
@@ -173,6 +208,14 @@ export function Header() {
                 <Button variant="ghost" className="justify-start rounded-full" asChild>
                   <Link href="/contact">Contact</Link>
                 </Button>
+                <p className="mt-4 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Tools</p>
+                {TOOL_LINKS.map((tool) => (
+                  <Button key={tool.href} variant="ghost" className="justify-start rounded-full" asChild>
+                    <a href={tool.href} target="_blank" rel="noopener noreferrer">
+                      {tool.label}
+                    </a>
+                  </Button>
+                ))}
                 <div className="mt-4">
                   <Button className="w-full rounded-full" asChild>
                     <Link href="/register">Get Early Access</Link>

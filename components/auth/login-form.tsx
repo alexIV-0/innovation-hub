@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 
-export function LoginForm() {
+export function LoginForm({ redirectTo = "/" }: { redirectTo?: string }) {
   const [serverMessage, setServerMessage] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -46,7 +46,11 @@ export function LoginForm() {
 
       setServerMessage(data.message ?? "Signed in successfully.")
       form.reset({ email: values.email, password: "" })
-      window.location.assign("/")
+      const target =
+        redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+          ? redirectTo
+          : "/"
+      window.location.assign(target)
     } catch {
       setServerError("Unable to reach the server. Please try again.")
     }

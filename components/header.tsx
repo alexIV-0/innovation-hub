@@ -179,6 +179,9 @@ export function Header() {
               <Link href="/#showcase">Showcase</Link>
             </Button>
             <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
+              <Link href="/#feature-suggestion">Suggest</Link>
+            </Button>
+            <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
               <Link href="/contact">Contact</Link>
             </Button>
             <ToolsMenu />
@@ -210,6 +213,9 @@ export function Header() {
                 </Button>
                 <Button variant="ghost" className="justify-start rounded-full" asChild>
                   <Link href="/#showcase">Showcase</Link>
+                </Button>
+                <Button variant="ghost" className="justify-start rounded-full" asChild>
+                  <Link href="/#feature-suggestion">Suggest a feature</Link>
                 </Button>
                 <Button variant="ghost" className="justify-start rounded-full" asChild>
                   <Link href="/contact">Contact</Link>

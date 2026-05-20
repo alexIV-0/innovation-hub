@@ -6,6 +6,7 @@ import { CapabilitiesSection } from "@/components/landing/capabilities"
 import { InteractiveShowcaseSection } from "@/components/landing/interactive-showcase"
 import { ConversionCTASection } from "@/components/landing/conversion-cta"
 import { FinalEmotionalCTASection } from "@/components/landing/final-emotional-cta"
+import { FeatureSuggestionSection } from "@/components/landing/feature-suggestion-section"
 
 export const dynamic = "force-dynamic"
 
@@ -59,6 +60,7 @@ export default async function Home() {
         />
         {/* <CapabilitiesSection /> */}
         <InteractiveShowcaseSection videos={videos} ideas={ideas} />
+        <FeatureSuggestionSection />
         {/* <ConversionCTASection />
         <FinalEmotionalCTASection /> */}
       </main>

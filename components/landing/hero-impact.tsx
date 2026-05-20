@@ -80,10 +80,32 @@ export function HeroImpact({
         </motion.div> */}
 
         <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-wrap items-center justify-center gap-3"
+        >
+          <Button size="lg" className="h-11 rounded-full px-6 shadow-glow" asChild>
+            <Link href="#showcase">
+              Explore Platform
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+          <Button
+            size="lg"
+            variant="secondary"
+            className="h-11 rounded-full border border-border/80 bg-surface-2/90 px-6"
+            asChild
+          >
+            <Link href="#feature-suggestion">Suggest a feature</Link>
+          </Button>
+        </motion.div>
+
+        <motion.div
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.75, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-12"
+          className="mt-8"
         >
           <div className="premium-card relative overflow-hidden rounded-[34px]">
             <div className="absolute inset-0 z-10 bg-gradient-to-b from-background/10 via-transparent to-background/40" />

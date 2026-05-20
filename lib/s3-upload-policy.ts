@@ -33,7 +33,10 @@ export function resolveUploadContentType(file: {
 
 export function safeBaseFileName(fileName: string): string {
   const base = fileName.split(/[/\\]/).pop() ?? "file"
-  const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "_")
+  const cleaned = base
+    .replace(/[^\p{L}\p{N}._-]/gu, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
   return cleaned.slice(0, 180) || "file"
 }
 

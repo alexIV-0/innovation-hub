@@ -136,6 +136,16 @@ function resolveSsl(): PoolConfig["ssl"] | undefined {
 
 const config = readEnvConnectionConfig()
 
+function isLocalPgHost(host: string): boolean {
+  const h = host.trim().toLowerCase()
+  return h === "localhost" || h === "127.0.0.1" || h === "::1"
+}
+
+/** Remote managed Postgres (e.g. Timeweb twc1.net) often needs >8s to connect from dev machines. */
+function defaultConnectionTimeoutMs(host: string): number {
+  return isLocalPgHost(host) ? 8_000 : 30_000
+}
+
 const globalForPg = globalThis as unknown as { pgPool?: Pool }
 
 /**
@@ -157,7 +167,9 @@ export const pool: Pool =
     ...config,
     max: readPositiveInt("PG_POOL_MAX", 3),
     idleTimeoutMillis: readPositiveInt("PG_POOL_IDLE_MS", 10_000),
-    connectionTimeoutMillis: readPositiveInt("PG_POOL_CONN_MS", 8_000),
+    connectionTimeoutMillis: process.env.PG_POOL_CONN_MS
+      ? readPositiveInt("PG_POOL_CONN_MS", 8_000)
+      : defaultConnectionTimeoutMs(config.host),
     ssl: resolveSsl(),
   })
 

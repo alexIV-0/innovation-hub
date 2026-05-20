@@ -14,6 +14,43 @@ export async function getCurrentUser() {
   return findUserById(session.userId)
 }
 
+export type AuthenticatedApiUser = {
+  userId: string
+  email: string
+  role: import("@/lib/domain-types").UserRole
+}
+
+/** Any signed-in active user (not admin-only). */
+export async function requireUserApi(
+  request: NextRequest,
+): Promise<AuthenticatedApiUser | NextResponse> {
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value
+  if (!token) {
+    return NextResponse.json(
+      { message: "Sign in to submit a suggestion." },
+      { status: 401 },
+    )
+  }
+
+  const session = await verifySessionToken(token)
+  if (!session?.userId) {
+    return NextResponse.json(
+      { message: "Sign in to submit a suggestion." },
+      { status: 401 },
+    )
+  }
+
+  const user = await findUserById(session.userId)
+  if (!user || !user.isActive) {
+    return NextResponse.json(
+      { message: "Account is inactive." },
+      { status: 403 },
+    )
+  }
+
+  return { userId: user.id, email: user.email, role: user.role }
+}
+
 export async function requireAdminApi(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value
   if (!token) {

@@ -1,0 +1,59 @@
+import { NextResponse } from "next/server"
+import { changePasswordSchema } from "@/lib/account-schemas"
+import { hashPassword, verifyPassword } from "@/lib/auth"
+import { getCurrentUser } from "@/lib/admin-auth"
+import { findUserByEmail, updateUser } from "@/lib/repositories/users"
+
+export async function POST(request: Request) {
+  const current = await getCurrentUser()
+  if (!current) {
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 })
+  }
+  if (!current.isActive) {
+    return NextResponse.json(
+      { message: "Account is inactive." },
+      { status: 403 },
+    )
+  }
+
+  const payload = await request.json().catch(() => null)
+  const parsed = changePasswordSchema.safeParse(payload)
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        message: "Invalid password change request.",
+        errors: parsed.error.flatten(),
+      },
+      { status: 400 },
+    )
+  }
+
+  // We need the stored password_hash to verify the current password — the
+  // session/public lookup intentionally strips it, so reload by email.
+  const full = await findUserByEmail(current.email)
+  if (!full) {
+    return NextResponse.json(
+      { message: "Account no longer exists." },
+      { status: 404 },
+    )
+  }
+
+  const matches = await verifyPassword(parsed.data.currentPassword, full.passwordHash)
+  if (!matches) {
+    return NextResponse.json(
+      { message: "Current password is incorrect." },
+      { status: 400 },
+    )
+  }
+
+  const passwordHash = await hashPassword(parsed.data.newPassword)
+  const updated = await updateUser(current.id, { passwordHash })
+  if (!updated) {
+    return NextResponse.json(
+      { message: "Unable to update your password right now." },
+      { status: 500 },
+    )
+  }
+
+  return NextResponse.json({ message: "Password updated." })
+}

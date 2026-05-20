@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { ChevronDown, LogIn, LogOut, Menu, User } from "lucide-react"
+import { ChevronDown, LogIn, LogOut, Menu, Settings, User } from "lucide-react"
 import type { UserRole } from "@/lib/domain-types"
 
 type SessionUser = {
@@ -104,6 +104,12 @@ function UserMenu({ user, onSignOut }: { user: SessionUser; onSignOut: () => voi
           )}
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/account">
+            <Settings className="h-4 w-4" />
+            Account settings
+          </Link>
+        </DropdownMenuItem>
         {user.role === "ADMIN" ? (
           <DropdownMenuItem asChild>
             <Link href="/admin">Admin dashboard</Link>

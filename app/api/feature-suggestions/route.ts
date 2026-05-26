@@ -60,7 +60,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Invalid submission." }, { status: 400 })
   }
 
-  const { name, email, automation, attachments } = parsed.data
+  const {
+    name,
+    email,
+    projectName,
+    referenceUrl,
+    monthlyVolume,
+    description,
+    automation,
+    attachments,
+  } = parsed.data
 
   let attachmentsForAsana: FeatureSuggestionAttachment[]
   try {
@@ -81,6 +90,10 @@ export async function POST(request: NextRequest) {
   const notes = buildFeatureSuggestionNotes({
     name,
     email,
+    projectName,
+    referenceUrl,
+    monthlyVolume,
+    description,
     automation,
     attachments: attachmentsForAsana,
   })

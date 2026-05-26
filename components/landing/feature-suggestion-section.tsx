@@ -28,7 +28,10 @@ export async function FeatureSuggestionSection() {
             description="Tell us what automation would help your team. We review every submission and track it in our product backlog."
           />
           {user?.isActive ? (
-            <FeatureSuggestionForm />
+            <FeatureSuggestionForm
+              initialName={user.fullName}
+              initialEmail={user.email}
+            />
           ) : (
             <FeatureSuggestionAuthPrompt
               variant={user && !user.isActive ? "inactive" : "sign-in"}

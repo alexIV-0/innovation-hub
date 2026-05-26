@@ -153,7 +153,7 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         thumbnail: draft.thumbnail,
         videoUrl: draft.videoUrl,
         duration: draft.duration,
-        category: draft.category,
+        tags: draft.tags,
       }
 
       // Type conversion: kind changed during edit → create record in the new

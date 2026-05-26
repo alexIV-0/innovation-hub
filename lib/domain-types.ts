@@ -20,6 +20,8 @@ export type VideoRecord = {
   thumbnail: string
   videoUrl: string
   duration: string
+  tags: string[]
+  /** @deprecated Use tags[0]; kept for transitional reads */
   category: string
   isPublished: boolean
   sortOrder: number
@@ -34,9 +36,19 @@ export type IdeaRecord = {
   thumbnail: string
   videoUrl: string
   duration: string
+  tags: string[]
+  /** @deprecated Use tags[0]; kept for transitional reads */
   category: string
   isPublished: boolean
   sortOrder: number
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type TagSuggestionRecord = {
+  fieldScope: string
+  value: string
+  usageCount: number
   createdAt: Date
   updatedAt: Date
 }

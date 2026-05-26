@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { TagCombobox } from "@/components/ui/tag-combobox"
 import { AdminMediaDropzone } from "./admin-media-dropzone"
 import {
   emptyContentDraft,
@@ -65,7 +66,12 @@ export function AdminContentDialog({
         thumbnail: initialItem.data.thumbnail ?? "",
         videoUrl: initialItem.data.videoUrl ?? "",
         duration: initialItem.data.duration ?? "",
-        category: initialItem.data.category,
+        tags:
+          initialItem.data.tags?.length > 0
+            ? initialItem.data.tags
+            : initialItem.data.category
+              ? [initialItem.data.category]
+              : [],
       })
     } else {
       setDraft({ ...emptyContentDraft, kind: initialKind ?? "video" })
@@ -90,8 +96,8 @@ export function AdminContentDialog({
       toast.error("Please add a title.")
       return
     }
-    if (!draft.category.trim()) {
-      toast.error("Please add a category.")
+    if (draft.tags.length === 0) {
+      toast.error("Please add at least one tag.")
       return
     }
     if (draft.kind === "video") {
@@ -226,15 +232,13 @@ export function AdminContentDialog({
               }
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="content-category">Category</Label>
-            <Input
-              id="content-category"
-              placeholder="Design, Technology, …"
-              value={draft.category}
-              onChange={(event) =>
-                setDraft((prev) => ({ ...prev, category: event.target.value }))
-              }
+          <div className="space-y-1.5 md:col-span-2">
+            <Label htmlFor="content-tags">Tags</Label>
+            <TagCombobox
+              scope={draft.kind === "video" ? "videos.tags" : "ideas.tags"}
+              value={draft.tags}
+              onChange={(tags) => setDraft((prev) => ({ ...prev, tags }))}
+              placeholder="Select or type tags…"
             />
           </div>
           <div className="space-y-1.5">

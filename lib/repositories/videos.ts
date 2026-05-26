@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { query, withTransaction } from "@/lib/db"
 import type { VideoRecord } from "@/lib/domain-types"
+import { normalizeTags, primaryTag } from "@/lib/tags"
 import { normalizeMediaDisplayUrl } from "@/lib/s3-config"
 
 const VIDEO_FIELDS = `
@@ -10,6 +11,7 @@ const VIDEO_FIELDS = `
   thumbnail,
   video_url AS "videoUrl",
   duration,
+  tags,
   category,
   is_published AS "isPublished",
   sort_order AS "sortOrder",
@@ -17,49 +19,178 @@ const VIDEO_FIELDS = `
   updated_at AS "updatedAt"
 `
 
-function mapMediaUrls(video: VideoRecord): VideoRecord {
+type VideoRow = Omit<VideoRecord, "category"> & { category?: string }
+
+function mapVideoRow(video: VideoRow): VideoRecord {
+  const tags =
+    Array.isArray(video.tags) && video.tags.length > 0
+      ? normalizeTags(video.tags)
+      : video.category
+        ? normalizeTags([video.category])
+        : []
   return {
     ...video,
+    tags,
+    category: primaryTag(tags) || video.category || "",
     thumbnail: normalizeMediaDisplayUrl(video.thumbnail),
     videoUrl: normalizeMediaDisplayUrl(video.videoUrl),
   }
 }
 
+export type VideoListCursor = {
+  sortOrder: number
+  createdAt: string
+  id: string
+}
+
+export type PaginatedVideosResult = {
+  items: VideoRecord[]
+  nextCursor: string | null
+}
+
+function encodeCursor(cursor: VideoListCursor): string {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url")
+}
+
+export function decodeVideoCursor(raw: string | null | undefined): VideoListCursor | null {
+  if (!raw?.trim()) return null
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(raw, "base64url").toString("utf8"),
+    ) as VideoListCursor
+    if (
+      typeof parsed.sortOrder === "number" &&
+      typeof parsed.createdAt === "string" &&
+      typeof parsed.id === "string"
+    ) {
+      return parsed
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 export async function listVideos(): Promise<VideoRecord[]> {
-  const result = await query<VideoRecord>(
+  const result = await query<VideoRow>(
     `SELECT ${VIDEO_FIELDS} FROM videos ORDER BY sort_order ASC, created_at ASC`,
   )
-  return result.rows.map(mapMediaUrls)
+  return result.rows.map(mapVideoRow)
 }
 
 export async function listPublishedVideos(): Promise<VideoRecord[]> {
-  const result = await query<VideoRecord>(
+  const result = await query<VideoRow>(
     `SELECT ${VIDEO_FIELDS}
        FROM videos
       WHERE is_published = true
       ORDER BY sort_order ASC, created_at ASC`,
   )
-  return result.rows.map(mapMediaUrls)
+  return result.rows.map(mapVideoRow)
+}
+
+export async function listPublishedVideosPaginated(input: {
+  limit?: number
+  cursor?: VideoListCursor | null
+  tags?: string[]
+  q?: string
+}): Promise<PaginatedVideosResult> {
+  const limit = Math.min(Math.max(input.limit ?? 9, 1), 48)
+  const cursor = input.cursor ?? null
+  const filterTags = input.tags?.length ? normalizeTags(input.tags) : []
+  const search = input.q?.trim().toLowerCase() ?? ""
+
+  const conditions = ["is_published = true"]
+  const params: unknown[] = []
+  let paramIndex = 1
+
+  if (filterTags.length > 0) {
+    conditions.push(`tags && $${paramIndex}::text[]`)
+    params.push(filterTags)
+    paramIndex++
+  }
+
+  if (search) {
+    conditions.push(
+      `(LOWER(title) LIKE $${paramIndex}
+        OR LOWER(description) LIKE $${paramIndex}
+        OR EXISTS (
+          SELECT 1 FROM unnest(tags) AS t WHERE LOWER(t) LIKE $${paramIndex}
+        ))`,
+    )
+    params.push(`%${search}%`)
+    paramIndex++
+  }
+
+  if (cursor) {
+    conditions.push(
+      `(sort_order, created_at, id) > ($${paramIndex}, $${paramIndex + 1}::timestamptz, $${paramIndex + 2})`,
+    )
+    params.push(cursor.sortOrder, cursor.createdAt, cursor.id)
+    paramIndex += 3
+  }
+
+  params.push(limit + 1)
+  const where = conditions.join(" AND ")
+
+  const result = await query<VideoRow>(
+    `SELECT ${VIDEO_FIELDS}
+       FROM videos
+      WHERE ${where}
+      ORDER BY sort_order ASC, created_at ASC, id ASC
+      LIMIT $${paramIndex}`,
+    params,
+  )
+
+  const rows = result.rows.map(mapVideoRow)
+  const hasMore = rows.length > limit
+  const items = hasMore ? rows.slice(0, limit) : rows
+  const last = items[items.length - 1]
+  const nextCursor =
+    hasMore && last
+      ? encodeCursor({
+          sortOrder: last.sortOrder,
+          createdAt: last.createdAt.toISOString(),
+          id: last.id,
+        })
+      : null
+
+  return { items, nextCursor }
+}
+
+export type TagCount = { tag: string; count: number }
+
+export async function listPublishedVideoTagCounts(): Promise<TagCount[]> {
+  const result = await query<{ tag: string; count: string }>(
+    `SELECT t AS tag, COUNT(*)::text AS count
+       FROM videos v, unnest(v.tags) AS t
+      WHERE v.is_published = true AND t <> ''
+      GROUP BY t
+      ORDER BY count DESC, t ASC`,
+  )
+  return result.rows.map((row) => ({
+    tag: row.tag,
+    count: Number.parseInt(row.count, 10) || 0,
+  }))
 }
 
 export async function findPublishedVideoById(
   id: string,
 ): Promise<VideoRecord | null> {
-  const result = await query<VideoRecord>(
+  const result = await query<VideoRow>(
     `SELECT ${VIDEO_FIELDS}
        FROM videos
       WHERE id = $1 AND is_published = true`,
     [id],
   )
   const video = result.rows[0]
-  return video ? mapMediaUrls(video) : null
+  return video ? mapVideoRow(video) : null
 }
 
 export async function listRelatedPublishedVideos(
   excludeId: string,
   limit = 3,
 ): Promise<VideoRecord[]> {
-  const result = await query<VideoRecord>(
+  const result = await query<VideoRow>(
     `SELECT ${VIDEO_FIELDS}
        FROM videos
       WHERE is_published = true AND id <> $1
@@ -67,7 +198,7 @@ export async function listRelatedPublishedVideos(
       LIMIT $2`,
     [excludeId, limit],
   )
-  return result.rows.map(mapMediaUrls)
+  return result.rows.map(mapVideoRow)
 }
 
 export async function createVideo(input: {
@@ -76,18 +207,18 @@ export async function createVideo(input: {
   thumbnail: string
   videoUrl: string
   duration: string
-  category: string
+  tags: string[]
   isPublished: boolean
 }): Promise<VideoRecord> {
   const id = randomUUID()
-  // Compute next sort_order in the same statement so two concurrent inserts
-  // can never read the same MAX() and collide on the resulting value.
-  const result = await query<VideoRecord>(
+  const tags = normalizeTags(input.tags)
+  const category = primaryTag(tags)
+  const result = await query<VideoRow>(
     `INSERT INTO videos (
-        id, title, description, thumbnail, video_url, duration, category,
+        id, title, description, thumbnail, video_url, duration, tags, category,
         is_published, sort_order
      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8,
+        $1, $2, $3, $4, $5, $6, $7, $8, $9,
         (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM videos)
      )
      RETURNING ${VIDEO_FIELDS}`,
@@ -98,11 +229,12 @@ export async function createVideo(input: {
       input.thumbnail,
       input.videoUrl,
       input.duration,
-      input.category,
+      tags,
+      category,
       input.isPublished,
     ],
   )
-  return mapMediaUrls(result.rows[0])
+  return mapVideoRow(result.rows[0])
 }
 
 export async function updateVideo(
@@ -113,19 +245,24 @@ export async function updateVideo(
     thumbnail: string
     videoUrl: string
     duration: string
-    category: string
+    tags: string[]
     isPublished: boolean
   }>,
 ): Promise<VideoRecord | null> {
-  const result = await query<VideoRecord>(
+  const tags =
+    input.tags !== undefined ? normalizeTags(input.tags) : undefined
+  const category = tags !== undefined ? primaryTag(tags) : null
+
+  const result = await query<VideoRow>(
     `UPDATE videos
         SET title        = COALESCE($2, title),
             description  = COALESCE($3, description),
             thumbnail    = COALESCE($4, thumbnail),
             video_url    = COALESCE($5, video_url),
             duration     = COALESCE($6, duration),
-            category     = COALESCE($7, category),
-            is_published = COALESCE($8, is_published),
+            tags         = COALESCE($7, tags),
+            category     = COALESCE($8, category),
+            is_published = COALESCE($9, is_published),
             updated_at   = NOW()
       WHERE id = $1
       RETURNING ${VIDEO_FIELDS}`,
@@ -136,12 +273,13 @@ export async function updateVideo(
       input.thumbnail ?? null,
       input.videoUrl ?? null,
       input.duration ?? null,
-      input.category ?? null,
+      tags ?? null,
+      category,
       input.isPublished ?? null,
     ],
   )
   const video = result.rows[0]
-  return video ? mapMediaUrls(video) : null
+  return video ? mapVideoRow(video) : null
 }
 
 export async function deleteVideo(id: string) {
@@ -179,5 +317,52 @@ export async function reorderVideo(
     )
 
     return "ok"
+  })
+}
+
+export async function reorderVideosBulk(ids: string[]): Promise<VideoRecord[]> {
+  return withTransaction(async (client) => {
+    const publishedRes = await client.query<{ id: string; sort_order: number }>(
+      `SELECT id, sort_order FROM videos
+        WHERE is_published = true
+        ORDER BY sort_order ASC, created_at ASC`,
+    )
+    const published = publishedRes.rows
+    if (ids.length !== published.length) {
+      throw new Error("INVALID_REORDER_LENGTH")
+    }
+
+    const publishedIds = new Set(published.map((row) => row.id))
+    if (!ids.every((id) => publishedIds.has(id))) {
+      throw new Error("INVALID_REORDER_IDS")
+    }
+
+    const draftRes = await client.query<{ id: string; sort_order: number }>(
+      `SELECT id, sort_order FROM videos
+        WHERE is_published = false
+        ORDER BY sort_order ASC, created_at ASC`,
+    )
+    const drafts = draftRes.rows
+
+    let order = 10
+    for (const id of ids) {
+      await client.query(
+        `UPDATE videos SET sort_order = $2, updated_at = NOW() WHERE id = $1`,
+        [id, order],
+      )
+      order += 10
+    }
+    for (const draft of drafts) {
+      await client.query(
+        `UPDATE videos SET sort_order = $2, updated_at = NOW() WHERE id = $1`,
+        [draft.id, order],
+      )
+      order += 10
+    }
+
+    const result = await client.query<VideoRow>(
+      `SELECT ${VIDEO_FIELDS} FROM videos ORDER BY sort_order ASC, created_at ASC`,
+    )
+    return result.rows.map(mapVideoRow)
   })
 }

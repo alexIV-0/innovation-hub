@@ -136,14 +136,17 @@ export function AdminVideoCard({
 
       <div className="flex items-start justify-between gap-2 p-4">
         <div className="min-w-0 flex-1 space-y-1.5">
-          {video.category ? (
-            <Badge
-              variant="outline"
-              className="border-primary/30 bg-primary/10 text-[10px] font-semibold uppercase tracking-wider text-primary"
-            >
-              {video.category}
-            </Badge>
-          ) : null}
+          {(video.tags?.length ? video.tags : video.category ? [video.category] : []).map(
+            (tag) => (
+              <Badge
+                key={tag}
+                variant="outline"
+                className="border-primary/30 bg-primary/10 text-[10px] font-semibold uppercase tracking-wider text-primary"
+              >
+                {tag}
+              </Badge>
+            ),
+          )}
           <h3 className="truncate font-display text-base font-semibold leading-tight text-foreground">
             {video.title}
           </h3>

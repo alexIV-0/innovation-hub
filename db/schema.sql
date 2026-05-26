@@ -47,3 +47,29 @@ ALTER TABLE ideas ADD COLUMN IF NOT EXISTS duration  TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS ideas_published_sort_idx
   ON ideas (is_published, sort_order, created_at);
+
+-- Multi-tag support (replaces single category over time; category kept for transition)
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE ideas  ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}';
+
+UPDATE videos SET tags = ARRAY[category]
+ WHERE tags = '{}' AND category IS NOT NULL AND category <> '';
+
+UPDATE ideas SET tags = ARRAY[category]
+ WHERE tags = '{}' AND category IS NOT NULL AND category <> '';
+
+CREATE INDEX IF NOT EXISTS videos_tags_gin ON videos USING GIN (tags);
+CREATE INDEX IF NOT EXISTS ideas_tags_gin  ON ideas  USING GIN (tags);
+
+-- Remembered values for admin combobox fields (scoped per field)
+CREATE TABLE IF NOT EXISTS tag_suggestions (
+  field_scope  TEXT NOT NULL,
+  value        TEXT NOT NULL,
+  usage_count  INTEGER NOT NULL DEFAULT 1,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (field_scope, value)
+);
+
+CREATE INDEX IF NOT EXISTS tag_suggestions_scope_value_idx
+  ON tag_suggestions (field_scope, lower(value));

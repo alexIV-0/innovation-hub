@@ -1,42 +1,69 @@
 import { Header } from "@/components/header"
 import { FooterSection } from "@/components/footer-section"
+import { AboutShowreel } from "@/components/about-showreel"
+import { Mail, Send } from "lucide-react"
 
-const content = [
-  {
-    title: "What is Innovation HUB?",
-    text: "Innovation HUB is a curated platform for high-quality video content exploring cutting-edge technology, design thinking, and the future of digital innovation. We bring together thought leaders, engineers, and creators from around the world to share ideas that matter.",
-  },
-  {
-    title: "Who is this for?",
-    text: "Whether you are a startup founder, a seasoned engineer, a product designer, or simply curious about the future, Innovation HUB offers insights tailored to anyone passionate about building what comes next.",
-  },
-  {
-    title: "How do we select content?",
-    text: "Our editorial team reviews hundreds of submissions each month. We prioritize originality, depth of insight, production quality, and relevance to emerging trends in technology and innovation.",
-  },
-]
+const contactEmail = process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim()
+const contactTelegram = process.env.NEXT_PUBLIC_CONTACT_TELEGRAM?.trim()
 
 export default function AboutPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
       <main className="flex-1">
-        <div className="mx-auto max-w-3xl px-6 py-16">
-          <h1 className="mb-12 font-display text-3xl font-bold text-foreground md:text-4xl">
+        <div className="section-shell section-space">
+          <h1 className="font-display text-3xl font-bold text-foreground md:text-4xl">
             About Us
           </h1>
-          <div className="flex flex-col gap-10">
-            {content.map((item, i) => (
-              <div key={i}>
-                <h2 className="mb-3 font-display text-xl font-semibold text-foreground md:text-2xl">
-                  {item.title}
-                </h2>
-                <p className="text-base leading-relaxed text-muted-foreground">
-                  {item.text}
-                </p>
-              </div>
-            ))}
+
+          <div className="mt-10">
+            <AboutShowreel />
           </div>
+
+          <div className="mt-12 max-w-3xl space-y-4">
+            <h2 className="font-display text-xl font-semibold text-foreground md:text-2xl">
+              What we do
+            </h2>
+            {/* TODO(Vanya): replace placeholder copy */}
+            <p className="text-base leading-relaxed text-muted-foreground">
+              Innovation Hub is our curated showcase of automation and video
+              production work. This section will be updated with the full
+              description soon.
+            </p>
+          </div>
+
+          {contactEmail || contactTelegram ? (
+            <div className="mt-12 max-w-xl rounded-2xl border border-border/70 bg-surface-2/50 p-6">
+              <h2 className="font-display text-lg font-semibold text-foreground">
+                Contact us
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Questions about a project or a showcase video? Reach out directly.
+              </p>
+              <div className="mt-4 flex flex-col gap-3">
+                {contactEmail ? (
+                  <a
+                    href={`mailto:${contactEmail}`}
+                    className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary/80"
+                  >
+                    <Mail className="h-4 w-4" />
+                    {contactEmail}
+                  </a>
+                ) : null}
+                {contactTelegram ? (
+                  <a
+                    href={contactTelegram.startsWith("http") ? contactTelegram : `https://t.me/${contactTelegram.replace(/^@/, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary/80"
+                  >
+                    <Send className="h-4 w-4" />
+                    Telegram
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
       </main>
       <FooterSection />

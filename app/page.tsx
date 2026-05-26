@@ -1,68 +1,82 @@
 import { Header } from "@/components/header"
 import { FooterSection } from "@/components/footer-section"
-import { getPublishedIdeas, getPublishedVideos } from "@/lib/public-data"
-import { HeroImpact } from "@/components/landing/hero-impact"
-import { CapabilitiesSection } from "@/components/landing/capabilities"
-import { InteractiveShowcaseSection } from "@/components/landing/interactive-showcase"
-import { ConversionCTASection } from "@/components/landing/conversion-cta"
-import { FinalEmotionalCTASection } from "@/components/landing/final-emotional-cta"
-import { FeatureSuggestionSection } from "@/components/landing/feature-suggestion-section"
+import { VideoGridInfinite } from "@/components/videos/video-grid-infinite"
+import { getCurrentUser } from "@/lib/admin-auth"
+import type { VideoCardItem } from "@/lib/content-types"
+import { listPublishedVideosPaginated } from "@/lib/repositories/videos"
+import { PUBLISHED_VIDEOS_PAGE_SIZE } from "@/lib/videos-pagination"
 
 export const dynamic = "force-dynamic"
 
-/**
- * Parses durations stored as free-form strings ("12:34", "1h 30m", "45m", "2h").
- * Used only for the hero "watch hours" stat — best-effort, never throws.
- */
-function parseDurationMinutes(raw: string): number {
-  if (!raw) return 0
-  const trimmed = raw.trim().toLowerCase()
-
-  // hh:mm[:ss] or mm:ss
-  const colonParts = trimmed.split(":").map((p) => Number.parseInt(p, 10))
-  if (colonParts.length >= 2 && colonParts.every((n) => Number.isFinite(n))) {
-    if (colonParts.length === 3) {
-      const [h, m] = colonParts
-      return h * 60 + m
-    }
-    const [m] = colonParts
-    return m
-  }
-
-  // "1h 30m", "2h", "45m"
-  const hours = trimmed.match(/(\d+)\s*h/)?.[1]
-  const minutes = trimmed.match(/(\d+)\s*m/)?.[1]
-  if (hours || minutes) {
-    return (Number.parseInt(hours ?? "0", 10) || 0) * 60 + (Number.parseInt(minutes ?? "0", 10) || 0)
-  }
-
-  const fallback = Number.parseInt(trimmed, 10)
-  return Number.isFinite(fallback) && fallback > 0 ? fallback : 0
+type HomePageProps = {
+  searchParams?: Promise<{
+    tags?: string | string[]
+    tag?: string | string[]
+    q?: string | string[]
+  }>
 }
 
-export default async function Home() {
-  const [videos, ideas] = await Promise.all([
-    getPublishedVideos(),
-    getPublishedIdeas(),
+function mapToCard(video: {
+  id: string
+  title: string
+  description: string
+  thumbnail: string
+  videoUrl: string
+  duration: string
+  tags: string[]
+  category: string
+}): VideoCardItem {
+  return {
+    id: video.id,
+    title: video.title,
+    description: video.description,
+    thumbnail: video.thumbnail,
+    videoUrl: video.videoUrl,
+    duration: video.duration,
+    tags: video.tags,
+    category: video.category,
+  }
+}
+
+export default async function Home({ searchParams }: HomePageProps) {
+  const params = searchParams ? await searchParams : {}
+  const rawTags = params?.tags
+  const rawTag = params?.tag
+  const selectedTagsParam = Array.isArray(rawTags) ? rawTags[0] : rawTags
+  const selectedTag = Array.isArray(rawTag) ? rawTag[0] : rawTag
+  const selectedTags = selectedTagsParam
+    ? selectedTagsParam
+        .split(",")
+        .map((tag) => decodeURIComponent(tag.trim()))
+        .filter(Boolean)
+    : selectedTag
+      ? [decodeURIComponent(selectedTag.trim())].filter(Boolean)
+      : []
+  const rawQuery = params?.q
+  const selectedQuery = Array.isArray(rawQuery) ? rawQuery[0] : rawQuery ?? ""
+
+  const [{ items, nextCursor }, user] = await Promise.all([
+    listPublishedVideosPaginated({
+      limit: PUBLISHED_VIDEOS_PAGE_SIZE,
+      tags: selectedTags.length > 0 ? selectedTags : undefined,
+      q: selectedQuery || undefined,
+    }),
+    getCurrentUser().catch(() => null),
   ])
-  const featuredVideo = videos[0]
-  const totalMinutes = videos.reduce((acc, video) => acc + parseDurationMinutes(video.duration), 0)
+
+  const initialVideos = items.map(mapToCard)
 
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
       <main className="flex-1">
-        <HeroImpact
-          featuredVideo={featuredVideo}
-          videoCount={videos.length}
-          ideaCount={ideas.length}
-          totalMinutes={totalMinutes}
+        <VideoGridInfinite
+          initialVideos={initialVideos}
+          initialNextCursor={nextCursor}
+          initialTags={selectedTags}
+          initialQuery={selectedQuery}
+          isAdmin={Boolean(user?.isActive && user.role === "ADMIN")}
         />
-        {/* <CapabilitiesSection /> */}
-        <InteractiveShowcaseSection videos={videos} ideas={ideas} />
-        <FeatureSuggestionSection />
-        {/* <ConversionCTASection />
-        <FinalEmotionalCTASection /> */}
       </main>
       <FooterSection />
     </div>

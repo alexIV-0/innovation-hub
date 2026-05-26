@@ -119,14 +119,19 @@ export function AdminIdeaCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-2">
-        {idea.category ? (
-          <Badge
-            variant="outline"
-            className="w-fit border-primary/30 bg-primary/10 text-[10px] font-semibold uppercase tracking-wider text-primary"
-          >
-            {idea.category}
-          </Badge>
-        ) : null}
+        <div className="flex flex-wrap gap-1">
+          {(idea.tags?.length ? idea.tags : idea.category ? [idea.category] : []).map(
+            (tag) => (
+              <Badge
+                key={tag}
+                variant="outline"
+                className="w-fit border-primary/30 bg-primary/10 text-[10px] font-semibold uppercase tracking-wider text-primary"
+              >
+                {tag}
+              </Badge>
+            ),
+          )}
+        </div>
         <h3 className="font-display text-lg font-semibold leading-tight text-foreground">
           {idea.title}
         </h3>

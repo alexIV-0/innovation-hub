@@ -22,6 +22,7 @@ export async function getPublishedVideos(): Promise<VideoCardItem[]> {
     thumbnail: video.thumbnail,
     videoUrl: video.videoUrl,
     duration: video.duration,
+    tags: video.tags,
     category: video.category,
   }))
 }
@@ -38,6 +39,7 @@ export async function getPublishedIdeas(): Promise<IdeaCardItem[]> {
     id: idea.id,
     title: idea.title,
     description: idea.description,
+    tags: idea.tags,
     category: idea.category,
   }))
 }

@@ -26,13 +26,18 @@ const mediaUrlSchema = z
     "Must be an http(s) URL or an /api/media/... path.",
   )
 
+const tagsSchema = z
+  .array(z.string().min(1).max(80))
+  .min(1, "Add at least one tag.")
+  .max(20)
+
 export const videoCreateSchema = z.object({
   title: z.string().min(2),
   description: z.string().min(10),
   thumbnail: mediaUrlSchema,
   videoUrl: mediaUrlSchema,
   duration: z.string().min(2),
-  category: z.string().min(2),
+  tags: tagsSchema,
   isPublished: z.boolean().default(true),
 })
 
@@ -63,7 +68,7 @@ export const ideaCreateSchema = z.object({
   thumbnail: optionalMediaUrlSchema.default(""),
   videoUrl: optionalMediaUrlSchema.default(""),
   duration: z.string().default(""),
-  category: z.string().min(1),
+  tags: tagsSchema,
   isPublished: z.boolean().default(true),
 })
 
@@ -72,6 +77,10 @@ export const ideaUpdateSchema = ideaCreateSchema.partial()
 export const reorderSchema = z.object({
   id: z.string().min(1),
   direction: z.enum(["up", "down"]),
+})
+
+export const reorderBulkSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1),
 })
 
 export const userCreateSchema = z.object({

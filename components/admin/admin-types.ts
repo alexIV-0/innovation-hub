@@ -7,6 +7,7 @@ export type AdminVideo = {
   thumbnail: string
   videoUrl: string
   duration: string
+  tags: string[]
   category: string
   isPublished: boolean
   sortOrder: number
@@ -19,6 +20,7 @@ export type AdminIdea = {
   thumbnail: string
   videoUrl: string
   duration: string
+  tags: string[]
   category: string
   isPublished: boolean
   sortOrder: number
@@ -40,7 +42,7 @@ export type ContentDraft = {
   thumbnail: string
   videoUrl: string
   duration: string
-  category: string
+  tags: string[]
 }
 
 export const emptyContentDraft: ContentDraft = {
@@ -50,7 +52,7 @@ export const emptyContentDraft: ContentDraft = {
   thumbnail: "",
   videoUrl: "",
   duration: "",
-  category: "",
+  tags: [],
 }
 
 export type ContentItem =
@@ -73,6 +75,6 @@ export function draftFromContentItem(item: ContentItem): ContentDraft {
     thumbnail: item.data.thumbnail,
     videoUrl: item.data.videoUrl,
     duration: item.data.duration,
-    category: item.data.category,
+    tags: item.data.tags?.length ? item.data.tags : item.data.category ? [item.data.category] : [],
   }
 }

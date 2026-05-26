@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { VideoPlayer } from "@/components/video-player"
 import { VideoCard } from "@/components/video-card"
+import { VideoOrderForm } from "@/components/video-order-form"
 import { Header } from "@/components/header"
 import { FooterSection } from "@/components/footer-section"
 import type { VideoCardItem } from "@/lib/content-types"
@@ -43,10 +44,17 @@ export function VideoDetailClient({
 
         {/* Video info */}
         <div className="mt-8">
-          <div className="flex items-center gap-3">
-            <span className="rounded-sm bg-primary/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
-              {video.category}
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {(video.tags?.length ? video.tags : video.category ? [video.category] : []).map(
+              (tag) => (
+                <span
+                  key={tag}
+                  className="rounded-sm bg-primary/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-primary"
+                >
+                  {tag}
+                </span>
+              ),
+            )}
             <span className="text-sm text-muted-foreground">
               {video.duration}
             </span>
@@ -73,6 +81,8 @@ export function VideoDetailClient({
             ))}
           </div>
         </section>
+
+        <VideoOrderForm video={video} />
       </div>
       </main>
       <FooterSection />

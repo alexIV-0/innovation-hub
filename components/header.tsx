@@ -176,20 +176,12 @@ export function Header() {
               <Link href="/about">About</Link>
             </Button>
             <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
-              <Link href="/#showcase">Showcase</Link>
-            </Button>
-            <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
-              <Link href="/#feature-suggestion">Suggest</Link>
+              <Link href="/suggest">Suggest</Link>
             </Button>
             <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
               <Link href="/contact">Contact</Link>
             </Button>
             <ToolsMenu />
-            {user?.role === "ADMIN" ? (
-              <Button variant="ghost" className="rounded-full text-muted-foreground hover:text-foreground" asChild>
-                <Link href="/admin">Admin</Link>
-              </Button>
-            ) : null}
           </nav>
         </div>
 
@@ -212,10 +204,7 @@ export function Header() {
                   <Link href="/about">About</Link>
                 </Button>
                 <Button variant="ghost" className="justify-start rounded-full" asChild>
-                  <Link href="/#showcase">Showcase</Link>
-                </Button>
-                <Button variant="ghost" className="justify-start rounded-full" asChild>
-                  <Link href="/#feature-suggestion">Suggest a feature</Link>
+                  <Link href="/suggest">Suggest a feature</Link>
                 </Button>
                 <Button variant="ghost" className="justify-start rounded-full" asChild>
                   <Link href="/contact">Contact</Link>

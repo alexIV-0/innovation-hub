@@ -49,9 +49,17 @@ export function ContentContent() {
   const categoryEntries = useMemo(() => {
     const counts = new Map<string, number>()
     for (const item of allItems) {
-      const name = item.data.category.trim()
-      if (!name) continue
-      counts.set(name, (counts.get(name) ?? 0) + 1)
+      const itemTags =
+        item.data.tags?.length > 0
+          ? item.data.tags
+          : item.data.category
+            ? [item.data.category]
+            : []
+      for (const tag of itemTags) {
+        const name = tag.trim()
+        if (!name) continue
+        counts.set(name, (counts.get(name) ?? 0) + 1)
+      }
     }
     return [...counts.entries()]
       .map(([name, count]) => ({ name, count }))
@@ -65,18 +73,25 @@ export function ContentContent() {
       if (kind === "ideas" && item.kind !== "idea") return false
       if (status === "live" && !isPublished(item)) return false
       if (status === "drafts" && isPublished(item)) return false
+      const itemTags =
+        item.data.tags?.length > 0
+          ? item.data.tags
+          : item.data.category
+            ? [item.data.category]
+            : []
       if (
         category !== CONTENT_CATEGORY_ALL &&
-        item.data.category.trim() !== category
+        !itemTags.some((tag) => tag.trim() === category)
       ) {
         return false
       }
       if (!q) return true
       const data = item.data
+      const tagHaystack = itemTags.join(" ").toLowerCase()
       return (
         data.title.toLowerCase().includes(q) ||
         data.description.toLowerCase().includes(q) ||
-        data.category.toLowerCase().includes(q)
+        tagHaystack.includes(q)
       )
     })
   }, [allItems, kind, status, category, query])

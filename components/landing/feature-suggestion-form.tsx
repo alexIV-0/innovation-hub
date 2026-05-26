@@ -42,11 +42,17 @@ function RequiredFormLabel({ children }: { children: ReactNode }) {
 function hasRequiredFieldValues(values: {
   name: string
   email: string
+  projectName: string
+  referenceUrl: string
+  monthlyVolume: string
   automation: string
 }): boolean {
   return (
     values.name.trim().length > 0 &&
     values.email.trim().length > 0 &&
+    values.projectName.trim().length > 0 &&
+    values.referenceUrl.trim().length > 0 &&
+    values.monthlyVolume.trim().length > 0 &&
     values.automation.trim().length >= MIN_AUTOMATION_LENGTH
   )
 }
@@ -155,31 +161,64 @@ function uploadFile(
   })
 }
 
-export function FeatureSuggestionForm() {
+const emptyFormValues: FeatureSuggestionInput = {
+  name: "",
+  email: "",
+  projectName: "",
+  referenceUrl: "",
+  monthlyVolume: "",
+  description: "",
+  automation: "",
+  attachments: [],
+  website: "",
+}
+
+type FeatureSuggestionFormProps = {
+  initialName?: string
+  initialEmail?: string
+}
+
+export function FeatureSuggestionForm({
+  initialName = "",
+  initialEmail = "",
+}: FeatureSuggestionFormProps) {
   const inputId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortControllers = useRef(new Map<string, AbortController>())
   const [uploads, setUploads] = useState<UploadItem[]>([])
   const [dragOver, setDragOver] = useState(false)
 
+  const profileDefaults = {
+    name: initialName.trim(),
+    email: initialEmail.trim().toLowerCase(),
+  }
+
   const form = useForm<FeatureSuggestionInput>({
     resolver: zodResolver(featureSuggestionSchema),
     mode: "onTouched",
     reValidateMode: "onChange",
     defaultValues: {
-      name: "",
-      email: "",
-      automation: "",
-      attachments: [],
-      website: "",
+      ...emptyFormValues,
+      name: profileDefaults.name,
+      email: profileDefaults.email,
     },
   })
 
-  const watched = form.watch(["name", "email", "automation"])
+  const watched = form.watch([
+    "name",
+    "email",
+    "projectName",
+    "referenceUrl",
+    "monthlyVolume",
+    "automation",
+  ])
   const requiredFilled = hasRequiredFieldValues({
     name: watched[0] ?? "",
     email: watched[1] ?? "",
-    automation: watched[2] ?? "",
+    projectName: watched[2] ?? "",
+    referenceUrl: watched[3] ?? "",
+    monthlyVolume: watched[4] ?? "",
+    automation: watched[5] ?? "",
   })
 
   const hasActiveUploads = uploads.some((u) => u.status === "uploading")
@@ -294,7 +333,14 @@ export function FeatureSuggestionForm() {
 
     if (!hasRequiredFieldValues(values)) {
       toast.error("Fill in all required fields before submitting.")
-      await form.trigger(["name", "email", "automation"])
+      await form.trigger([
+        "name",
+        "email",
+        "projectName",
+        "referenceUrl",
+        "monthlyVolume",
+        "automation",
+      ])
       return
     }
 
@@ -325,7 +371,11 @@ export function FeatureSuggestionForm() {
       }
 
       toast.success(data?.message ?? "Thank you! Your suggestion was submitted.")
-      form.reset()
+      form.reset({
+        ...emptyFormValues,
+        name: profileDefaults.name,
+        email: profileDefaults.email,
+      })
       setUploads([])
     } catch {
       toast.error("Network error. Please try again.")
@@ -351,7 +401,7 @@ export function FeatureSuggestionForm() {
                 <RequiredFormLabel>Your name</RequiredFormLabel>
                 <FormControl>
                   <Input
-                    placeholder="Jane Doe"
+                    placeholder={profileDefaults.name ? undefined : "Your name"}
                     autoComplete="name"
                     required
                     aria-required="true"
@@ -371,7 +421,7 @@ export function FeatureSuggestionForm() {
                 <FormControl>
                   <Input
                     type="email"
-                    placeholder="jane@company.com"
+                    placeholder={profileDefaults.email ? undefined : "you@company.com"}
                     autoComplete="email"
                     required
                     aria-required="true"
@@ -383,6 +433,65 @@ export function FeatureSuggestionForm() {
             )}
           />
         </div>
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="projectName"
+            render={({ field }) => (
+              <FormItem>
+                <RequiredFormLabel>Project name</RequiredFormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Folder name for your project"
+                    required
+                    aria-required="true"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="monthlyVolume"
+            render={({ field }) => (
+              <FormItem>
+                <RequiredFormLabel>Monthly video volume</RequiredFormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="e.g. 5–10, ~20"
+                    required
+                    aria-required="true"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <FormField
+          control={form.control}
+          name="referenceUrl"
+          render={({ field }) => (
+            <FormItem>
+              <RequiredFormLabel>Reference URL</RequiredFormLabel>
+              <FormControl>
+                <Input
+                  type="url"
+                  placeholder="https://youtube.com/… or a page on this site"
+                  required
+                  aria-required="true"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <FormField
           control={form.control}
@@ -397,6 +506,27 @@ export function FeatureSuggestionForm() {
                   required
                   aria-required="true"
                   minLength={MIN_AUTOMATION_LENGTH}
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Additional description{" "}
+                <span className="font-normal text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <FormControl>
+                <Textarea
+                  placeholder="Anything else we should know…"
+                  className="min-h-[100px] resize-y"
                   {...field}
                 />
               </FormControl>

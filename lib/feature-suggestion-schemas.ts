@@ -34,6 +34,28 @@ export const featureSuggestionSchema = z.object({
     .toLowerCase()
     .email("Enter a valid email address.")
     .max(254),
+  projectName: z
+    .string()
+    .trim()
+    .min(1, "Enter a project name.")
+    .max(100, "Project name must be at most 100 characters."),
+  referenceUrl: z
+    .string()
+    .trim()
+    .min(1, "Enter a reference URL.")
+    .url("Enter a valid URL.")
+    .max(2048),
+  monthlyVolume: z
+    .string()
+    .trim()
+    .min(1, "Estimate how many videos per month.")
+    .max(50, "Keep this under 50 characters."),
+  description: z
+    .string()
+    .trim()
+    .max(2000, "Description must be at most 2000 characters.")
+    .optional()
+    .default(""),
   automation: z
     .string()
     .trim()
@@ -56,14 +78,26 @@ export type FeatureSuggestionInput = z.infer<typeof featureSuggestionSchema>
 export function buildFeatureSuggestionNotes(input: {
   name: string
   email: string
+  projectName: string
+  referenceUrl: string
+  monthlyVolume: string
+  description?: string
   automation: string
   attachments: FeatureSuggestionAttachment[]
 }): string {
   const lines = [
     `Submitted by: ${input.name} <${input.email}>`,
     "",
-    input.automation,
+    `Project / folder name: ${input.projectName}`,
+    `Reference: ${input.referenceUrl}`,
+    `Estimated monthly videos: ${input.monthlyVolume}`,
   ]
+
+  if (input.description?.trim()) {
+    lines.push("", "Additional description:", input.description.trim())
+  }
+
+  lines.push("", "Automation request:", input.automation)
 
   if (input.attachments.length > 0) {
     lines.push("", "Attachments:")

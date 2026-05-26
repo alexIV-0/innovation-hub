@@ -2,6 +2,7 @@ import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
 import type { UserRole } from "@/lib/domain-types"
+import { findUserById } from "@/lib/repositories/users"
 
 export async function GET() {
   const cookieStore = await cookies()
@@ -15,10 +16,13 @@ export async function GET() {
     return NextResponse.json({ authenticated: false })
   }
 
+  const user = await findUserById(session.userId)
+
   return NextResponse.json({
     authenticated: true,
     userId: session.userId,
     email: session.email,
-    role: (session.role ?? "USER") as UserRole,
+    fullName: user?.fullName ?? null,
+    role: (session.role ?? user?.role ?? "USER") as UserRole,
   })
 }

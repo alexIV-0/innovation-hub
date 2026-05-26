@@ -101,16 +101,20 @@ export async function addTaskToSection(
   })
 }
 
-export async function createFeatureSuggestionTask(input: {
+export async function createAsanaTask(input: {
   name: string
   notes: string
+  projectGid?: string
+  sectionGid?: string
 }): Promise<AsanaTask> {
   const config = getAsanaConfig()
+  const projectGid = input.projectGid?.trim() || config.projectGid
+  const sectionGid = input.sectionGid?.trim() || config.defaultSectionGid
 
   const body: Record<string, unknown> = {
     name: input.name,
     notes: input.notes,
-    projects: [config.projectGid],
+    projects: [projectGid],
   }
 
   if (config.workspaceGid) {
@@ -126,11 +130,18 @@ export async function createFeatureSuggestionTask(input: {
   })
 
   // memberships.section on create is unreliable; move explicitly after create.
-  if (config.defaultSectionGid) {
-    await addTaskToSection(config.defaultSectionGid, task.gid)
+  if (sectionGid) {
+    await addTaskToSection(sectionGid, task.gid)
   }
 
   return task
+}
+
+export async function createFeatureSuggestionTask(input: {
+  name: string
+  notes: string
+}): Promise<AsanaTask> {
+  return createAsanaTask(input)
 }
 
 export async function attachExternalUrlToTask(

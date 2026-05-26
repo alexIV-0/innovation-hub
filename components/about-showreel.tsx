@@ -12,7 +12,6 @@ export function AboutShowreel() {
           loop
           playsInline
           preload="metadata"
-          poster="/icon.svg"
           controls
           controlsList="nodownload"
           onContextMenu={(event) => event.preventDefault()}

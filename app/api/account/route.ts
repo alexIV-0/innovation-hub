@@ -34,6 +34,16 @@ export async function DELETE(request: Request) {
     )
   }
 
+  if (!full.passwordHash) {
+    return NextResponse.json(
+      {
+        message:
+          "This account uses single sign-on. Please contact support to delete it.",
+      },
+      { status: 400 },
+    )
+  }
+
   const matches = await verifyPassword(parsed.data.currentPassword, full.passwordHash)
   if (!matches) {
     return NextResponse.json(

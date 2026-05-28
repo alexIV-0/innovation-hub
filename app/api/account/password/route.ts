@@ -38,6 +38,16 @@ export async function POST(request: Request) {
     )
   }
 
+  if (!full.passwordHash) {
+    return NextResponse.json(
+      {
+        message:
+          "This account does not have a password yet. It was created via single sign-on.",
+      },
+      { status: 400 },
+    )
+  }
+
   const matches = await verifyPassword(parsed.data.currentPassword, full.passwordHash)
   if (!matches) {
     return NextResponse.json(

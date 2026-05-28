@@ -9,6 +9,19 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Idempotent migration: support OAuth providers (Google, ...) alongside local
+-- email + password accounts. OAuth-only users have no password, so we drop the
+-- NOT NULL constraint on password_hash and add provider columns.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_account_id TEXT;
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+
+-- One Google `sub` (or any provider's account id) maps to at most one user;
+-- partial unique index lets multiple rows have NULL provider_account_id.
+CREATE UNIQUE INDEX IF NOT EXISTS users_provider_account_idx
+  ON users (auth_provider, provider_account_id)
+  WHERE provider_account_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS videos (
   id           TEXT PRIMARY KEY,
   title        TEXT NOT NULL,

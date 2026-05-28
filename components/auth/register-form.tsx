@@ -10,8 +10,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button"
 
-export function RegisterForm() {
+type RegisterFormProps = {
+  googleEnabled?: boolean
+}
+
+export function RegisterForm({ googleEnabled = false }: RegisterFormProps = {}) {
   const [serverMessage, setServerMessage] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -68,6 +73,21 @@ export function RegisterForm() {
         <CardDescription>Create your account and start exploring content.</CardDescription>
       </CardHeader>
       <CardContent>
+        {googleEnabled ? (
+          <div className="mb-4 space-y-3">
+            <GoogleSignInButton label="Continue with Google" />
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  or use email
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField

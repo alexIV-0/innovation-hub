@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { query } from "@/lib/db"
-import type { UserRecord, UserRecordWithPassword, UserRole } from "@/lib/domain-types"
+import type {
+  AuthProvider,
+  UserRecord,
+  UserRecordWithPassword,
+  UserRole,
+} from "@/lib/domain-types"
 
 const PUBLIC_USER_FIELDS = `
   id,
@@ -18,7 +23,9 @@ const FULL_USER_FIELDS = `
   password_hash AS "passwordHash",
   role,
   is_active AS "isActive",
-  created_at AS "createdAt"
+  created_at AS "createdAt",
+  auth_provider AS "authProvider",
+  provider_account_id AS "providerAccountId"
 `
 
 export async function findUserById(id: string): Promise<UserRecord | null> {
@@ -73,12 +80,76 @@ export async function createUser(input: {
 }): Promise<UserRecord> {
   const id = randomUUID()
   const result = await query<UserRecord>(
-    `INSERT INTO users (id, full_name, email, password_hash, role)
-     VALUES ($1, $2, $3, $4, COALESCE($5, 'USER'))
+    `INSERT INTO users (id, full_name, email, password_hash, role, auth_provider)
+     VALUES ($1, $2, $3, $4, COALESCE($5, 'USER'), 'local')
      RETURNING ${PUBLIC_USER_FIELDS}`,
     [id, input.fullName, input.email, input.passwordHash, input.role ?? null],
   )
   return result.rows[0]
+}
+
+export async function findUserByProviderAccount(
+  provider: AuthProvider,
+  providerAccountId: string,
+): Promise<UserRecordWithPassword | null> {
+  const result = await query<UserRecordWithPassword>(
+    `SELECT ${FULL_USER_FIELDS}
+       FROM users
+      WHERE auth_provider = $1 AND provider_account_id = $2`,
+    [provider, providerAccountId],
+  )
+  return result.rows[0] ?? null
+}
+
+/** Creates a user that authenticates via an external OAuth provider. */
+export async function createOAuthUser(input: {
+  fullName: string
+  email: string
+  provider: AuthProvider
+  providerAccountId: string
+  role?: UserRole
+}): Promise<UserRecord> {
+  const id = randomUUID()
+  const result = await query<UserRecord>(
+    `INSERT INTO users (
+        id, full_name, email, password_hash, role,
+        auth_provider, provider_account_id
+     )
+     VALUES ($1, $2, $3, NULL, COALESCE($4, 'USER'), $5, $6)
+     RETURNING ${PUBLIC_USER_FIELDS}`,
+    [
+      id,
+      input.fullName,
+      input.email,
+      input.role ?? null,
+      input.provider,
+      input.providerAccountId,
+    ],
+  )
+  return result.rows[0]
+}
+
+/**
+ * Attaches an OAuth identity to an existing local account so that the user can
+ * sign in with either method going forward. Used when a Google email matches an
+ * existing email/password user — we don't silently replace the password, we
+ * only fill in the provider columns.
+ */
+export async function linkProviderToUser(input: {
+  userId: string
+  provider: AuthProvider
+  providerAccountId: string
+}): Promise<UserRecord | null> {
+  const result = await query<UserRecord>(
+    `UPDATE users
+        SET auth_provider       = $2,
+            provider_account_id = $3,
+            updated_at          = NOW()
+      WHERE id = $1
+      RETURNING ${PUBLIC_USER_FIELDS}`,
+    [input.userId, input.provider, input.providerAccountId],
+  )
+  return result.rows[0] ?? null
 }
 
 export async function updateUser(

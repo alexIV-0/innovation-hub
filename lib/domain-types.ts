@@ -1,5 +1,7 @@
 export type UserRole = "USER" | "ADMIN"
 
+export type AuthProvider = "local" | "google"
+
 export type UserRecord = {
   id: string
   fullName: string
@@ -10,7 +12,10 @@ export type UserRecord = {
 }
 
 export type UserRecordWithPassword = UserRecord & {
-  passwordHash: string
+  /** Null for OAuth-only accounts (e.g. Google sign-in without a password). */
+  passwordHash: string | null
+  authProvider: AuthProvider
+  providerAccountId: string | null
 }
 
 export type VideoRecord = {

@@ -10,10 +10,35 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button"
 
-export function LoginForm({ redirectTo = "/" }: { redirectTo?: string }) {
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  google_unconfigured: "Google sign-in is not configured on this server.",
+  google_denied: "Google sign-in was cancelled.",
+  google_invalid_response: "Google returned an unexpected response. Please try again.",
+  google_state_mismatch: "Sign-in session expired. Please try again.",
+  google_token_failed: "Could not verify your Google account. Please try again.",
+  google_email_unverified: "Your Google email is not verified. Please verify it and retry.",
+  google_link_failed: "Could not link your Google account. Please try again.",
+  google_create_failed: "Could not create your account. Please try again.",
+  account_inactive: "This account is inactive.",
+}
+
+type LoginFormProps = {
+  redirectTo?: string
+  googleEnabled?: boolean
+  oauthError?: string | null
+}
+
+export function LoginForm({
+  redirectTo = "/",
+  googleEnabled = false,
+  oauthError = null,
+}: LoginFormProps) {
   const [serverMessage, setServerMessage] = useState<string | null>(null)
-  const [serverError, setServerError] = useState<string | null>(null)
+  const [serverError, setServerError] = useState<string | null>(
+    oauthError ? OAUTH_ERROR_MESSAGES[oauthError] ?? "Sign-in failed. Please try again." : null,
+  )
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -63,6 +88,21 @@ export function LoginForm({ redirectTo = "/" }: { redirectTo?: string }) {
         <CardDescription>Access your account to continue.</CardDescription>
       </CardHeader>
       <CardContent>
+        {googleEnabled ? (
+          <div className="mb-4 space-y-3">
+            <GoogleSignInButton next={redirectTo} />
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  or sign in with email
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField

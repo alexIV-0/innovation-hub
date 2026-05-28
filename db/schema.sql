@@ -86,3 +86,35 @@ CREATE TABLE IF NOT EXISTS tag_suggestions (
 
 CREATE INDEX IF NOT EXISTS tag_suggestions_scope_value_idx
   ON tag_suggestions (field_scope, lower(value));
+
+-- Page-view tracking for the admin "Visitors" dashboard. Each row is a single
+-- client-side navigation reported by VisitorTracker. user_id is a soft
+-- reference (no FK) so deleting a user does not blow away historical visits;
+-- user_email/user_full_name are denormalized for the same reason. fingerprint
+-- is a stable short hash of ip+UA+Accept-Language used to group anonymous
+-- sessions.
+CREATE TABLE IF NOT EXISTS visitor_events (
+  id              TEXT PRIMARY KEY,
+  path            TEXT NOT NULL,
+  query_string    TEXT NOT NULL DEFAULT '',
+  method          TEXT NOT NULL DEFAULT 'GET',
+  user_id         TEXT,
+  user_email      TEXT,
+  user_full_name  TEXT,
+  fingerprint     TEXT NOT NULL,
+  user_agent      TEXT NOT NULL DEFAULT '',
+  ip              TEXT NOT NULL DEFAULT '',
+  referer         TEXT NOT NULL DEFAULT '',
+  language        TEXT NOT NULL DEFAULT '',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS visitor_events_created_at_idx
+  ON visitor_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS visitor_events_fingerprint_idx
+  ON visitor_events (fingerprint, created_at DESC);
+CREATE INDEX IF NOT EXISTS visitor_events_user_idx
+  ON visitor_events (user_id, created_at DESC)
+  WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS visitor_events_path_idx
+  ON visitor_events (path);

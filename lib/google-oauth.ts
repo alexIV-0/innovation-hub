@@ -41,19 +41,22 @@ export function readGoogleOAuthConfig(): GoogleOAuthConfig | null {
 }
 
 /**
- * Builds the OAuth callback URL. Prefers `APP_PUBLIC_URL` (or `VERCEL_URL`)
- * over the incoming `request.url` so that the redirect URI matches what's
- * registered with Google Cloud Console even when the app sits behind a
- * reverse proxy that rewrites the host/protocol.
+ * Builds the OAuth callback URL.
+ *
+ * Order of preference:
+ *  1. `APP_PUBLIC_URL` — explicit override, useful when you want to pin all
+ *     deployments to a single canonical domain (e.g. a custom domain).
+ *  2. The host of the incoming request — works on Vercel for both the
+ *     production alias and custom domains because the proxy forwards the real
+ *     Host/X-Forwarded-Proto headers, which Next.js already reflects in
+ *     `request.url`. We deliberately do NOT use `VERCEL_URL` here: that env
+ *     var is the *deployment-specific* hostname (e.g. `myapp-abc123.vercel.app`)
+ *     and rarely matches what's whitelisted in Google Cloud Console.
  */
 export function buildGoogleRedirectUri(request: Request): string {
   const explicit = process.env.APP_PUBLIC_URL?.trim()
   if (explicit) {
     return new URL("/api/auth/google/callback", explicit.replace(/\/$/, "")).toString()
-  }
-  const vercel = process.env.VERCEL_URL?.trim()
-  if (vercel) {
-    return `https://${vercel.replace(/\/$/, "")}/api/auth/google/callback`
   }
   return new URL("/api/auth/google/callback", request.url).toString()
 }

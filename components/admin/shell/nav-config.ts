@@ -1,4 +1,5 @@
 import {
+  Activity,
   LayoutDashboard,
   LayoutGrid,
   Users,
@@ -32,6 +33,12 @@ export const adminNavItems: AdminNavItem[] = [
     href: "/admin/users",
     icon: Users,
     description: "Team & accounts",
+  },
+  {
+    label: "Visitors",
+    href: "/admin/visitors",
+    icon: Activity,
+    description: "Live page-view tracker",
   },
 ]
 

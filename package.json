@@ -14,7 +14,7 @@
     "s3:ensure-prefix": "node scripts/s3-ensure-prefix.mjs",
     "s3:set-cors": "node scripts/s3-set-cors.mjs",
     "s3:test-upload": "node scripts/s3-test-presigned-upload.mjs",
-    "deploy": "git pull && pnpm install && pnpm build && pnpm start"
+    "deploy": "git pull && npm install && npm build && pm2 reload all"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",

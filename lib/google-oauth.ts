@@ -33,7 +33,13 @@ export class GoogleOAuthError extends Error {
   }
 }
 
+// Kill switch: Google sign-in is temporarily disabled. Flip back to `false`
+// to re-enable the "Continue with Google" button and the OAuth routes.
+const GOOGLE_OAUTH_DISABLED = true
+
 export function readGoogleOAuthConfig(): GoogleOAuthConfig | null {
+  if (GOOGLE_OAUTH_DISABLED) return null
+
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim()
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim()
   if (!clientId || !clientSecret) return null

@@ -26,7 +26,7 @@ export default function AboutPage() {
             </h2>
             {/* TODO(Vanya): replace placeholder copy */}
             <p className="text-base leading-relaxed text-muted-foreground">
-              Innovation Hub is our curated showcase of automation and video
+              FF Works is our curated showcase of automation and video
               production work. This section will be updated with the full
               description soon.
             </p>

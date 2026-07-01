@@ -1,5 +1,9 @@
 const ASANA_API_BASE = "https://app.asana.com/api/1.0"
 
+// Kill switch: Asana task creation is temporarily disabled. Flip back to
+// `false` to re-enable video orders / feature suggestions posting to Asana.
+const ASANA_TASK_CREATION_DISABLED = true
+
 export class AsanaError extends Error {
   readonly status: number
   readonly asanaErrors?: unknown
@@ -107,6 +111,10 @@ export async function createAsanaTask(input: {
   projectGid?: string
   sectionGid?: string
 }): Promise<AsanaTask> {
+  if (ASANA_TASK_CREATION_DISABLED) {
+    throw new AsanaError("Asana task creation is temporarily disabled.", 500)
+  }
+
   const config = getAsanaConfig()
   const projectGid = input.projectGid?.trim() || config.projectGid
   const sectionGid = input.sectionGid?.trim() || config.defaultSectionGid

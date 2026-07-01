@@ -113,7 +113,7 @@ export function ProfileSection({ user }: { user: AccountUser }) {
       <AccountPageHeader
         eyebrow="Account"
         title="Profile"
-        description="Personal information shown across Innovation Hub."
+        description="Personal information shown across FF Works."
       />
 
       <Card className="border-border/60 bg-card/40">

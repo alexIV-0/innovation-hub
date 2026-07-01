@@ -17,7 +17,7 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Innovation HUB',
+  title: 'FF Works',
   description: 'Explore curated video content on innovation, technology, and design.',
 }
 

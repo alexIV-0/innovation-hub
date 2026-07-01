@@ -8,7 +8,7 @@
  *
  * Usage:
  *   node scripts/s3-set-cors.mjs
- *   node scripts/s3-set-cors.mjs --origin https://innovation-hub-five.vercel.app --origin http://localhost:3000
+ *   node scripts/s3-set-cors.mjs --origin https://ff-works.vercel.app --origin http://localhost:3000
  */
 import "dotenv/config"
 import {

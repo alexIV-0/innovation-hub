@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="Innovation Hub">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="FF Works">
   <defs>
-    <linearGradient id="ih-gradient" x1="8%" y1="8%" x2="92%" y2="92%">
+    <linearGradient id="ff-gradient" x1="8%" y1="8%" x2="92%" y2="92%">
       <stop offset="0%" stop-color="#8ec8ff" />
       <stop offset="100%" stop-color="#4f9ef7" />
     </linearGradient>
@@ -13,7 +13,7 @@
     height="168"
     rx="34"
     fill="none"
-    stroke="url(#ih-gradient)"
+    stroke="url(#ff-gradient)"
     stroke-width="6"
     opacity="0.45"
   />
@@ -26,8 +26,8 @@
     font-size="64"
     font-weight="700"
     letter-spacing="-2"
-    fill="url(#ih-gradient)"
+    fill="url(#ff-gradient)"
   >
-    IH
+    FF
   </text>
 </svg>

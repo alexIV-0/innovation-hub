@@ -30,11 +30,11 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
         >
           <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/15">
             <span className="font-display text-sm font-bold text-primary">
-              IH
+              FF
             </span>
           </span>
           <span className="font-display text-sm tracking-[0.08em] text-foreground/90">
-            Innovation Hub
+            FF Works
           </span>
         </Link>
       </div>

@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const video = await findPublishedVideoById(id)
   if (!video) return { title: "Not Found" }
   return {
-    title: `${video.title} - Innovation HUB`,
+    title: `${video.title} - FF Works`,
     description: video.description,
   }
 }

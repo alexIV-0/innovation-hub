@@ -16,7 +16,7 @@ export default function ContactPage() {
               <Mail className="mt-0.5 h-5 w-5 text-primary" />
               <div>
                 <p className="font-medium text-foreground">Email</p>
-                <p className="text-sm text-muted-foreground">hello@innovationhub.io</p>
+                <p className="text-sm text-muted-foreground">hello@ffworks.io</p>
               </div>
             </div>
             <div className="flex items-start gap-4 rounded-lg border border-border bg-card p-5">

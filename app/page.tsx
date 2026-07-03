@@ -1,5 +1,6 @@
 import { Header } from "@/components/header"
 import { FooterSection } from "@/components/footer-section"
+import { AboutShowreel } from "@/components/about-showreel"
 import { VideoGridInfinite } from "@/components/videos/video-grid-infinite"
 import { getCurrentUser } from "@/lib/admin-auth"
 import type { VideoCardItem } from "@/lib/content-types"
@@ -70,6 +71,10 @@ export default async function Home({ searchParams }: HomePageProps) {
     <div className="flex min-h-screen flex-col">
       <Header />
       <main className="flex-1">
+        <div className="section-shell section-space pb-0">
+          <AboutShowreel />
+          {/* TODO(Vanya): add intro copy here */}
+        </div>
         <VideoGridInfinite
           initialVideos={initialVideos}
           initialNextCursor={nextCursor}

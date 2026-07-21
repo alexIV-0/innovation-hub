@@ -60,9 +60,12 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      // Never reuse a sibling folder: two projects with the same name must
+      // not share Drive storage (uploads/deletes would leak across projects).
       driveFolderId = await createDriveFolder({
         name,
         parentId: userFolderId,
+        reuseExisting: false,
       })
 
       // Leave a machine-readable brief for content-generation automations.

@@ -2,6 +2,7 @@ import { Readable } from "node:stream"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import {
+  deleteDriveFile,
   GoogleDriveError,
   isGoogleDriveConfigured,
   uploadDriveFile,
@@ -150,13 +151,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError(message, 503)
   }
 
-  const media = await createProjectMedia({
-    projectId: project.id,
-    fileName,
-    mimeType: contentType,
-    sizeBytes: buffer.length,
-    driveFileId,
-  })
+  let media
+  try {
+    media = await createProjectMedia({
+      projectId: project.id,
+      fileName,
+      mimeType: contentType,
+      sizeBytes: buffer.length,
+      driveFileId,
+    })
+  } catch (error) {
+    console.error("[project-media] DB insert failed after Drive upload", error)
+    // Compensate: remove the just-uploaded file so Drive doesn't accumulate
+    // orphans the app has no record of.
+    try {
+      await deleteDriveFile(driveFileId)
+    } catch (cleanupError) {
+      console.error(
+        "[project-media] cleanup of orphaned Drive file failed",
+        { driveFileId, cleanupError },
+      )
+    }
+    return jsonError("Failed to save the uploaded file.", 500)
+  }
 
   return NextResponse.json(
     {

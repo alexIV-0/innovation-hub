@@ -176,12 +176,21 @@ async function findChildFolder(
 export async function createDriveFolder(input: {
   name: string
   parentId: string
+  /**
+   * When false, always create a fresh folder even if a sibling with the same
+   * name exists (Drive allows duplicate names). Use for per-entity folders
+   * (e.g. projects) that must stay isolated; default true keeps the
+   * idempotent find-or-create behavior used for user email folders.
+   */
+  reuseExisting?: boolean
 }): Promise<string> {
   const { drive, config } = getDrive()
   const name = sanitizeDriveName(input.name)
 
-  const existing = await findChildFolder(drive, config, input.parentId, name)
-  if (existing) return existing
+  if (input.reuseExisting !== false) {
+    const existing = await findChildFolder(drive, config, input.parentId, name)
+    if (existing) return existing
+  }
 
   try {
     const response = await drive.files.create({
@@ -309,6 +318,35 @@ export async function deleteDriveFile(fileId: string): Promise<void> {
     if (status === 404) return
     throw new GoogleDriveError(
       error instanceof Error ? error.message : "Failed to delete Drive file.",
+      { cause: error },
+    )
+  }
+}
+
+/**
+ * Move a file/folder to the Drive trash instead of deleting permanently.
+ * Trashed folders are excluded from `findChildFolder` lookups, so a later
+ * find-or-create produces a fresh folder. Missing files are treated as done.
+ */
+export async function trashDriveFile(fileId: string): Promise<void> {
+  const { drive, config } = getDrive()
+  try {
+    await drive.files.update({
+      ...driveFlags(config),
+      fileId,
+      requestBody: { trashed: true },
+    })
+  } catch (error) {
+    const status =
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof (error as { code?: unknown }).code === "number"
+        ? (error as { code: number }).code
+        : null
+    if (status === 404) return
+    throw new GoogleDriveError(
+      error instanceof Error ? error.message : "Failed to trash Drive file.",
       { cause: error },
     )
   }

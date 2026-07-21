@@ -1,6 +1,12 @@
 import { z } from "zod"
 import { NextResponse } from "next/server"
-import { hashPassword } from "@/lib/auth"
+import {
+  SESSION_COOKIE_NAME,
+  buildSessionCookieConfig,
+  createSessionToken,
+  hashPassword,
+} from "@/lib/auth"
+import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import { createUser, findUserByEmail } from "@/lib/repositories/users"
 
 const signupRequestSchema = z.object({
@@ -32,13 +38,15 @@ export async function POST(request: Request) {
     )
   }
 
+  let user
   try {
     const passwordHash = await hashPassword(parsed.data.password)
-    await createUser({
+    user = await createUser({
       fullName: parsed.data.fullName,
       email,
       passwordHash,
     })
+    provisionUserDriveFolderBackground(user.id)
   } catch (error) {
     if (
       error &&
@@ -58,10 +66,20 @@ export async function POST(request: Request) {
     )
   }
 
-  return NextResponse.json(
+  const token = await createSessionToken({
+    sub: user.id,
+    role: user.role,
+    email: user.email,
+  })
+
+  const response = NextResponse.json(
     {
-      message: `Account for ${parsed.data.fullName} created successfully.`,
+      message: `Welcome, ${user.fullName}.`,
+      role: user.role,
+      redirectTo: "/account/dashboard",
     },
     { status: 201 },
   )
+  response.cookies.set(SESSION_COOKIE_NAME, token, buildSessionCookieConfig())
+  return response
 }

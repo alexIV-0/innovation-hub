@@ -1,4 +1,6 @@
 import {
+  FolderKanban,
+  LayoutDashboard,
   ShieldCheck,
   TriangleAlert,
   UserRound,
@@ -15,6 +17,19 @@ export type AccountNavItem = {
 }
 
 export const accountNavItems: AccountNavItem[] = [
+  {
+    label: "Dashboard",
+    href: "/account/dashboard",
+    icon: LayoutDashboard,
+    description: "Projects and content pipeline",
+    exact: true,
+  },
+  {
+    label: "Projects",
+    href: "/account/projects",
+    icon: FolderKanban,
+    description: "Create and manage projects",
+  },
   {
     label: "Profile",
     href: "/account",

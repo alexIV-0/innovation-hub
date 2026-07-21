@@ -11,6 +11,7 @@ import {
   fetchGoogleProfile,
   readGoogleOAuthConfig,
 } from "@/lib/google-oauth"
+import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import {
   createOAuthUser,
   findUserByEmail,
@@ -129,11 +130,18 @@ export async function GET(request: Request) {
           authProvider: "google",
           providerAccountId: profile.sub,
         }
+        provisionUserDriveFolderBackground(created.id)
       } catch (error) {
         console.error("[google-oauth] failed to create user", error)
         return loginErrorRedirect(request, "google_create_failed")
       }
     }
+  }
+
+  // Existing accounts created before Drive provisioning still get a folder
+  // on first successful Google sign-in (idempotent).
+  if (!user.driveFolderId) {
+    provisionUserDriveFolderBackground(user.id)
   }
 
   if (!user.isActive) {

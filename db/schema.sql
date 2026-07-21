@@ -118,3 +118,33 @@ CREATE INDEX IF NOT EXISTS visitor_events_user_idx
   WHERE user_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS visitor_events_path_idx
   ON visitor_events (path);
+
+-- Client cabinet: each user gets a Google Drive folder (named by email).
+-- Projects live as subfolders; media files are uploaded into the project folder.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS drive_folder_id TEXT;
+
+CREATE TABLE IF NOT EXISTS projects (
+  id              TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  drive_folder_id TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS projects_user_created_idx
+  ON projects (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS project_media (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  file_name     TEXT NOT NULL,
+  mime_type     TEXT NOT NULL,
+  size_bytes    BIGINT,
+  drive_file_id TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS project_media_project_created_idx
+  ON project_media (project_id, created_at DESC);

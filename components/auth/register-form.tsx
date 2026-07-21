@@ -37,6 +37,7 @@ export function RegisterForm({ googleEnabled = false }: RegisterFormProps = {}) 
     try {
       const response = await fetch("/api/auth/signup", {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
         },
@@ -47,7 +48,10 @@ export function RegisterForm({ googleEnabled = false }: RegisterFormProps = {}) 
         }),
       })
 
-      const data = (await response.json()) as { message?: string }
+      const data = (await response.json()) as {
+        message?: string
+        redirectTo?: string
+      }
 
       if (!response.ok) {
         setServerError(data.message ?? "Registration failed. Please try again.")
@@ -55,12 +59,13 @@ export function RegisterForm({ googleEnabled = false }: RegisterFormProps = {}) 
       }
 
       setServerMessage(data.message ?? "Account created successfully.")
-      form.reset({
-        fullName: "",
-        email: values.email,
-        password: "",
-        confirmPassword: "",
-      })
+      const target =
+        data.redirectTo &&
+        data.redirectTo.startsWith("/") &&
+        !data.redirectTo.startsWith("//")
+          ? data.redirectTo
+          : "/account/dashboard"
+      window.location.assign(target)
     } catch {
       setServerError("Unable to reach the server. Please try again.")
     }

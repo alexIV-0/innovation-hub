@@ -9,6 +9,27 @@ export type UserRecord = {
   role: UserRole
   isActive: boolean
   createdAt: Date
+  driveFolderId: string | null
+}
+
+export type ProjectRecord = {
+  id: string
+  userId: string
+  name: string
+  description: string
+  driveFolderId: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type ProjectMediaRecord = {
+  id: string
+  projectId: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number | null
+  driveFileId: string
+  createdAt: Date
 }
 
 export type UserRecordWithPassword = UserRecord & {

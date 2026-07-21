@@ -105,7 +105,7 @@ function UserMenu({ user, onSignOut }: { user: SessionUser; onSignOut: () => voi
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link href="/account">
+          <Link href="/account/dashboard">
             <Settings className="h-4 w-4" />
             Account settings
           </Link>

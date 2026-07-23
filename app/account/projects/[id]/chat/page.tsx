@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { getCurrentUser } from "@/lib/admin-auth"
 import { listProjectChatMessages } from "@/lib/repositories/project-chat"
 import { findProjectForUser } from "@/lib/repositories/projects"
+import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
 
 export const dynamic = "force-dynamic"
 
@@ -26,6 +27,7 @@ export default async function AccountProjectChatPage({ params }: PageProps) {
     notFound()
   }
 
+  await syncProjectChatFromYouGile(project)
   const messages = await listProjectChatMessages(project.id)
 
   return (

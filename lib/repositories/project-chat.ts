@@ -38,14 +38,20 @@ export async function insertProjectChatMessage(input: {
   body: string
   yougileMessageId?: string | null
   delivered?: boolean
+  /**
+   * Overrides `created_at` (defaults to NOW()) — used when backfilling
+   * messages pulled from YouGile's own history, so they sort by when they
+   * were actually sent there instead of when we happened to poll them.
+   */
+  createdAt?: Date
 }): Promise<ProjectChatMessageRecord> {
   const id = randomUUID()
   const result = await query<ProjectChatMessageRecord>(
     `INSERT INTO project_chat_messages (
         id, project_id, sender_type, sender_user_id, sender_name, body,
-        yougile_message_id, delivered
+        yougile_message_id, delivered, created_at
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, NOW()))
      RETURNING ${MESSAGE_FIELDS}`,
     [
       id,
@@ -56,6 +62,7 @@ export async function insertProjectChatMessage(input: {
       input.body,
       input.yougileMessageId ?? null,
       input.delivered ?? false,
+      input.createdAt ?? null,
     ],
   )
   return result.rows[0]

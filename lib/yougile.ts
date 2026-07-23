@@ -209,3 +209,60 @@ export async function listCompanyUsers(): Promise<YouGileUser[]> {
 export async function getCurrentYouGileUser(): Promise<YouGileUser> {
   return yougileRequest<YouGileUser>("/users/me", { method: "GET" })
 }
+
+export type YouGileRemoteChatMessage = {
+  /** Numeric epoch-ms timestamp — also YouGile's message id. */
+  id: number
+  fromUserId: string
+  text: string
+  textHtml?: string
+  label?: string
+}
+
+/**
+ * Lists messages in a chat, confirmed against the real spec
+ * (`GET /chats/{chatId}/messages`, query params `since`/`limit`/`offset`).
+ *
+ * IMPORTANT: YouGile's `chat_message-created` webhook only fires for
+ * messages sent through the REST API — messages typed by humans directly
+ * in the YouGile app never trigger it (confirmed empirically: a real
+ * multi-message conversation left `lastSuccess` on the webhook subscription
+ * frozen at the one API-sent message, with zero deliveries for the rest).
+ * So this function, not the webhook, is what actually pulls team replies
+ * into the site — see `lib/project-chat-sync.ts`.
+ */
+export async function listChatMessages(input: {
+  chatId: string
+  /** Only messages created strictly after this epoch-ms timestamp. */
+  sinceMs?: number
+  limit?: number
+}): Promise<YouGileRemoteChatMessage[]> {
+  const params = new URLSearchParams()
+  params.set("limit", String(input.limit ?? 200))
+  if (input.sinceMs) params.set("since", String(input.sinceMs))
+
+  const result = await yougileRequest<{ content?: YouGileRemoteChatMessage[] }>(
+    `/chats/${encodeURIComponent(input.chatId)}/messages?${params.toString()}`,
+    { method: "GET" },
+  )
+  return result.content ?? []
+}
+
+let userNameCache: { at: number; byId: Map<string, string> } | null = null
+const USER_NAME_CACHE_TTL_MS = 5 * 60 * 1000
+
+/**
+ * Maps YouGile user id -> display name, cached for a few minutes (company
+ * rosters change rarely) since this is looked up on every chat poll to
+ * label incoming "team" messages.
+ */
+export async function getCompanyUserNameMap(): Promise<Map<string, string>> {
+  const now = Date.now()
+  if (userNameCache && now - userNameCache.at < USER_NAME_CACHE_TTL_MS) {
+    return userNameCache.byId
+  }
+  const users = await listCompanyUsers()
+  const byId = new Map(users.map((u) => [u.id, u.realName || u.email || "YouGile"]))
+  userNameCache = { at: now, byId }
+  return byId
+}

@@ -12,6 +12,7 @@ import {
   updateProject,
 } from "@/lib/repositories/projects"
 import { listProjectChatMessages } from "@/lib/repositories/project-chat"
+import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
 
 export const dynamic = "force-dynamic"
 
@@ -62,6 +63,7 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
   // yet) the page only shows the chat — gate on Drive's live signal rather
   // than any DB flag so it tracks the actual folder state.
   const automationStarted = drive?.optionsFileExists ?? false
+  await syncProjectChatFromYouGile(project)
   const chatMessages = await listProjectChatMessages(project.id)
 
   return (

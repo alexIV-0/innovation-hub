@@ -9,6 +9,7 @@ import {
   markProjectChatMessageDelivered,
 } from "@/lib/repositories/project-chat"
 import { sendProjectChatMessageSchema } from "@/lib/project-chat-schemas"
+import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
 import {
   createProjectGroupChat,
   getYouGileConfig,
@@ -33,6 +34,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
+
+  // YouGile's webhook only fires for messages sent through its own REST
+  // API, never for messages typed directly in the YouGile app — so team
+  // replies have to be pulled here instead of pushed to us. See
+  // lib/project-chat-sync.ts for details.
+  await syncProjectChatFromYouGile(project)
 
   const messages = await listProjectChatMessages(project.id)
   return NextResponse.json({ messages })

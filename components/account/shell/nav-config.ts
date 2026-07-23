@@ -1,8 +1,6 @@
 import {
   FolderKanban,
   LayoutDashboard,
-  ShieldCheck,
-  TriangleAlert,
   UserRound,
   type LucideIcon,
 } from "lucide-react"
@@ -16,41 +14,47 @@ export type AccountNavItem = {
   tone?: "default" | "destructive"
 }
 
-export const accountNavItems: AccountNavItem[] = [
+export type AccountNavGroup = {
+  label: string
+  items: AccountNavItem[]
+}
+
+export const accountNavGroups: AccountNavGroup[] = [
   {
-    label: "Dashboard",
-    href: "/account/dashboard",
-    icon: LayoutDashboard,
-    description: "Projects and content pipeline",
-    exact: true,
+    label: "Workspace",
+    items: [
+      {
+        label: "Dashboard",
+        href: "/account/dashboard",
+        icon: LayoutDashboard,
+        description: "Projects and content pipeline",
+        exact: true,
+      },
+      {
+        label: "Projects",
+        href: "/account/projects",
+        icon: FolderKanban,
+        description: "Create and manage projects",
+      },
+    ],
   },
   {
-    label: "Projects",
-    href: "/account/projects",
-    icon: FolderKanban,
-    description: "Create and manage projects",
-  },
-  {
-    label: "Profile",
-    href: "/account",
-    icon: UserRound,
-    description: "Name, email and identity",
-    exact: true,
-  },
-  {
-    label: "Security",
-    href: "/account/security",
-    icon: ShieldCheck,
-    description: "Password and sign-in",
-  },
-  {
-    label: "Danger zone",
-    href: "/account/danger",
-    icon: TriangleAlert,
-    description: "Delete the account",
-    tone: "destructive",
+    label: "Account",
+    items: [
+      {
+        label: "Profile",
+        href: "/account",
+        icon: UserRound,
+        description: "Name, email and security",
+        exact: true,
+      },
+    ],
   },
 ]
+
+export const accountNavItems: AccountNavItem[] = accountNavGroups.flatMap(
+  (group) => group.items,
+)
 
 export function isAccountItemActive(item: AccountNavItem, pathname: string) {
   if (item.exact) return pathname === item.href

@@ -18,8 +18,25 @@ export type ProjectRecord = {
   name: string
   description: string
   driveFolderId: string | null
+  isActive: boolean
   createdAt: Date
   updatedAt: Date
+  /** YouGile group chat id, created lazily on the first chat message. */
+  yougileChatId: string | null
+}
+
+export type ProjectChatSenderType = "client" | "team" | "system"
+
+export type ProjectChatMessageRecord = {
+  id: string
+  projectId: string
+  senderType: ProjectChatSenderType
+  senderUserId: string | null
+  senderName: string
+  body: string
+  yougileMessageId: string | null
+  delivered: boolean
+  createdAt: Date
 }
 
 export type ProjectMediaRecord = {

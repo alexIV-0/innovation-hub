@@ -1,10 +1,11 @@
 "use client"
 
 import Link from "next/link"
+import { ShieldCheck } from "lucide-react"
 import type { UserRole } from "@/lib/domain-types"
 import { AccountSidebarLink } from "./account-sidebar-link"
 import { AccountSidebarUser } from "./account-sidebar-user"
-import { accountNavItems } from "./nav-config"
+import { accountNavGroups } from "./nav-config"
 
 type Props = {
   email: string
@@ -15,57 +16,59 @@ type Props = {
 
 export function AccountSidebar({ email, fullName, role, onNavigate }: Props) {
   return (
-    <aside className="flex h-full w-full flex-col gap-4 border-r border-border/60 bg-[hsl(var(--surface-1))]/85 backdrop-blur-xl lg:w-72">
-      <div className="px-5 pt-6">
+    <aside className="flex h-full w-full flex-col border-r border-border/50 bg-[hsl(var(--surface-1))]/85 backdrop-blur-xl lg:w-[264px]">
+      <div className="px-5 pb-2 pt-6">
         <Link
           href="/"
-          className="flex items-center gap-2"
+          className="group flex items-center gap-2.5"
           onClick={onNavigate}
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/15">
-            <span className="font-display text-sm font-bold text-primary">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/30 bg-gradient-to-b from-primary/25 to-primary/10 shadow-glow-soft transition-shadow group-hover:shadow-glow">
+            <span className="font-display text-[11px] font-bold text-primary">
               FF
             </span>
           </span>
-          <span className="font-display text-sm tracking-[0.08em] text-foreground/90">
+          <span className="font-display text-sm font-medium tracking-[0.08em] text-foreground/90">
             FF Works
           </span>
         </Link>
       </div>
 
-      <nav className="scrollbar-elegant flex-1 space-y-1 overflow-y-auto px-3">
-        <p className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
-          Account
-        </p>
-        {accountNavItems.map((item) => (
-          <AccountSidebarLink
-            key={item.href}
-            item={item}
-            onNavigate={onNavigate}
-          />
+      <nav className="scrollbar-elegant flex-1 space-y-6 overflow-y-auto px-3 py-4">
+        {accountNavGroups.map((group) => (
+          <div key={group.label} className="space-y-0.5">
+            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
+              {group.label}
+            </p>
+            {group.items.map((item) => (
+              <AccountSidebarLink
+                key={item.href}
+                item={item}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
         ))}
 
         {role === "ADMIN" ? (
-          <>
-            <p className="px-3 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
+          <div className="space-y-0.5">
+            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
               Shortcuts
             </p>
             <Link
               href="/admin"
               onClick={onNavigate}
-              className="group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white/[0.04] hover:text-foreground"
+              className="group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-white/[0.05] hover:text-foreground"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-transparent bg-white/[0.03] text-muted-foreground group-hover:border-border group-hover:text-foreground">
-                <span className="text-[10px] font-bold tracking-[0.15em]">A</span>
-              </span>
+              <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground" />
               <span className="flex-1 truncate">Admin dashboard</span>
             </Link>
-          </>
+          </div>
         ) : null}
       </nav>
 
       <div className="space-y-3 px-3 pb-4">
-        <div className="h-px bg-border/60" />
+        <div className="divider-line" />
         <AccountSidebarUser email={email} fullName={fullName} />
       </div>
     </aside>

@@ -136,6 +136,18 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE INDEX IF NOT EXISTS projects_user_created_idx
   ON projects (user_id, created_at DESC);
 
+-- Idempotent migration: lets users pause a project (hides it from active
+-- automation/chat flows) without deleting its media or Drive folder.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Google Drive is the source of truth for which projects exist (see
+-- lib/project-drive.ts#listUserProjectsFromDrive): every Drive folder scan
+-- upserts by drive_folder_id, so a unique index prevents two concurrent
+-- requests from ever creating duplicate rows for the same Drive folder.
+CREATE UNIQUE INDEX IF NOT EXISTS projects_drive_folder_id_idx
+  ON projects (drive_folder_id)
+  WHERE drive_folder_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS project_media (
   id            TEXT PRIMARY KEY,
   project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -148,3 +160,31 @@ CREATE TABLE IF NOT EXISTS project_media (
 
 CREATE INDEX IF NOT EXISTS project_media_project_created_idx
   ON project_media (project_id, created_at DESC);
+
+-- YouGile group chat linked 1:1 with a project, created lazily on first
+-- chat message (see lib/yougile.ts + app/api/projects/[id]/chat/route.ts).
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS yougile_chat_id TEXT;
+
+-- Per-project chat, mirrored two-way with YouGile: 'client' rows come from
+-- the site (pushed to YouGile via the REST API), 'team' rows arrive via the
+-- YouGile webhook (chat_message-created from a non-bot author), 'system' is
+-- reserved for future in-chat notices. One project belongs to one user
+-- (projects.user_id), so this is already scoped per user.
+CREATE TABLE IF NOT EXISTS project_chat_messages (
+  id                  TEXT PRIMARY KEY,
+  project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sender_type         TEXT NOT NULL CHECK (sender_type IN ('client', 'team', 'system')),
+  sender_user_id      TEXT,
+  sender_name         TEXT NOT NULL,
+  body                TEXT NOT NULL,
+  yougile_message_id  TEXT,
+  delivered           BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS project_chat_messages_project_created_idx
+  ON project_chat_messages (project_id, created_at);
+-- Partial unique index (not all rows have a YouGile message id yet, e.g.
+-- client messages pending delivery) — also doubles as webhook dedup guard.
+CREATE UNIQUE INDEX IF NOT EXISTS project_chat_messages_yougile_id_idx
+  ON project_chat_messages (yougile_message_id) WHERE yougile_message_id IS NOT NULL;

@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { AccountPageHeader } from "@/components/account/shell/account-page-header"
+import { SecuritySection } from "@/components/account/sections/security-section"
 
 export type AccountUser = {
   id: string
@@ -55,7 +56,9 @@ function avatarInitials(name: string, email: string) {
 
 function formatDate(iso: string) {
   try {
-    return new Date(iso).toLocaleDateString(undefined, {
+    // Fixed locale: SSR and the browser must produce identical text,
+    // otherwise React reports a hydration mismatch.
+    return new Date(iso).toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -109,22 +112,27 @@ export function ProfileSection({ user }: { user: AccountUser }) {
   const isSubmitting = form.formState.isSubmitting
 
   return (
-    <div className="space-y-8">
+    <div className="max-w-4xl space-y-8">
       <AccountPageHeader
         eyebrow="Account"
         title="Profile"
-        description="Personal information shown across FF Works."
+        description="Personal information and security settings for your FF Works account."
       />
 
-      <Card className="border-border/60 bg-card/40">
-        <CardContent className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center">
-          <Avatar className="h-16 w-16 border border-border/60">
-            <AvatarFallback className="bg-primary text-lg font-semibold text-primary-foreground">
+      <Card className="overflow-hidden border-border/60 bg-card/40">
+        {/* Gradient cover band, GitHub/Vercel-profile style. */}
+        <div
+          aria-hidden
+          className="h-24 w-full bg-[linear-gradient(115deg,hsl(var(--primary)/0.35),hsl(276_90%_72%/0.22)_55%,transparent)]"
+        />
+        <CardContent className="relative flex flex-col gap-5 px-6 pb-6 sm:flex-row sm:items-end">
+          <Avatar className="-mt-10 h-20 w-20 border-4 border-[hsl(var(--card))] shadow-glow-soft">
+            <AvatarFallback className="bg-gradient-to-b from-primary to-primary/70 text-xl font-semibold text-primary-foreground">
               {avatarInitials(current.fullName, current.email)}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1 space-y-1.5">
-            <p className="truncate font-display text-xl text-foreground">
+            <p className="truncate font-display text-xl font-semibold tracking-tight text-foreground">
               {current.fullName || "Unnamed account"}
             </p>
             <p className="truncate text-sm text-muted-foreground">{current.email}</p>
@@ -132,7 +140,14 @@ export function ProfileSection({ user }: { user: AccountUser }) {
               <Badge variant={current.role === "ADMIN" ? "default" : "secondary"}>
                 {current.role === "ADMIN" ? "Admin" : "Member"}
               </Badge>
-              <Badge variant={current.isActive ? "outline" : "destructive"}>
+              <Badge
+                variant="outline"
+                className={
+                  current.isActive
+                    ? "border-success/30 bg-success/10 text-success"
+                    : "border-destructive/40 bg-destructive/10 text-destructive"
+                }
+              >
                 {current.isActive ? "Active" : "Suspended"}
               </Badge>
               <span className="text-xs text-muted-foreground">
@@ -143,7 +158,7 @@ export function ProfileSection({ user }: { user: AccountUser }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-border/60 bg-card/40">
         <CardHeader>
           <CardTitle className="text-xl">Personal info</CardTitle>
           <CardDescription>
@@ -229,6 +244,8 @@ export function ProfileSection({ user }: { user: AccountUser }) {
           </form>
         </Form>
       </Card>
+
+      <SecuritySection />
     </div>
   )
 }

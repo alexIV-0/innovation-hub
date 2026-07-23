@@ -7,10 +7,11 @@ type Props = {
 
 export function AccountPageHeader({ eyebrow, title, description, actions }: Props) {
   return (
-    <header className="flex flex-col gap-4 border-b border-border/60 pb-6 md:flex-row md:items-end md:justify-between">
-      <div className="space-y-2">
+    <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+      <div className="space-y-2.5">
         {eyebrow ? (
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/80">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/80">
+            <span className="h-px w-6 bg-primary/50" aria-hidden />
             {eyebrow}
           </p>
         ) : null}
@@ -18,12 +19,14 @@ export function AccountPageHeader({ eyebrow, title, description, actions }: Prop
           {title}
         </h1>
         {description ? (
-          <p className="max-w-2xl text-sm text-muted-foreground md:text-[15px]">
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-[15px]">
             {description}
           </p>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
+      ) : null}
     </header>
   )
 }

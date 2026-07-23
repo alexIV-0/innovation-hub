@@ -173,6 +173,183 @@ async function findChildFolder(
   return response.data.files?.[0]?.id ?? null
 }
 
+export const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
+
+export type DriveChildFile = {
+  id: string
+  name: string
+  mimeType: string
+  sizeBytes: number | null
+  createdTime: string | null
+  modifiedTime: string | null
+}
+
+/** List all non-trashed direct children of a Drive folder (paginated). */
+export async function listDriveChildren(
+  folderId: string,
+): Promise<DriveChildFile[]> {
+  const { drive, config } = getDrive()
+  const files: DriveChildFile[] = []
+  let pageToken: string | undefined
+
+  try {
+    do {
+      const response = await drive.files.list({
+        ...driveFlags(config),
+        q: `'${folderId}' in parents and trashed = false`,
+        fields:
+          "nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime)",
+        pageSize: 1000,
+        pageToken,
+        spaces: "drive",
+      })
+      for (const file of response.data.files ?? []) {
+        if (!file.id || !file.name) continue
+        const size =
+          file.size == null ? NaN : Number.parseInt(String(file.size), 10)
+        files.push({
+          id: file.id,
+          name: file.name,
+          mimeType: file.mimeType ?? "application/octet-stream",
+          sizeBytes: Number.isFinite(size) ? size : null,
+          createdTime: file.createdTime ?? null,
+          modifiedTime: file.modifiedTime ?? null,
+        })
+      }
+      pageToken = response.data.nextPageToken ?? undefined
+    } while (pageToken)
+  } catch (error) {
+    throw new GoogleDriveError(
+      error instanceof Error ? error.message : "Failed to list Drive folder.",
+      { cause: error },
+    )
+  }
+
+  return files
+}
+
+/** Find a direct child by exact name; optionally restrict to folders. */
+export async function findDriveChildByName(
+  parentId: string,
+  name: string,
+  options?: { folderOnly?: boolean },
+): Promise<DriveChildFile | null> {
+  const { drive, config } = getDrive()
+  const escaped = name.replace(/'/g, "\\'")
+  const mimeClause = options?.folderOnly
+    ? ` and mimeType = '${DRIVE_FOLDER_MIME_TYPE}'`
+    : ""
+
+  try {
+    const response = await drive.files.list({
+      ...driveFlags(config),
+      q: `'${parentId}' in parents and name = '${escaped}'${mimeClause} and trashed = false`,
+      fields: "files(id, name, mimeType, size, createdTime, modifiedTime)",
+      pageSize: 1,
+      spaces: "drive",
+    })
+    const file = response.data.files?.[0]
+    if (!file?.id || !file.name) return null
+    const size =
+      file.size == null ? NaN : Number.parseInt(String(file.size), 10)
+    return {
+      id: file.id,
+      name: file.name,
+      mimeType: file.mimeType ?? "application/octet-stream",
+      sizeBytes: Number.isFinite(size) ? size : null,
+      createdTime: file.createdTime ?? null,
+      modifiedTime: file.modifiedTime ?? null,
+    }
+  } catch (error) {
+    throw new GoogleDriveError(
+      error instanceof Error ? error.message : "Failed to search Drive folder.",
+      { cause: error },
+    )
+  }
+}
+
+/** Fetch id/name/mimeType/parents for a file; null when missing. */
+export async function getDriveFileInfo(fileId: string): Promise<{
+  id: string
+  name: string
+  mimeType: string
+  parents: string[]
+} | null> {
+  const { drive } = getDrive()
+  try {
+    const response = await drive.files.get({
+      fileId,
+      fields: "id, name, mimeType, parents",
+      supportsAllDrives: true,
+    })
+    const file = response.data
+    if (!file.id) return null
+    return {
+      id: file.id,
+      name: file.name ?? "",
+      mimeType: file.mimeType ?? "application/octet-stream",
+      parents: file.parents ?? [],
+    }
+  } catch (error) {
+    const status =
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof (error as { code?: unknown }).code === "number"
+        ? (error as { code: number }).code
+        : null
+    if (status === 404) return null
+    throw new GoogleDriveError(
+      error instanceof Error ? error.message : "Failed to read Drive file.",
+      { cause: error },
+    )
+  }
+}
+
+/** Download the raw text content of a Drive file. */
+export async function downloadDriveTextFile(fileId: string): Promise<string> {
+  const { drive } = getDrive()
+  try {
+    const response = await drive.files.get(
+      { fileId, alt: "media", supportsAllDrives: true },
+      { responseType: "text" },
+    )
+    const data = response.data
+    return typeof data === "string" ? data : JSON.stringify(data)
+  } catch (error) {
+    throw new GoogleDriveError(
+      error instanceof Error
+        ? error.message
+        : "Failed to download Drive file.",
+      { cause: error },
+    )
+  }
+}
+
+/** Overwrite the content of an existing Drive file. */
+export async function updateDriveTextFile(input: {
+  fileId: string
+  content: string
+  mimeType?: string
+}): Promise<void> {
+  const { drive } = getDrive()
+  try {
+    await drive.files.update({
+      fileId: input.fileId,
+      supportsAllDrives: true,
+      media: {
+        mimeType: input.mimeType ?? "application/json",
+        body: Readable.from([input.content]),
+      },
+    })
+  } catch (error) {
+    throw new GoogleDriveError(
+      error instanceof Error ? error.message : "Failed to update Drive file.",
+      { cause: error },
+    )
+  }
+}
+
 export async function createDriveFolder(input: {
   name: string
   parentId: string

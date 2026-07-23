@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation"
 import { ProjectsSection } from "@/components/account/sections/projects-section"
 import { getCurrentUser } from "@/lib/admin-auth"
-import { listProjectsByUserId } from "@/lib/repositories/projects"
+import { isGoogleDriveConfigured } from "@/lib/google-drive"
+import { listUserProjects } from "@/lib/project-drive"
+import { provisionUserDriveFolder } from "@/lib/provision-drive"
+import { findUserById } from "@/lib/repositories/users"
 
 export const dynamic = "force-dynamic"
 
@@ -11,7 +14,18 @@ export default async function AccountProjectsPage() {
     redirect("/login")
   }
 
-  const projects = await listProjectsByUserId(user.id)
+  if (isGoogleDriveConfigured() && !user.driveFolderId) {
+    await provisionUserDriveFolder(user.id)
+  }
+
+  const fresh = (await findUserById(user.id)) ?? user
+
+  // The list of projects comes from a live Drive folder scan (source of
+  // truth for what exists), not a plain DB query — see listUserProjects.
+  const projects = await listUserProjects({
+    userId: fresh.id,
+    userDriveFolderId: fresh.driveFolderId,
+  })
 
   return (
     <ProjectsSection
@@ -20,6 +34,7 @@ export default async function AccountProjectsPage() {
         name: p.name,
         description: p.description,
         driveFolderId: p.driveFolderId,
+        isActive: p.isActive,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
       }))}

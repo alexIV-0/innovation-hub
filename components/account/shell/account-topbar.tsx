@@ -19,7 +19,7 @@ export function AccountTopbar({ email, fullName, role }: Props) {
   const current = accountNavItems.find((item) => isAccountItemActive(item, pathname))
 
   return (
-    <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl lg:px-8">
+    <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/50 bg-background/70 px-4 backdrop-blur-xl lg:px-8">
       <AccountMobileSidebar email={email} fullName={fullName} role={role} />
 
       <nav

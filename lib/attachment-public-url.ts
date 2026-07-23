@@ -16,7 +16,7 @@ function readPositiveInt(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
 
-/** HTTPS origin for links sent to third parties (Asana, email). Not localhost. */
+/** HTTPS origin for links sent to third parties (external integrations, email). Not localhost. */
 export function getAppPublicOrigin(): string | null {
   for (const raw of [
     process.env.APP_PUBLIC_URL,
@@ -56,7 +56,7 @@ export function relativeMediaUrlForKey(key: string): string {
 }
 
 /**
- * URL that external services (Asana) can fetch: CDN, public app /api/media, or
+ * URL that external services can fetch: CDN, public app /api/media, or
  * a long-lived presigned GET URL when developing on localhost.
  */
 export async function resolveExternalAttachmentUrl(key: string): Promise<string> {

@@ -102,7 +102,7 @@ async function runUpload(request: NextRequest): Promise<Response> {
     return NextResponse.json({
       key,
       contentType,
-      /** Relative path — resolved to a public/presigned URL when submitting to Asana. */
+      /** Relative path — resolved to a public/presigned URL for external delivery. */
       url: relativeMediaUrlForKey(key),
     })
   } catch (e) {

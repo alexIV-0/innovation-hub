@@ -1,29 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import {
-  AsanaError,
-  attachExternalUrlToTask,
-  createFeatureSuggestionTask,
-} from "@/lib/asana"
-import { resolveExternalAttachmentUrl } from "@/lib/attachment-public-url"
-import {
-  buildFeatureSuggestionNotes,
-  featureSuggestionSchema,
-  type FeatureSuggestionAttachment,
-} from "@/lib/feature-suggestion-schemas"
+import { featureSuggestionSchema } from "@/lib/feature-suggestion-schemas"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 
 export const runtime = "nodejs"
 
 const RATE_LIMIT = 3
 const RATE_WINDOW_MS = 10 * 60 * 1000
-
-function taskTitle(name: string): string {
-  const trimmed = name.trim()
-  const short =
-    trimmed.length > 60 ? `${trimmed.slice(0, 57).trimEnd()}…` : trimmed
-  return `Feature suggestion: ${short}`
-}
 
 export async function POST(request: NextRequest) {
   const auth = await requireUserApi(request)
@@ -60,89 +43,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Invalid submission." }, { status: 400 })
   }
 
-  const {
-    name,
-    email,
-    projectName,
-    referenceUrl,
-    monthlyVolume,
-    description,
-    automation,
-    attachments,
-  } = parsed.data
-
-  let attachmentsForAsana: FeatureSuggestionAttachment[]
-  try {
-    attachmentsForAsana = await Promise.all(
-      attachments.map(async (file) => ({
-        ...file,
-        url: await resolveExternalAttachmentUrl(file.key),
-      })),
-    )
-  } catch (urlError) {
-    console.error("[api/feature-suggestions] attachment URL resolve", urlError)
-    return NextResponse.json(
-      { message: "Could not prepare attachment links. Please try again." },
-      { status: 502 },
-    )
-  }
-
-  const notes = buildFeatureSuggestionNotes({
-    name,
-    email,
-    projectName,
-    referenceUrl,
-    monthlyVolume,
-    description,
-    automation,
-    attachments: attachmentsForAsana,
+  // TODO(yougile): no delivery integration is wired up yet. Send this into
+  // YouGile (chat message / task) once that integration lands — see
+  // `lib/feature-suggestion-schemas.ts` for the note builder, still usable as-is.
+  console.warn("[api/feature-suggestions] delivery not configured", {
+    name: parsed.data.name,
+    email: parsed.data.email,
   })
 
-  try {
-    const task = await createFeatureSuggestionTask({
-      name: taskTitle(name),
-      notes,
-    })
-
-    for (const file of attachmentsForAsana) {
-      try {
-        await attachExternalUrlToTask(task.gid, {
-          url: file.url,
-          name: file.name,
-        })
-      } catch (attachError) {
-        console.error(
-          "[api/feature-suggestions] attachment failed",
-          task.gid,
-          file.key,
-          attachError,
-        )
-      }
-    }
-
-    return NextResponse.json({
-      taskGid: task.gid,
-      url: task.permalink_url ?? null,
-      message: "Thank you! Your suggestion was submitted.",
-    })
-  } catch (e) {
-    if (e instanceof AsanaError) {
-      console.error("[api/feature-suggestions] Asana error", e.status, e.message)
-      const status = e.status >= 400 && e.status < 600 ? e.status : 502
-      return NextResponse.json(
-        {
-          message:
-            status === 500
-              ? "Submission service is not configured. Please try again later."
-              : "Could not create the task in Asana. Please try again later.",
-        },
-        { status: status >= 500 ? 502 : status },
-      )
-    }
-    console.error("[api/feature-suggestions]", e)
-    return NextResponse.json(
-      { message: "Unexpected error. Please try again later." },
-      { status: 500 },
-    )
-  }
+  return NextResponse.json(
+    {
+      message: "Submission service is not configured. Please try again later.",
+    },
+    { status: 503 },
+  )
 }

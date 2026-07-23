@@ -27,7 +27,6 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { AccountPageHeader } from "@/components/account/shell/account-page-header"
 
 export function SecuritySection() {
   const [showCurrent, setShowCurrent] = useState(false)
@@ -65,20 +64,13 @@ export function SecuritySection() {
   const isSubmitting = form.formState.isSubmitting
 
   return (
-    <div className="space-y-8">
-      <AccountPageHeader
-        eyebrow="Account"
-        title="Security"
-        description="Rotate your password and keep your account safe."
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">Change password</CardTitle>
-          <CardDescription>
-            Pick something strong — at least 8 characters. You will stay signed in on this device.
-          </CardDescription>
-        </CardHeader>
+    <Card className="border-border/60 bg-card/40">
+      <CardHeader>
+        <CardTitle className="text-xl">Change password</CardTitle>
+        <CardDescription>
+          Pick something strong — at least 8 characters. You will stay signed in on this device.
+        </CardDescription>
+      </CardHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <CardContent className="space-y-4">
@@ -154,8 +146,7 @@ export function SecuritySection() {
             </CardFooter>
           </form>
         </Form>
-      </Card>
-    </div>
+    </Card>
   )
 }
 

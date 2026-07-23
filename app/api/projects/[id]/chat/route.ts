@@ -13,7 +13,6 @@ import {
   createProjectGroupChat,
   getYouGileConfig,
   isYouGileConfigured,
-  resolveProjectChatMemberIds,
   sendChatMessage,
   YouGileError,
 } from "@/lib/yougile"
@@ -50,10 +49,10 @@ async function ensureYouGileChatId(
   if (project.yougileChatId) return project.yougileChatId
 
   const config = getYouGileConfig()
-  const memberIds = resolveProjectChatMemberIds(config)
   const chat = await createProjectGroupChat({
     title: `${project.name} — ${ownerEmail}`,
-    memberIds,
+    botUserId: config.botUserId,
+    memberIds: config.memberIds,
   })
   await setProjectYougileChatId(project.id, chat.id)
   return chat.id
@@ -107,8 +106,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         chatId,
         text: `${senderName}: ${parsed.data.text}`,
       })
-      await markProjectChatMessageDelivered(message.id, sent.id)
-      message = { ...message, yougileMessageId: sent.id, delivered: true }
+      const yougileMessageId = String(sent.id)
+      await markProjectChatMessageDelivered(message.id, yougileMessageId)
+      message = { ...message, yougileMessageId, delivered: true }
     } catch (error) {
       console.error("[api/projects/chat] YouGile delivery failed", {
         projectId: project.id,

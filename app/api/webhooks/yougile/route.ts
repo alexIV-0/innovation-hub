@@ -26,13 +26,26 @@ type YouGileWebhookEnvelope = {
   data?: unknown
 }
 
+/**
+ * Field names confirmed against the real ChatMessageListDtoBase (see
+ * https://yougile.com/api-json): `id` (a numeric timestamp) and
+ * `fromUserId`. `chatId` isn't part of that DTO (it's implicit in the
+ * `/chats/{chatId}/messages` URL for direct API calls) — the outbound
+ * webhook envelope isn't documented anywhere, so several historical/likely
+ * alternate spellings are kept as fallbacks in case YouGile's actual
+ * payload differs; unmatched shapes are logged via `rawBody` for
+ * debugging.
+ */
 type YouGileWebhookMessageData = {
   id?: unknown
   chatId?: unknown
   chat_id?: unknown
+  fromUserId?: unknown
+  from_user_id?: unknown
   authorId?: unknown
   author_id?: unknown
   userId?: unknown
+  fromUserName?: unknown
   authorName?: unknown
   author_name?: unknown
   text?: unknown
@@ -41,6 +54,12 @@ type YouGileWebhookMessageData = {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null
+}
+
+/** `id` is a number (timestamp) per the real schema; also accepts a string. */
+function asId(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  return asString(value)
 }
 
 function isChatMessageCreatedEvent(envelope: YouGileWebhookEnvelope): boolean {
@@ -92,10 +111,14 @@ export async function POST(request: NextRequest) {
   }
 
   const data = (envelope.data ?? envelope) as YouGileWebhookMessageData
-  const yougileMessageId = asString(data.id)
+  const yougileMessageId = asId(data.id)
   const chatId = asString(data.chatId) ?? asString(data.chat_id)
   const authorId =
-    asString(data.authorId) ?? asString(data.author_id) ?? asString(data.userId)
+    asString(data.fromUserId) ??
+    asString(data.from_user_id) ??
+    asString(data.authorId) ??
+    asString(data.author_id) ??
+    asString(data.userId)
   const text = asString(data.text) ?? asString(data.textHtml) ?? ""
 
   if (!yougileMessageId || !chatId) {
@@ -123,7 +146,10 @@ export async function POST(request: NextRequest) {
     }
 
     const senderName =
-      asString(data.authorName) ?? asString(data.author_name) ?? "YouGile"
+      asString(data.fromUserName) ??
+      asString(data.authorName) ??
+      asString(data.author_name) ??
+      "YouGile"
 
     await insertProjectChatMessage({
       projectId: project.id,

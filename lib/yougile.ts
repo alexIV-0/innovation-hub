@@ -80,49 +80,94 @@ export type YouGileGroupChat = {
 }
 
 /**
- * Creates a group chat for a project. Members are passed as a userId ->
- * role map, per YouGile's CreateGroupChatDto; every listed member (site bot
- * + team members from YOUGILE_CHAT_MEMBER_IDS) gets the plain "user" role —
- * there's no need for anyone to be an admin of a per-project chat.
+ * Per-role permission bundle referenced by CreateGroupChatDto.roleConfigMap —
+ * mirrors YouGile's own doc example. "admin" (the site bot) keeps full
+ * control of the chat; "user" (invited team members) can chat but not
+ * manage the chat itself.
+ */
+const GROUP_CHAT_ROLE_CONFIG_MAP = {
+  admin: {
+    editProperties: true,
+    editAdmins: true,
+    editUsers: true,
+    sendMessages: true,
+    removeMessages: true,
+  },
+  user: {
+    editProperties: false,
+    editAdmins: false,
+    editUsers: true,
+    sendMessages: true,
+    removeMessages: false,
+  },
+}
+
+/**
+ * Creates a group chat for a project. Confirmed against YouGile's real
+ * OpenAPI spec (https://yougile.com/api-json, CreateGroupChatDto): the
+ * endpoint is `/group-chats` (not `/groupChats`), and besides `users` it
+ * requires `userRoleMap` (userId -> role name) and `roleConfigMap` (role
+ * name -> permission flags) — a flat `users: { id: role }` map alone is
+ * rejected with a 400.
  */
 export async function createProjectGroupChat(input: {
   title: string
+  /** Site bot's YouGile user id — gets the "admin" role in the new chat. */
+  botUserId?: string
+  /** Team members added to the chat — get the "user" role. */
   memberIds: string[]
 }): Promise<YouGileGroupChat> {
-  const users: Record<string, string> = {}
+  const users: Record<string, { notified: boolean }> = {}
+  const userRoleMap: Record<string, string> = {}
+
+  if (input.botUserId) {
+    users[input.botUserId] = { notified: true }
+    userRoleMap[input.botUserId] = "admin"
+  }
   for (const id of input.memberIds) {
-    users[id] = "user"
+    if (id === input.botUserId) continue
+    users[id] = { notified: true }
+    userRoleMap[id] = "user"
   }
 
-  return yougileRequest<YouGileGroupChat>("/groupChats", {
+  return yougileRequest<YouGileGroupChat>("/group-chats", {
     method: "POST",
     body: JSON.stringify({
       title: input.title,
       users,
+      userRoleMap,
+      roleConfigMap: GROUP_CHAT_ROLE_CONFIG_MAP,
     }),
   })
 }
 
 export type YouGileChatMessage = {
-  id: string
+  /** YouGile message ids are numeric (a timestamp) — stored as text in our DB. */
+  id: number
 }
 
-/** Sends a text message into an existing YouGile group chat. */
+/**
+ * Sends a text message into an existing YouGile chat. Confirmed against the
+ * real spec: the endpoint is `/chats/{chatId}/messages` (not a flat
+ * `/chatMessages` with `chatId` in the body).
+ */
 export async function sendChatMessage(input: {
   chatId: string
   text: string
   textHtml?: string
   label?: string
 }): Promise<YouGileChatMessage> {
-  return yougileRequest<YouGileChatMessage>("/chatMessages", {
-    method: "POST",
-    body: JSON.stringify({
-      chatId: input.chatId,
-      text: input.text,
-      textHtml: input.textHtml ?? input.text,
-      label: input.label ?? "site-chat",
-    }),
-  })
+  return yougileRequest<YouGileChatMessage>(
+    `/chats/${encodeURIComponent(input.chatId)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        text: input.text,
+        textHtml: input.textHtml ?? input.text,
+        label: input.label ?? "site-chat",
+      }),
+    },
+  )
 }
 
 export type YouGileWebhookSubscription = {
@@ -139,6 +184,8 @@ export async function createWebhookSubscription(input: {
     body: JSON.stringify({
       url: input.url,
       event: input.event,
+      // Required by CreateWebhookDto's schema; empty = no extra filtering.
+      filters: [],
     }),
   })
 }
@@ -158,13 +205,7 @@ export async function listCompanyUsers(): Promise<YouGileUser[]> {
   return Array.isArray(result) ? result : result.content ?? []
 }
 
-/**
- * Builds the member list for a freshly created project group chat: the site
- * bot (if configured) plus every team member id from
- * YOUGILE_CHAT_MEMBER_IDS, deduplicated.
- */
-export function resolveProjectChatMemberIds(config: YouGileConfig): string[] {
-  const ids = new Set<string>(config.memberIds)
-  if (config.botUserId) ids.add(config.botUserId)
-  return [...ids]
+/** The YouGile user that owns the currently configured API key. */
+export async function getCurrentYouGileUser(): Promise<YouGileUser> {
+  return yougileRequest<YouGileUser>("/users/me", { method: "GET" })
 }

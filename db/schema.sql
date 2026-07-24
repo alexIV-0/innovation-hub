@@ -188,3 +188,27 @@ CREATE INDEX IF NOT EXISTS project_chat_messages_project_created_idx
 -- client messages pending delivery) — also doubles as webhook dedup guard.
 CREATE UNIQUE INDEX IF NOT EXISTS project_chat_messages_yougile_id_idx
   ON project_chat_messages (yougile_message_id) WHERE yougile_message_id IS NOT NULL;
+
+-- Unread badge support: NULL means "never opened the chat" (everything is
+-- unread). A single column is enough because each project has exactly one
+-- owning user (projects.user_id) — see countUnreadForProjects/markProjectChatRead
+-- in lib/repositories/project-chat.ts.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS chat_last_read_at TIMESTAMPTZ;
+
+-- Web Push subscriptions (one user can have several, one per browser/device).
+-- Fed by the "enable notifications" control in the project chat panel and
+-- consumed by lib/push.ts when a team reply is pulled in from YouGile.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint    TEXT NOT NULL,
+  p256dh      TEXT NOT NULL,
+  auth        TEXT NOT NULL,
+  user_agent  TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_idx
+  ON push_subscriptions (endpoint);
+CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx
+  ON push_subscriptions (user_id);

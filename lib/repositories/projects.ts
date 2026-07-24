@@ -260,6 +260,20 @@ export async function deleteProjectMediaByDriveFileId(
   )
 }
 
+/**
+ * Active projects with a linked YouGile chat — polled in the background by
+ * lib/chat-push-poller.ts so team replies get pulled in (and pushed to the
+ * owner) even when nobody has the site open.
+ */
+export async function listProjectsWithYougileChat(): Promise<ProjectRecord[]> {
+  const result = await query<ProjectRecord>(
+    `SELECT ${PROJECT_FIELDS}
+       FROM projects
+      WHERE yougile_chat_id IS NOT NULL AND is_active = TRUE`,
+  )
+  return result.rows
+}
+
 export async function countProjectsByUserId(userId: string): Promise<number> {
   const result = await query<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM projects WHERE user_id = $1`,

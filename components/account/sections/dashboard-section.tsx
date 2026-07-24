@@ -21,6 +21,7 @@ import {
   createProjectSchema,
   type CreateProjectInput,
 } from "@/lib/project-schemas"
+import { usePollUnreadCounts } from "@/lib/hooks/use-poll-unread-counts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -52,6 +53,7 @@ export type DashboardProject = {
   isActive: boolean
   createdAt: string
   updatedAt: string
+  unreadChatCount: number
 }
 
 type Props = {
@@ -116,6 +118,16 @@ export function DashboardSection({
   const [open, setOpen] = useState(false)
   const greeting = useGreeting()
 
+  usePollUnreadCounts((counts) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id in counts && counts[p.id] !== p.unreadChatCount
+          ? { ...p, unreadChatCount: counts[p.id] }
+          : p,
+      ),
+    )
+  })
+
   const form = useForm<CreateProjectInput>({
     resolver: zodResolver(createProjectSchema),
     defaultValues: { name: "", description: "" },
@@ -152,6 +164,7 @@ export function DashboardSection({
           isActive: data.isActive ?? true,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
+          unreadChatCount: 0,
         },
         ...prev,
       ])
@@ -385,6 +398,11 @@ function ProjectCard({ project }: { project: DashboardProject }) {
             className="border-border/60 bg-white/[0.03] text-[10px] font-medium text-muted-foreground"
           >
             Paused
+          </Badge>
+        ) : null}
+        {project.unreadChatCount > 0 ? (
+          <Badge className="border-primary/40 bg-primary/15 text-[10px] font-medium text-primary">
+            {project.unreadChatCount > 99 ? "99+" : project.unreadChatCount} new
           </Badge>
         ) : null}
       </div>

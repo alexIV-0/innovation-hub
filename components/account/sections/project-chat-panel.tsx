@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Loader2, MessageSquare, Send } from "lucide-react"
+import { Bell, BellOff, BellRing, Loader2, MessageSquare, Send } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -68,11 +68,31 @@ export function ProjectChatPanel({
     el.scrollTop = el.scrollHeight
   }, [])
 
+  // Only clears the badge while the tab is actually visible — a message
+  // that arrives while the user is elsewhere should stay unread (and still
+  // be worth a push notification) until they come back and look at it.
+  const markRead = useCallback(() => {
+    if (document.visibilityState !== "visible") return
+    void fetch(`/api/projects/${projectId}/chat/read`, {
+      method: "POST",
+      credentials: "same-origin",
+    }).catch(() => {
+      // Silent — the badge just stays stale until the next successful call.
+    })
+  }, [projectId])
+
   useEffect(() => {
     scrollToBottom()
+    markRead()
     // Only on mount — later updates scroll explicitly after send/poll below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const onVisible = () => markRead()
+    document.addEventListener("visibilitychange", onVisible)
+    return () => document.removeEventListener("visibilitychange", onVisible)
+  }, [markRead])
 
   const poll = useCallback(async () => {
     try {
@@ -88,10 +108,11 @@ export function ProjectChatPanel({
         const merged = mergeMessages(prev, data.messages!)
         return merged
       })
+      markRead()
     } catch {
       // Silent — polling retries on the next tick regardless.
     }
-  }, [projectId])
+  }, [projectId, markRead])
 
   useEffect(() => {
     const interval = window.setInterval(() => void poll(), POLL_INTERVAL_MS)
@@ -167,6 +188,9 @@ export function ProjectChatPanel({
         <h2 className="font-display text-sm font-semibold tracking-tight">
           Project chat
         </h2>
+        <div className="ml-auto">
+          <NotificationsToggle />
+        </div>
       </div>
 
       <div
@@ -214,6 +238,188 @@ export function ProjectChatPanel({
         </Button>
       </div>
     </section>
+  )
+}
+
+/** Converts a URL-safe base64 VAPID key into the Uint8Array pushManager.subscribe expects. */
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/")
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i)
+  return outputArray
+}
+
+type PushStatus = "checking" | "unsupported" | "denied" | "off" | "on"
+
+/**
+ * Inline opt-in for Web Push notifications on new team replies. Reflects the
+ * browser's real subscription state (not just a local flag) so it stays
+ * correct across devices/sessions — see lib/push.ts for the send side.
+ */
+function NotificationsToggle() {
+  const [status, setStatus] = useState<PushStatus>("checking")
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function check() {
+      if (
+        typeof window === "undefined" ||
+        !("serviceWorker" in navigator) ||
+        !("PushManager" in window) ||
+        !("Notification" in window)
+      ) {
+        if (!cancelled) setStatus("unsupported")
+        return
+      }
+      if (Notification.permission === "denied") {
+        if (!cancelled) setStatus("denied")
+        return
+      }
+      try {
+        const registration = await navigator.serviceWorker.getRegistration("/sw.js")
+        const subscription = registration
+          ? await registration.pushManager.getSubscription()
+          : null
+        if (!cancelled) setStatus(subscription ? "on" : "off")
+      } catch {
+        if (!cancelled) setStatus("off")
+      }
+    }
+
+    void check()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const enable = async () => {
+    setBusy(true)
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== "granted") {
+        setStatus(permission === "denied" ? "denied" : "off")
+        if (permission === "denied") {
+          toast.error("Notifications are blocked for this site in your browser.")
+        }
+        return
+      }
+
+      const keyResponse = await fetch("/api/push/vapid-public-key", {
+        credentials: "same-origin",
+      })
+      if (!keyResponse.ok) {
+        toast.error("Notifications aren't set up yet.")
+        return
+      }
+      const { publicKey } = (await keyResponse.json()) as { publicKey: string }
+
+      const registration = await navigator.serviceWorker.register("/sw.js")
+      await navigator.serviceWorker.ready
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      })
+
+      await fetch("/api/account/push-subscription", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
+      })
+
+      setStatus("on")
+      toast.success("Notifications enabled for this browser.")
+    } catch {
+      toast.error("Could not enable notifications.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disable = async () => {
+    setBusy(true)
+    try {
+      const registration = await navigator.serviceWorker.getRegistration("/sw.js")
+      const subscription = registration
+        ? await registration.pushManager.getSubscription()
+        : null
+      if (subscription) {
+        await fetch("/api/account/push-subscription", {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        })
+        await subscription.unsubscribe()
+      }
+      setStatus("off")
+      toast.success("Notifications turned off.")
+    } catch {
+      toast.error("Could not turn off notifications.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (status === "checking" || status === "unsupported") return null
+
+  if (status === "denied") {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled
+        className="gap-1.5 text-xs text-muted-foreground/60"
+        title="Notifications are blocked in your browser settings"
+      >
+        <BellOff className="h-3.5 w-3.5" />
+        Blocked
+      </Button>
+    )
+  }
+
+  if (status === "on") {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={busy}
+        onClick={() => void disable()}
+        className="gap-1.5 text-xs text-primary hover:text-primary"
+        title="Turn off notifications for this browser"
+      >
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <BellRing className="h-3.5 w-3.5" />
+        )}
+        Notifications on
+      </Button>
+    )
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      disabled={busy}
+      onClick={() => void enable()}
+      className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+    >
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Bell className="h-3.5 w-3.5" />
+      )}
+      Enable notifications
+    </Button>
   )
 }
 

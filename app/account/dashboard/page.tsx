@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/admin-auth"
 import { isGoogleDriveConfigured } from "@/lib/google-drive"
 import { listUserProjects } from "@/lib/project-drive"
 import { provisionUserDriveFolder } from "@/lib/provision-drive"
+import { countUnreadForProjects } from "@/lib/repositories/project-chat"
 import { countMediaByUserId } from "@/lib/repositories/projects"
 import { findUserById } from "@/lib/repositories/users"
 
@@ -30,6 +31,7 @@ export default async function AccountDashboardPage() {
     }),
     countMediaByUserId(fresh.id),
   ])
+  const unreadCounts = await countUnreadForProjects(projects.map((p) => p.id))
 
   return (
     <DashboardSection
@@ -46,6 +48,7 @@ export default async function AccountDashboardPage() {
         isActive: p.isActive,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
+        unreadChatCount: unreadCounts[p.id] ?? 0,
       }))}
     />
   )

@@ -11,7 +11,10 @@ import {
   listProjectMedia,
   updateProject,
 } from "@/lib/repositories/projects"
-import { listProjectChatMessages } from "@/lib/repositories/project-chat"
+import {
+  countUnreadForProjects,
+  listProjectChatMessages,
+} from "@/lib/repositories/project-chat"
 import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
 
 export const dynamic = "force-dynamic"
@@ -64,7 +67,10 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
   // than any DB flag so it tracks the actual folder state.
   const automationStarted = drive?.optionsFileExists ?? false
   await syncProjectChatFromYouGile(project)
-  const chatMessages = await listProjectChatMessages(project.id)
+  const [chatMessages, unreadCounts] = await Promise.all([
+    listProjectChatMessages(project.id),
+    countUnreadForProjects([project.id]),
+  ])
 
   return (
     <ProjectDetailSection
@@ -87,6 +93,7 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
       }))}
       drive={drive}
       automationStarted={automationStarted}
+      unreadChatCount={unreadCounts[project.id] ?? 0}
       chatMessages={chatMessages.map((m) => ({
         id: m.id,
         senderType: m.senderType,

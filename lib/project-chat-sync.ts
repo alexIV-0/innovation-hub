@@ -1,3 +1,4 @@
+import { isPushConfigured, sendPushToUser } from "@/lib/push"
 import {
   findProjectChatMessageByYougileId,
   insertProjectChatMessage,
@@ -21,12 +22,22 @@ import { getCompanyUserNameMap, getYouGileConfig, isYouGileConfigured, listChatM
  * duplicated).
  *
  * Known limitation: YouGile caps the API at 50 requests/minute per
- * company, shared across every open project chat tab polling this route —
- * fine at today's scale, but worth revisiting (e.g. a longer poll interval,
- * or a real push mechanism) if usage grows.
+ * company, shared across every open project chat tab polling this route
+ * plus the background poller (see lib/chat-push-poller.ts) — fine at
+ * today's scale, but worth revisiting (longer intervals, batching) if the
+ * number of active linked projects grows a lot.
+ *
+ * Whenever this pulls in new team messages it also fires a Web Push
+ * notification to the project owner (one push per sync call, not one per
+ * message, so a batch of backlog replies doesn't spam their device) — see
+ * lib/push.ts. This is also why a background poller matters: without it,
+ * pushes would only ever fire while someone happens to have a page open
+ * that triggers a sync.
  */
 export async function syncProjectChatFromYouGile(project: {
   id: string
+  userId: string
+  name: string
   yougileChatId: string | null
 }): Promise<void> {
   if (!project.yougileChatId || !isYouGileConfigured()) return
@@ -52,20 +63,40 @@ export async function syncProjectChatFromYouGile(project: {
     if (newOnes.length === 0) return
 
     const names = await getCompanyUserNameMap()
+    const inserted: { senderName: string; body: string }[] = []
 
     for (const m of newOnes) {
       const yougileMessageId = String(m.id)
       const already = await findProjectChatMessageByYougileId(yougileMessageId)
       if (already) continue
 
+      const senderName = names.get(m.fromUserId) ?? "YouGile"
       await insertProjectChatMessage({
         projectId: project.id,
         senderType: "team",
-        senderName: names.get(m.fromUserId) ?? "YouGile",
+        senderName,
         body: m.text,
         yougileMessageId,
         delivered: true,
         createdAt: new Date(m.id),
+      })
+      inserted.push({ senderName, body: m.text })
+    }
+
+    if (inserted.length > 0 && isPushConfigured()) {
+      const last = inserted[inserted.length - 1]
+      await sendPushToUser(project.userId, {
+        title: project.name,
+        body:
+          inserted.length === 1
+            ? `${last.senderName}: ${last.body}`
+            : `${inserted.length} new replies — latest from ${last.senderName}`,
+        url: `/account/projects/${project.id}/chat`,
+      }).catch((error) => {
+        console.error("[project-chat-sync] push notification failed", {
+          projectId: project.id,
+          error,
+        })
       })
     }
   } catch (error) {

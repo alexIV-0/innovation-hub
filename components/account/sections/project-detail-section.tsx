@@ -71,6 +71,7 @@ type Props = {
    */
   automationStarted: boolean
   chatMessages: ProjectChatMessageDto[]
+  unreadChatCount: number
 }
 
 const ACCEPT =
@@ -178,6 +179,7 @@ export function ProjectDetailSection({
   drive,
   automationStarted,
   chatMessages,
+  unreadChatCount,
 }: Props) {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -444,12 +446,22 @@ export function ProjectDetailSection({
           title={project.name}
           description={project.description}
           actions={
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/account/projects/${project.id}/chat`}>
-                <MessageSquare className="h-4 w-4" />
-                Chat
-              </Link>
-            </Button>
+            <div className="relative inline-flex">
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/account/projects/${project.id}/chat`}>
+                  <MessageSquare className="h-4 w-4" />
+                  Chat
+                </Link>
+              </Button>
+              {unreadChatCount > 0 ? (
+                <span
+                  aria-label={`${unreadChatCount} unread message${unreadChatCount === 1 ? "" : "s"}`}
+                  className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+                >
+                  {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                </span>
+              ) : null}
+            </div>
           }
         />
       </div>

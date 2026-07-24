@@ -65,6 +65,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { usePollUnreadCounts } from "@/lib/hooks/use-poll-unread-counts"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -116,6 +117,16 @@ export function ProjectsSection({ projects: initial }: Props) {
   )
   const [deleting, setDeleting] = useState(false)
 
+  usePollUnreadCounts((counts) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id in counts && counts[p.id] !== p.unreadChatCount
+          ? { ...p, unreadChatCount: counts[p.id] }
+          : p,
+      ),
+    )
+  })
+
   const form = useForm<CreateProjectInput>({
     resolver: zodResolver(createProjectSchema),
     defaultValues: { name: "", description: "" },
@@ -162,6 +173,7 @@ export function ProjectsSection({ projects: initial }: Props) {
           isActive: data.isActive ?? true,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
+          unreadChatCount: 0,
         },
         ...prev,
       ])
@@ -534,28 +546,40 @@ function ViewToggleButton({
 
 function ChatButton({
   projectId,
+  unreadCount = 0,
   size = "sm",
 }: {
   projectId: string
+  unreadCount?: number
   size?: "sm" | "icon"
 }) {
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size={size}
-      className={cn("gap-1.5", size === "icon" && "h-8 w-8")}
-      asChild
-    >
-      <Link
-        href={`/account/projects/${projectId}/chat`}
-        aria-label="Project chat"
-        onClick={(e) => e.stopPropagation()}
+    <div className="relative inline-flex">
+      <Button
+        type="button"
+        variant="outline"
+        size={size}
+        className={cn("gap-1.5", size === "icon" && "h-8 w-8")}
+        asChild
       >
-        <MessageSquare className="h-3.5 w-3.5" />
-        {size === "sm" ? "Chat" : null}
-      </Link>
-    </Button>
+        <Link
+          href={`/account/projects/${projectId}/chat`}
+          aria-label="Project chat"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+          {size === "sm" ? "Chat" : null}
+        </Link>
+      </Button>
+      {unreadCount > 0 ? (
+        <span
+          aria-label={`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`}
+          className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+        >
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      ) : null}
+    </div>
   )
 }
 
@@ -704,7 +728,7 @@ function ProjectGridCard({
           disabled={toggling}
           onCheckedChange={onToggleActive}
         />
-        <ChatButton projectId={project.id} />
+        <ChatButton projectId={project.id} unreadCount={project.unreadChatCount} />
       </div>
     </div>
   )
@@ -760,7 +784,11 @@ function ProjectListRow({
           onCheckedChange={onToggleActive}
           compact
         />
-        <ChatButton projectId={project.id} size="icon" />
+        <ChatButton
+          projectId={project.id}
+          size="icon"
+          unreadCount={project.unreadChatCount}
+        />
         <ProjectActionsMenu
           project={project}
           onEdit={onEdit}

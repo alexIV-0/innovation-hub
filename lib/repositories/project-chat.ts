@@ -98,3 +98,38 @@ export async function findProjectChatMessageByYougileId(
   )
   return result.rows[0] ?? null
 }
+
+/**
+ * Unread badge counts for a set of projects: messages from 'team'/'system'
+ * created after `projects.chat_last_read_at` (NULL = never opened, so
+ * everything counts). One project has exactly one owning user, so a single
+ * timestamp column is enough — no per-user read-state table needed.
+ */
+export async function countUnreadForProjects(
+  projectIds: string[],
+): Promise<Record<string, number>> {
+  if (projectIds.length === 0) return {}
+
+  const result = await query<{ projectId: string; count: number }>(
+    `SELECT m.project_id AS "projectId", COUNT(*)::int AS count
+       FROM project_chat_messages m
+       JOIN projects p ON p.id = m.project_id
+      WHERE m.project_id = ANY($1)
+        AND m.sender_type IN ('team', 'system')
+        AND m.created_at > COALESCE(p.chat_last_read_at, '-infinity')
+      GROUP BY m.project_id`,
+    [projectIds],
+  )
+
+  const counts: Record<string, number> = {}
+  for (const id of projectIds) counts[id] = 0
+  for (const row of result.rows) counts[row.projectId] = row.count
+  return counts
+}
+
+/** Marks a project's chat as read up to now — clears its unread badge. */
+export async function markProjectChatRead(projectId: string): Promise<void> {
+  await query(`UPDATE projects SET chat_last_read_at = NOW() WHERE id = $1`, [
+    projectId,
+  ])
+}

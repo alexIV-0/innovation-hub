@@ -1,9 +1,12 @@
+import { cache } from "react"
 import { cookies } from "next/headers"
 import { NextResponse, type NextRequest } from "next/server"
 import { findUserById } from "@/lib/repositories/users"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
 
-export async function getCurrentUser() {
+// React.cache dedupes the JWT verify + DB lookup within a single render
+// pass, so layout + page calling getCurrentUser costs one query, not two.
+export const getCurrentUser = cache(async () => {
   const cookieStore = await cookies()
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value
   if (!token) return null
@@ -12,7 +15,7 @@ export async function getCurrentUser() {
   if (!session?.userId) return null
 
   return findUserById(session.userId)
-}
+})
 
 export type AuthenticatedApiUser = {
   userId: string

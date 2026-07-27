@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
-import { findUserById } from "@/lib/repositories/users"
 
 /**
  * Disable HTML caching ONLY for the admin surface — the public marketing
@@ -34,15 +33,11 @@ export async function proxy(request: NextRequest) {
     return redirectTo(request, "/")
   }
 
-  // Re-validate against the database so that suspending or demoting an admin
-  // takes effect immediately, instead of waiting up to 7 days for the JWT
-  // cookie to expire. Next.js 16 runs proxy.ts on the Node runtime, so the
-  // pg driver is available here.
-  const user = await findUserById(session.userId)
-  if (!user || !user.isActive || user.role !== "ADMIN") {
-    return redirectTo(request, "/login")
-  }
-
+  // Only the cheap JWT check runs here. The authoritative isActive/role
+  // re-validation against the database happens once in app/admin/layout.tsx
+  // (and in every /api/admin handler via requireAdminApi), so a suspended or
+  // demoted admin is still bounced immediately — without paying a Postgres
+  // round-trip in the proxy on every admin navigation.
   return withAdminNoCache(NextResponse.next())
 }
 

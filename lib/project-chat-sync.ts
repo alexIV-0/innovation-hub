@@ -1,6 +1,6 @@
 import { isPushConfigured, sendPushToUser } from "@/lib/push"
 import {
-  findProjectChatMessageByYougileId,
+  filterExistingYougileMessageIds,
   insertProjectChatMessage,
   listProjectChatMessages,
 } from "@/lib/repositories/project-chat"
@@ -62,13 +62,17 @@ export async function syncProjectChatFromYouGile(project: {
     )
     if (newOnes.length === 0) return
 
-    const names = await getCompanyUserNameMap()
+    // One batched dedup query for the whole pull instead of a round-trip
+    // per remote message (the old N+1 dominated backlog syncs).
+    const [names, alreadyStored] = await Promise.all([
+      getCompanyUserNameMap(),
+      filterExistingYougileMessageIds(newOnes.map((m) => String(m.id))),
+    ])
     const inserted: { senderName: string; body: string }[] = []
 
     for (const m of newOnes) {
       const yougileMessageId = String(m.id)
-      const already = await findProjectChatMessageByYougileId(yougileMessageId)
-      if (already) continue
+      if (alreadyStored.has(yougileMessageId)) continue
 
       const senderName = names.get(m.fromUserId) ?? "YouGile"
       await insertProjectChatMessage({

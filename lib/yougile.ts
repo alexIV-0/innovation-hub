@@ -46,6 +46,13 @@ export function isYouGileConfigured(): boolean {
   return !!process.env.YOUGILE_API_KEY?.trim()
 }
 
+/**
+ * Hard cap on any single YouGile round-trip. Without it a hung upstream
+ * keeps the request (and whatever page/API handler awaits it) open until
+ * the platform's own socket timeout, which can be minutes.
+ */
+const YOUGILE_REQUEST_TIMEOUT_MS = 10_000
+
 async function yougileRequest<T>(
   path: string,
   init: RequestInit,
@@ -53,6 +60,7 @@ async function yougileRequest<T>(
   const { apiKey } = getYouGileConfig()
   const response = await fetch(`${YOUGILE_API_BASE}${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(YOUGILE_REQUEST_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",

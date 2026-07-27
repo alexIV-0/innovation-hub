@@ -1,11 +1,29 @@
 "use client"
 
 import { memo, useCallback, useRef, useState } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { Play } from "lucide-react"
 import type { VideoCardItem } from "@/lib/content-types"
 
-function VideoCardInner({ video }: { video: VideoCardItem }) {
+/**
+ * /api/media URLs answer the image optimizer with a raw byte stream when
+ * ?raw=1 is set (the optimizer can't follow the usual 307 to presigned S3).
+ */
+function optimizableSrc(src: string): string {
+  return src.startsWith("/api/media/") && !src.includes("?")
+    ? `${src}?raw=1`
+    : src
+}
+
+function VideoCardInner({
+  video,
+  priority = false,
+}: {
+  video: VideoCardItem
+  /** First above-the-fold cards: load their thumbnail eagerly for LCP. */
+  priority?: boolean
+}) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -45,19 +63,28 @@ function VideoCardInner({ video }: { video: VideoCardItem }) {
         <span className="sr-only">{video.title}</span>
       </Link>
 
-      <img
-        src={video.thumbnail}
+      {/* Blurred backdrop: heavily downscaled (it's blurred anyway), so ask
+          the optimizer for a tiny variant instead of the original bytes. */}
+      {/* The backdrop covers the whole card, so on above-the-fold cards it
+          is the LCP candidate — it must not be lazy there. */}
+      <Image
+        src={optimizableSrc(video.thumbnail)}
         alt=""
         aria-hidden
-        decoding="async"
-        className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl brightness-50"
+        fill
+        sizes="64px"
+        quality={30}
+        priority={priority}
+        className="scale-110 object-cover blur-2xl brightness-50"
       />
 
-      <img
-        src={video.thumbnail}
+      <Image
+        src={optimizableSrc(video.thumbnail)}
         alt={video.title}
-        decoding="async"
-        className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${
+        fill
+        sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+        priority={priority}
+        className={`object-contain transition-opacity duration-300 ${
           isHovered ? "opacity-0" : "opacity-100"
         }`}
       />
@@ -69,7 +96,7 @@ function VideoCardInner({ video }: { video: VideoCardItem }) {
           muted
           loop
           playsInline
-          preload="auto"
+          preload="none"
           className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${
             isHovered ? "opacity-100" : "opacity-0"
           }`}

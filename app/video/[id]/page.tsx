@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache"
 import { notFound } from "next/navigation"
 import {
   findPublishedVideoById,
@@ -7,9 +8,25 @@ import { VideoDetailClient } from "./video-detail-client"
 
 export const dynamic = "force-dynamic"
 
+// Cached to keep TTFB off the (remote) database: generateMetadata + the page
+// share one cached lookup instead of hitting Postgres twice per request.
+// Note: the cache JSON-serializes results, so Date fields come back as
+// strings — the detail view only consumes the string fields.
+const getVideo = unstable_cache(
+  async (id: string) => findPublishedVideoById(id),
+  ["video-by-id"],
+  { revalidate: 60, tags: ["published-videos"] },
+)
+
+const getRelatedVideos = unstable_cache(
+  async (id: string) => listRelatedPublishedVideos(id, 3),
+  ["related-videos"],
+  { revalidate: 60, tags: ["published-videos"] },
+)
+
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const video = await findPublishedVideoById(id)
+  const video = await getVideo(id)
   if (!video) return { title: "Not Found" }
   return {
     title: `${video.title} - FF Works`,
@@ -22,8 +39,8 @@ export default async function VideoPage({ params }: { params: Promise<{ id: stri
   // listRelatedPublishedVideos already excludes `id`, so kicking it off in
   // parallel with the lookup is safe and saves a DB round-trip.
   const [video, relatedVideos] = await Promise.all([
-    findPublishedVideoById(id),
-    listRelatedPublishedVideos(id, 3),
+    getVideo(id),
+    getRelatedVideos(id),
   ])
 
   if (!video) {

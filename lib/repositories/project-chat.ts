@@ -100,6 +100,25 @@ export async function findProjectChatMessageByYougileId(
 }
 
 /**
+ * Batch variant of the dedup guard used by the YouGile pull sync: returns
+ * which of the given YouGile message ids are already stored, in one query
+ * instead of one lookup per remote message.
+ */
+export async function filterExistingYougileMessageIds(
+  yougileMessageIds: string[],
+): Promise<Set<string>> {
+  if (yougileMessageIds.length === 0) return new Set()
+
+  const result = await query<{ yougileMessageId: string }>(
+    `SELECT yougile_message_id AS "yougileMessageId"
+       FROM project_chat_messages
+      WHERE yougile_message_id = ANY($1)`,
+    [yougileMessageIds],
+  )
+  return new Set(result.rows.map((row) => row.yougileMessageId))
+}
+
+/**
  * Unread badge counts for a set of projects: messages from 'team'/'system'
  * created after `projects.chat_last_read_at` (NULL = never opened, so
  * everything counts). One project has exactly one owning user, so a single

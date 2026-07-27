@@ -27,7 +27,9 @@ export default async function AccountProjectChatPage({ params }: PageProps) {
     notFound()
   }
 
-  await syncProjectChatFromYouGile(project)
+  // Fire-and-forget: the chat panel polls every ~6s and will pick up
+  // whatever this sync pulls in — no reason to block first paint on YouGile.
+  void syncProjectChatFromYouGile(project)
   const messages = await listProjectChatMessages(project.id)
 
   return (

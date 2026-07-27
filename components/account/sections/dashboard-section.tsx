@@ -1,48 +1,20 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
 import {
   ArrowRight,
   ArrowUpRight,
   Clock,
   FolderKanban,
   ImageIcon,
-  Loader2,
-  Plus,
   Sparkles,
   UserRound,
 } from "lucide-react"
-import { toast } from "sonner"
-import {
-  createProjectSchema,
-  type CreateProjectInput,
-} from "@/lib/project-schemas"
 import { usePollUnreadCounts } from "@/lib/hooks/use-poll-unread-counts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { CreateProjectButton } from "@/components/account/sections/create-project-button"
 import { cn } from "@/lib/utils"
 
 export type DashboardProject = {
@@ -54,15 +26,6 @@ export type DashboardProject = {
   createdAt: string
   updatedAt: string
   unreadChatCount: number
-}
-
-type Props = {
-  fullName: string
-  email: string
-  memberSince?: string
-  projectCount: number
-  mediaCount: number
-  projects: DashboardProject[]
 }
 
 function formatDate(iso: string) {
@@ -105,86 +68,26 @@ function useGreeting() {
   return greeting
 }
 
+type SectionProps = {
+  fullName: string
+  email: string
+  memberSince?: string
+  /**
+   * Server-rendered stats + recent projects area. Passed as a slot so the
+   * hero paints immediately while the Drive scan behind this block streams
+   * in via Suspense.
+   */
+  projectsArea: React.ReactNode
+}
+
 export function DashboardSection({
   fullName,
   email,
   memberSince,
-  projectCount,
-  mediaCount,
-  projects: initialProjects,
-}: Props) {
-  const router = useRouter()
-  const [projects, setProjects] = useState(initialProjects)
-  const [open, setOpen] = useState(false)
+  projectsArea,
+}: SectionProps) {
   const greeting = useGreeting()
-
-  usePollUnreadCounts((counts) => {
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id in counts && counts[p.id] !== p.unreadChatCount
-          ? { ...p, unreadChatCount: counts[p.id] }
-          : p,
-      ),
-    )
-  })
-
-  const form = useForm<CreateProjectInput>({
-    resolver: zodResolver(createProjectSchema),
-    defaultValues: { name: "", description: "" },
-  })
-
-  const onCreate = async (values: CreateProjectInput) => {
-    try {
-      const response = await fetch("/api/projects", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
-      })
-      const data = (await response.json().catch(() => null)) as
-        | (DashboardProject & { message?: string })
-        | { message?: string }
-        | null
-
-      if (!response.ok || !data || !("id" in data)) {
-        toast.error(
-          data && "message" in data && data.message
-            ? data.message
-            : "Could not create project.",
-        )
-        return
-      }
-
-      setProjects((prev) => [
-        {
-          id: data.id,
-          name: data.name,
-          description: data.description,
-          driveFolderId: data.driveFolderId,
-          isActive: data.isActive ?? true,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-          unreadChatCount: 0,
-        },
-        ...prev,
-      ])
-      toast.success("Project created.")
-      form.reset({ name: "", description: "" })
-      setOpen(false)
-      router.refresh()
-    } catch {
-      toast.error("Unable to reach the server.")
-    }
-  }
-
   const firstName = fullName.trim().split(/\s+/)[0] || email.split("@")[0]
-  const lastActivity =
-    projects.length > 0
-      ? projects.reduce(
-          (latest, p) => (p.updatedAt > latest ? p.updatedAt : latest),
-          projects[0].updatedAt,
-        )
-      : null
 
   return (
     <div className="space-y-10">
@@ -216,24 +119,69 @@ export function DashboardSection({
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button className="shadow-glow-soft">
-                  <Plus className="h-4 w-4" />
-                  New project
-                </Button>
-              </DialogTrigger>
-              <CreateProjectDialog form={form} onSubmit={onCreate} />
-            </Dialog>
+            <CreateProjectButton />
           </div>
         </div>
       </section>
 
+      {projectsArea}
+
+      {/* ── Quick links ──────────────────────────────────────── */}
+      <section className="grid gap-4 sm:grid-cols-2">
+        <QuickLink
+          href="/account/projects"
+          title="Manage projects"
+          description="Review briefs, upload assets, keep everything organised."
+          icon={<FolderKanban className="h-4 w-4" />}
+        />
+        <QuickLink
+          href="/account"
+          title="Profile & security"
+          description="Update your name, email and password."
+          icon={<UserRound className="h-4 w-4" />}
+        />
+      </section>
+    </div>
+  )
+}
+
+type ProjectsOverviewProps = {
+  projects: DashboardProject[]
+  mediaCount: number
+}
+
+/** Stats + recent projects — the data-heavy part streamed after the hero. */
+export function DashboardProjectsOverview({
+  projects: initialProjects,
+  mediaCount,
+}: ProjectsOverviewProps) {
+  const [projects, setProjects] = useState(initialProjects)
+
+  usePollUnreadCounts((counts) => {
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id in counts && counts[p.id] !== p.unreadChatCount
+          ? { ...p, unreadChatCount: counts[p.id] }
+          : p,
+      ),
+    )
+  })
+
+  const lastActivity =
+    projects.length > 0
+      ? projects.reduce(
+          (latest, p) => (p.updatedAt > latest ? p.updatedAt : latest),
+          projects[0].updatedAt,
+        )
+      : null
+
+  return (
+    <div className="space-y-10">
       {/* ── Stats ────────────────────────────────────────────── */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Projects"
-          value={String(projectCount)}
+          value={String(projects.length)}
           hint="Active briefs in your workspace"
           icon={<FolderKanban className="h-[18px] w-[18px]" />}
           href="/account/projects"
@@ -284,7 +232,7 @@ export function DashboardSection({
         </div>
 
         {projects.length === 0 ? (
-          <EmptyProjects onCreate={() => setOpen(true)} />
+          <EmptyProjects />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {projects.slice(0, 8).map((project) => (
@@ -292,22 +240,6 @@ export function DashboardSection({
             ))}
           </div>
         )}
-      </section>
-
-      {/* ── Quick links ──────────────────────────────────────── */}
-      <section className="grid gap-4 sm:grid-cols-2">
-        <QuickLink
-          href="/account/projects"
-          title="Manage projects"
-          description="Review briefs, upload assets, keep everything organised."
-          icon={<FolderKanban className="h-4 w-4" />}
-        />
-        <QuickLink
-          href="/account"
-          title="Profile & security"
-          description="Update your name, email and password."
-          icon={<UserRound className="h-4 w-4" />}
-        />
       </section>
     </div>
   )
@@ -438,7 +370,7 @@ function QuickLink({
   )
 }
 
-function EmptyProjects({ onCreate }: { onCreate: () => void }) {
+function EmptyProjects() {
   return (
     <div className="spotlight-band relative overflow-hidden rounded-2xl border border-dashed border-border/70 px-6 py-14 text-center">
       <div className="relative z-10">
@@ -452,76 +384,10 @@ function EmptyProjects({ onCreate }: { onCreate: () => void }) {
           Create a project with a short description of the goal — audience,
           tone, formats — and start uploading media.
         </p>
-        <Button className="mt-6 shadow-glow-soft" onClick={onCreate}>
-          <Plus className="h-4 w-4" />
-          Create first project
-        </Button>
+        <div className="mt-6 flex justify-center">
+          <CreateProjectButton label="Create first project" />
+        </div>
       </div>
     </div>
-  )
-}
-
-function CreateProjectDialog({
-  form,
-  onSubmit,
-}: {
-  form: ReturnType<typeof useForm<CreateProjectInput>>
-  onSubmit: (values: CreateProjectInput) => Promise<void>
-}) {
-  return (
-    <DialogContent className="sm:max-w-lg">
-      <DialogHeader>
-        <DialogTitle>New project</DialogTitle>
-        <DialogDescription>
-          Give the project a name and a clear description of what you need.
-        </DialogDescription>
-      </DialogHeader>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Name</FormLabel>
-                <FormControl>
-                  <Input placeholder="Spring campaign reels" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="description"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Description</FormLabel>
-                <FormControl>
-                  <Textarea
-                    rows={5}
-                    placeholder="Audience, tone, formats, must-have assets, delivery cadence…"
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <DialogFooter>
-            <Button type="submit" disabled={form.formState.isSubmitting}>
-              {form.formState.isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Creating…
-                </>
-              ) : (
-                "Create project"
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </Form>
-    </DialogContent>
   )
 }

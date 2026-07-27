@@ -31,7 +31,7 @@ function decodeKey(segments: string[] | undefined): string | null {
   return key ? key : null;
 }
 
-export async function GET(_request: NextRequest, { params }: Params) {
+export async function GET(request: NextRequest, { params }: Params) {
   const key = decodeKey((await params).key);
   if (!key) {
     return NextResponse.json({ message: "Invalid media key." }, { status: 400 });
@@ -52,6 +52,28 @@ export async function GET(_request: NextRequest, { params }: Params) {
       Bucket: bucket,
       Key: key,
     });
+
+    // ?raw=1: stream the object body instead of redirecting. The next/image
+    // optimizer can't follow the 307 to the presigned URL, so thumbnails go
+    // through this branch (the optimizer caches the result, so each image is
+    // proxied rarely). Videos keep using the redirect for range requests.
+    if (request.nextUrl.searchParams.has("raw")) {
+      const object = await client.send(command);
+      const body = object.Body?.transformToWebStream();
+      if (!body) {
+        return NextResponse.json({ message: "Not found." }, { status: 404 });
+      }
+      return new Response(body as unknown as ReadableStream, {
+        headers: {
+          "Content-Type": object.ContentType ?? "application/octet-stream",
+          ...(object.ContentLength
+            ? { "Content-Length": String(object.ContentLength) }
+            : {}),
+          "Cache-Control": "public, max-age=86400",
+        },
+      });
+    }
+
     const signedGetUrl = await getSignedUrl(client, command, {
       expiresIn: SIGNED_URL_TTL_SECONDS,
     });

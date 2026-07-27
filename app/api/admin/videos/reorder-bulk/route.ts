@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { reorderBulkSchema } from "@/lib/admin-schemas"
@@ -18,6 +19,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const videos = await reorderVideosBulk(parsed.data.ids)
+    revalidateTag("published-videos", "max")
     return NextResponse.json({ videos })
   } catch (error) {
     if (error instanceof Error) {

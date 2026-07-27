@@ -35,17 +35,29 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
     notFound()
   }
 
+  // Pull fresh team replies in the background — blocking the page on a
+  // YouGile round-trip is not worth it when the chat panel already polls
+  // every ~6s and picks up whatever this sync inserts.
+  void syncProjectChatFromYouGile(project)
+
   // Files can land in the Drive folder outside of the site UI (automation),
   // so the cabinet reads Drive directly. The local media table is only a
   // fallback when Drive is unavailable.
-  let drive: ProjectDriveState | null = null
-  if (isGoogleDriveConfigured() && project.driveFolderId) {
-    try {
-      drive = await loadProjectDriveState(project.driveFolderId)
-    } catch (error) {
-      console.error("[project-drive] SSR listing failed", error)
-    }
-  }
+  const drivePromise: Promise<ProjectDriveState | null> =
+    isGoogleDriveConfigured() && project.driveFolderId
+      ? loadProjectDriveState(project.driveFolderId).catch((error) => {
+          console.error("[project-drive] SSR listing failed", error)
+          return null
+        })
+      : Promise.resolve(null)
+
+  // Chat history and unread counts don't depend on the Drive listing, so
+  // they run in parallel with it instead of after it.
+  const [drive, chatMessages, unreadCounts] = await Promise.all([
+    drivePromise,
+    listProjectChatMessages(project.id),
+    countUnreadForProjects([project.id]),
+  ])
 
   // `folderState.json` is the SSOT for automation on/off (may have been
   // toggled by the desktop app or another session). Re-sync the Postgres
@@ -66,11 +78,6 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
   // yet) the page only shows the chat — gate on Drive's live signal rather
   // than any DB flag so it tracks the actual folder state.
   const automationStarted = drive?.optionsFileExists ?? false
-  await syncProjectChatFromYouGile(project)
-  const [chatMessages, unreadCounts] = await Promise.all([
-    listProjectChatMessages(project.id),
-    countUnreadForProjects([project.id]),
-  ])
 
   return (
     <ProjectDetailSection

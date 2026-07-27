@@ -3,9 +3,8 @@ import { ProjectsSection } from "@/components/account/sections/projects-section"
 import { getCurrentUser } from "@/lib/admin-auth"
 import { isGoogleDriveConfigured } from "@/lib/google-drive"
 import { listUserProjects } from "@/lib/project-drive"
-import { provisionUserDriveFolder } from "@/lib/provision-drive"
+import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import { countUnreadForProjects } from "@/lib/repositories/project-chat"
-import { findUserById } from "@/lib/repositories/users"
 
 export const dynamic = "force-dynamic"
 
@@ -15,17 +14,17 @@ export default async function AccountProjectsPage() {
     redirect("/login")
   }
 
+  // First visit without a Drive folder: provision in the background instead
+  // of blocking the page; listUserProjects falls back to the DB cache.
   if (isGoogleDriveConfigured() && !user.driveFolderId) {
-    await provisionUserDriveFolder(user.id)
+    provisionUserDriveFolderBackground(user.id)
   }
-
-  const fresh = (await findUserById(user.id)) ?? user
 
   // The list of projects comes from a live Drive folder scan (source of
   // truth for what exists), not a plain DB query — see listUserProjects.
   const projects = await listUserProjects({
-    userId: fresh.id,
-    userDriveFolderId: fresh.driveFolderId,
+    userId: user.id,
+    userDriveFolderId: user.driveFolderId,
   })
   const unreadCounts = await countUnreadForProjects(projects.map((p) => p.id))
 

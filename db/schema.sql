@@ -217,6 +217,8 @@ CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx
 -- media URLs via `new URL(..., request.url)`, so local runs left values like
 -- `https://localhost:3000/api/media/...` in the DB. Strip any host and keep the
 -- stable same-origin path so prod (and any other deploy) serves them correctly.
+-- Prefer `npm run db:migrate` (db/migrations/2026-07-27-fix-absolute-media-urls.sql);
+-- kept here so fresh `db:init` installs also get the fix.
 UPDATE videos
 SET thumbnail = regexp_replace(thumbnail, '^https?://[^/]+(/api/media/.*)$', '\1'),
     updated_at = NOW()

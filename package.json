@@ -10,6 +10,8 @@
     "lint": "next lint",
     "db:init": "node scripts/db-init.mjs",
     "db:reset": "node scripts/db-init.mjs --reset",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:migrate:status": "node scripts/db-migrate.mjs --status",
     "db:check": "node scripts/db-check.mjs",
     "drive:oauth": "node scripts/google-drive-oauth.mjs",
     "drive:provision-users": "node scripts/drive-provision-users.mjs",
@@ -18,7 +20,7 @@
     "s3:test-upload": "node scripts/s3-test-presigned-upload.mjs",
     "yougile:list-users": "node scripts/yougile-list-users.mjs",
     "yougile:setup-webhook": "node scripts/yougile-setup-webhook.mjs",
-    "deploy": "git pull && npm ci && npm run build && pm2 reload all"
+    "deploy": "git pull && npm ci && npm run db:migrate && npm run build && pm2 reload all"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.787.0",

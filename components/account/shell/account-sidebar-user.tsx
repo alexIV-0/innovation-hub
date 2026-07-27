@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { Loader2, LogOut } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -25,7 +24,6 @@ function avatarLetter(value: string) {
 }
 
 export function AccountSidebarUser({ email, fullName }: Props) {
-  const router = useRouter()
   const [signingOut, setSigningOut] = useState(false)
   const display = fullName.trim() || email
 
@@ -33,9 +31,10 @@ export function AccountSidebarUser({ email, fullName }: Props) {
     setSigningOut(true)
     try {
       await fetch("/api/auth/signout", { method: "POST" })
-      router.push("/login")
-      router.refresh()
-    } finally {
+      // Hard redirect so all client-side session state and the router cache
+      // are fully dropped after sign-out.
+      window.location.assign("/login")
+    } catch {
       setSigningOut(false)
     }
   }

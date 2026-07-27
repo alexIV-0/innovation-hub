@@ -8,7 +8,6 @@ import {
   useMemo,
   useState,
 } from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { AdminConfirmDialog } from "@/components/admin/admin-confirm-dialog"
 import { AdminContentDialog } from "@/components/admin/admin-content-dialog"
@@ -97,8 +96,6 @@ type ProviderProps = {
 }
 
 export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
-  const router = useRouter()
-
   const [videos, setVideos] = useState<AdminVideo[]>([])
   const [ideas, setIdeas] = useState<AdminIdea[]>([])
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -378,9 +375,10 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
 
   const signOut = useCallback(async () => {
     await fetch("/api/auth/signout", { method: "POST" })
-    router.push("/login")
-    router.refresh()
-  }, [router])
+    // Hard redirect so all client-side session state and the router cache
+    // are fully dropped after sign-out.
+    window.location.assign("/login")
+  }, [])
 
   const value = useMemo<AdminDataContextValue>(
     () => ({

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter, usePathname } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -137,7 +137,6 @@ function UserMenu({ user, onSignOut }: { user: SessionUser; onSignOut: () => voi
 }
 
 export function Header() {
-  const router = useRouter()
   const pathname = usePathname()
   const [user, setUser] = useState<SessionUser | null | undefined>(undefined)
 
@@ -168,8 +167,10 @@ export function Header() {
 
   async function signOut() {
     await fetch("/api/auth/signout", { method: "POST" })
-    setUser(null)
-    router.refresh()
+    // Full reload instead of router.refresh(): client components (e.g. the
+    // admin "Edit grid" button on the home page) hold their own session state
+    // that a soft refresh would not reset.
+    window.location.reload()
   }
 
   return (

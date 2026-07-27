@@ -212,3 +212,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_idx
   ON push_subscriptions (endpoint);
 CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx
   ON push_subscriptions (user_id);
+
+-- Idempotent data migration: admin uploads used to bake an absolute origin into
+-- media URLs via `new URL(..., request.url)`, so local runs left values like
+-- `https://localhost:3000/api/media/...` in the DB. Strip any host and keep the
+-- stable same-origin path so prod (and any other deploy) serves them correctly.
+UPDATE videos
+SET thumbnail = regexp_replace(thumbnail, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE thumbnail ~ '^https?://[^/]+/api/media/';
+
+UPDATE videos
+SET video_url = regexp_replace(video_url, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE video_url ~ '^https?://[^/]+/api/media/';
+
+UPDATE ideas
+SET thumbnail = regexp_replace(thumbnail, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE thumbnail ~ '^https?://[^/]+/api/media/';
+
+UPDATE ideas
+SET video_url = regexp_replace(video_url, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE video_url ~ '^https?://[^/]+/api/media/';

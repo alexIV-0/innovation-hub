@@ -130,7 +130,6 @@ export async function GET(request: Request) {
           authProvider: "google",
           providerAccountId: profile.sub,
         }
-        provisionUserDriveFolderBackground(created.id)
       } catch (error) {
         console.error("[google-oauth] failed to create user", error)
         return loginErrorRedirect(request, "google_create_failed")
@@ -138,8 +137,8 @@ export async function GET(request: Request) {
     }
   }
 
-  // Existing accounts created before Drive provisioning still get a folder
-  // on first successful Google sign-in (idempotent).
+  // Single provision call for both new and legacy accounts (idempotent).
+  // Do not call this twice — concurrent creates race into duplicate email folders.
   if (!user.driveFolderId) {
     provisionUserDriveFolderBackground(user.id)
   }

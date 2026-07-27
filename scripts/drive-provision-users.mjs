@@ -65,27 +65,88 @@ function driveFlags(sharedDriveId) {
   }
 }
 
-async function findChildFolder(drive, sharedDriveId, parentId, name) {
+async function listChildFoldersByName(drive, sharedDriveId, parentId, name) {
   const escaped = name.replace(/'/g, "\\'")
-  const response = await drive.files.list({
-    ...driveFlags(sharedDriveId),
-    q: `'${parentId}' in parents and name = '${escaped}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-    fields: "files(id, name)",
-    pageSize: 1,
-    spaces: "drive",
+  const hits = []
+  let pageToken
+  do {
+    const response = await drive.files.list({
+      ...driveFlags(sharedDriveId),
+      q: `'${parentId}' in parents and name = '${escaped}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "nextPageToken, files(id, createdTime)",
+      pageSize: 100,
+      pageToken,
+      spaces: "drive",
+    })
+    for (const file of response.data.files ?? []) {
+      if (!file.id) continue
+      hits.push({ id: file.id, createdTime: file.createdTime ?? null })
+    }
+    pageToken = response.data.nextPageToken ?? undefined
+  } while (pageToken)
+  return hits
+}
+
+function pickCanonicalFolderId(hits) {
+  const sorted = [...hits].sort((a, b) => {
+    const aTime = a.createdTime ?? ""
+    const bTime = b.createdTime ?? ""
+    if (aTime !== bTime) return aTime < bTime ? -1 : 1
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
   })
-  return response.data.files?.[0]?.id ?? null
+  return sorted[0].id
+}
+
+async function consolidateDuplicateFolders(
+  drive,
+  sharedDriveId,
+  hits,
+  { parentId, name },
+) {
+  const canonicalId = pickCanonicalFolderId(hits)
+  const duplicates = hits.filter((h) => h.id !== canonicalId)
+  if (duplicates.length === 0) return canonicalId
+
+  console.warn(
+    `[drive-provision] consolidating duplicates name=${name} parent=${parentId} keep=${canonicalId} trash=${duplicates.map((d) => d.id).join(",")}`,
+  )
+
+  await Promise.all(
+    duplicates.map(async (dup) => {
+      try {
+        await drive.files.update({
+          ...driveFlags(sharedDriveId),
+          fileId: dup.id,
+          requestBody: { trashed: true },
+        })
+      } catch (error) {
+        console.error(
+          `[drive-provision] failed to trash duplicate ${dup.id}`,
+          error,
+        )
+      }
+    }),
+  )
+  return canonicalId
 }
 
 async function ensureEmailFolder(drive, sharedDriveId, rootFolderId, email) {
   const name = sanitizeDriveName(email.toLowerCase())
-  const existing = await findChildFolder(
+  const existing = await listChildFoldersByName(
     drive,
     sharedDriveId,
     rootFolderId,
     name,
   )
-  if (existing) return { folderId: existing, created: false }
+  if (existing.length > 0) {
+    const folderId = await consolidateDuplicateFolders(
+      drive,
+      sharedDriveId,
+      existing,
+      { parentId: rootFolderId, name },
+    )
+    return { folderId, created: false }
+  }
 
   const response = await drive.files.create({
     ...driveFlags(sharedDriveId),
@@ -96,8 +157,26 @@ async function ensureEmailFolder(drive, sharedDriveId, rootFolderId, email) {
     },
     fields: "id",
   })
-  const folderId = response.data.id
-  if (!folderId) throw new Error(`Drive did not return folder id for ${email}`)
+  if (!response.data.id) {
+    throw new Error(`Drive did not return folder id for ${email}`)
+  }
+
+  // Re-list after create so concurrent runs converge on one canonical folder.
+  const afterCreate = await listChildFoldersByName(
+    drive,
+    sharedDriveId,
+    rootFolderId,
+    name,
+  )
+  if (afterCreate.length === 0) {
+    throw new Error(`Drive folder disappeared after create for ${email}`)
+  }
+  const folderId = await consolidateDuplicateFolders(
+    drive,
+    sharedDriveId,
+    afterCreate,
+    { parentId: rootFolderId, name },
+  )
   return { folderId, created: true }
 }
 

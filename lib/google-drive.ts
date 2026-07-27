@@ -156,22 +156,103 @@ export function sanitizeDriveName(raw: string, fallback = "untitled"): string {
   return cleaned || fallback
 }
 
-async function findChildFolder(
+type ChildFolderHit = {
+  id: string
+  createdTime: string | null
+}
+
+/**
+ * List every non-trashed sibling folder with this exact name.
+ * Drive allows duplicate names under the same parent — callers that need a
+ * single canonical folder must consolidate.
+ */
+async function listChildFoldersByName(
   drive: drive_v3.Drive,
   config: DriveConfig,
   parentId: string,
   name: string,
-): Promise<string | null> {
+): Promise<ChildFolderHit[]> {
   const escaped = name.replace(/'/g, "\\'")
-  const response = await drive.files.list({
-    ...driveFlags(config),
-    q: `'${parentId}' in parents and name = '${escaped}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-    fields: "files(id, name)",
-    pageSize: 1,
-    spaces: "drive",
-  })
-  return response.data.files?.[0]?.id ?? null
+  const hits: ChildFolderHit[] = []
+  let pageToken: string | undefined
+
+  do {
+    const response = await drive.files.list({
+      ...driveFlags(config),
+      q: `'${parentId}' in parents and name = '${escaped}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "nextPageToken, files(id, createdTime)",
+      pageSize: 100,
+      pageToken,
+      spaces: "drive",
+    })
+    for (const file of response.data.files ?? []) {
+      if (!file.id) continue
+      hits.push({ id: file.id, createdTime: file.createdTime ?? null })
+    }
+    pageToken = response.data.nextPageToken ?? undefined
+  } while (pageToken)
+
+  return hits
 }
+
+/**
+ * Prefer the oldest folder (stable across race winners). Ties break by id so
+ * every concurrent caller converges on the same canonical id.
+ */
+function pickCanonicalFolderId(hits: ChildFolderHit[]): string {
+  const sorted = [...hits].sort((a, b) => {
+    const aTime = a.createdTime ?? ""
+    const bTime = b.createdTime ?? ""
+    if (aTime !== bTime) return aTime < bTime ? -1 : 1
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
+  return sorted[0]!.id
+}
+
+/**
+ * Keep the canonical sibling; move the rest to trash. Best-effort — a trash
+ * failure must not block returning the canonical id.
+ */
+async function consolidateDuplicateFolders(
+  drive: drive_v3.Drive,
+  config: DriveConfig,
+  hits: ChildFolderHit[],
+  context: { parentId: string; name: string },
+): Promise<string> {
+  const canonicalId = pickCanonicalFolderId(hits)
+  const duplicates = hits.filter((h) => h.id !== canonicalId)
+  if (duplicates.length === 0) return canonicalId
+
+  console.warn("[google-drive] consolidating duplicate folders", {
+    name: context.name,
+    parentId: context.parentId,
+    canonicalId,
+    trashedIds: duplicates.map((d) => d.id),
+  })
+
+  await Promise.all(
+    duplicates.map(async (dup) => {
+      try {
+        await drive.files.update({
+          ...driveFlags(config),
+          fileId: dup.id,
+          requestBody: { trashed: true },
+        })
+      } catch (error) {
+        console.error("[google-drive] failed to trash duplicate folder", {
+          folderId: dup.id,
+          name: context.name,
+          error,
+        })
+      }
+    }),
+  )
+
+  return canonicalId
+}
+
+/** In-process lock so concurrent find-or-create for the same parent+name share one promise. */
+const findOrCreateFolderLocks = new Map<string, Promise<string>>()
 
 export const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 
@@ -350,24 +431,12 @@ export async function updateDriveTextFile(input: {
   }
 }
 
-export async function createDriveFolder(input: {
+async function createDriveFolderUnique(input: {
   name: string
   parentId: string
-  /**
-   * When false, always create a fresh folder even if a sibling with the same
-   * name exists (Drive allows duplicate names). Use for per-entity folders
-   * (e.g. projects) that must stay isolated; default true keeps the
-   * idempotent find-or-create behavior used for user email folders.
-   */
-  reuseExisting?: boolean
 }): Promise<string> {
   const { drive, config } = getDrive()
   const name = sanitizeDriveName(input.name)
-
-  if (input.reuseExisting !== false) {
-    const existing = await findChildFolder(drive, config, input.parentId, name)
-    if (existing) return existing
-  }
 
   try {
     const response = await drive.files.create({
@@ -390,6 +459,83 @@ export async function createDriveFolder(input: {
       { cause: error },
     )
   }
+}
+
+/**
+ * Idempotent find-or-create: never leave duplicate siblings with the same name.
+ * Handles races by re-listing after create and trashing non-canonical copies.
+ */
+async function findOrCreateDriveFolder(input: {
+  name: string
+  parentId: string
+}): Promise<string> {
+  const { drive, config } = getDrive()
+  const name = sanitizeDriveName(input.name)
+  const parentId = input.parentId
+  const lockKey = `${parentId}\0${name}`
+
+  const inFlight = findOrCreateFolderLocks.get(lockKey)
+  if (inFlight) return inFlight
+
+  const run = (async (): Promise<string> => {
+    const existing = await listChildFoldersByName(drive, config, parentId, name)
+    if (existing.length > 0) {
+      return consolidateDuplicateFolders(drive, config, existing, {
+        parentId,
+        name,
+      })
+    }
+
+    await createDriveFolderUnique({ name, parentId })
+
+    // Re-list after create: another process may have created a sibling in the
+    // same window. Every winner converges on the oldest id and trashes extras.
+    const afterCreate = await listChildFoldersByName(
+      drive,
+      config,
+      parentId,
+      name,
+    )
+    if (afterCreate.length === 0) {
+      throw new GoogleDriveError(
+        "Drive folder disappeared immediately after create.",
+      )
+    }
+    return consolidateDuplicateFolders(drive, config, afterCreate, {
+      parentId,
+      name,
+    })
+  })().finally(() => {
+    if (findOrCreateFolderLocks.get(lockKey) === run) {
+      findOrCreateFolderLocks.delete(lockKey)
+    }
+  })
+
+  findOrCreateFolderLocks.set(lockKey, run)
+  return run
+}
+
+export async function createDriveFolder(input: {
+  name: string
+  parentId: string
+  /**
+   * When false, always create a fresh folder even if a sibling with the same
+   * name exists (Drive allows duplicate names). Use for per-entity folders
+   * (e.g. projects) that must stay isolated; default true keeps the
+   * idempotent find-or-create behavior used for user email folders.
+   */
+  reuseExisting?: boolean
+}): Promise<string> {
+  if (input.reuseExisting === false) {
+    return createDriveFolderUnique({
+      name: input.name,
+      parentId: input.parentId,
+    })
+  }
+  return findOrCreateDriveFolder({
+    name: input.name,
+    parentId: input.parentId,
+  })
 }
 
 export async function getRootFolderId(): Promise<string> {

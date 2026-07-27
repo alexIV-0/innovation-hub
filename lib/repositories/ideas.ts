@@ -84,8 +84,8 @@ export async function createIdea(input: {
       id,
       input.title,
       input.description,
-      input.thumbnail,
-      input.videoUrl,
+      normalizeMediaDisplayUrl(input.thumbnail),
+      normalizeMediaDisplayUrl(input.videoUrl),
       input.duration,
       tags,
       category,
@@ -128,8 +128,12 @@ export async function updateIdea(
       id,
       input.title ?? null,
       input.description ?? null,
-      input.thumbnail ?? null,
-      input.videoUrl ?? null,
+      input.thumbnail != null
+        ? normalizeMediaDisplayUrl(input.thumbnail)
+        : null,
+      input.videoUrl != null
+        ? normalizeMediaDisplayUrl(input.videoUrl)
+        : null,
       input.duration ?? null,
       tags ?? null,
       category,

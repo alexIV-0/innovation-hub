@@ -23,6 +23,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { getS3Client } from "@/lib/s3-client"
 import {
+  appMediaProxyPathForKey,
   buildS3ObjectKey,
   getS3Bucket,
   publicObjectUrlForKey,
@@ -33,11 +34,6 @@ import {
 } from "@/lib/s3-upload-policy"
 
 export const runtime = "nodejs"
-
-function appMediaUrl(request: NextRequest, key: string): string {
-  const encodedKeyPath = key.split("/").map((segment) => encodeURIComponent(segment)).join("/")
-  return new URL(`/api/media/${encodedKeyPath}`, request.url).toString()
-}
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdminApi(request)
@@ -90,7 +86,9 @@ export async function POST(request: NextRequest) {
   try {
     const uploadUrl = await getSignedUrl(client, command, { expiresIn: 900 })
 
-    const publicUrl = publicObjectUrlForKey(key) ?? appMediaUrl(request, key)
+    // Prefer CDN when configured; otherwise a same-origin relative path so
+    // local uploads never bake localhost into the DB.
+    const publicUrl = publicObjectUrlForKey(key) ?? appMediaProxyPathForKey(key)
 
     return NextResponse.json({
       uploadUrl,

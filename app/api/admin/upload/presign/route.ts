@@ -1,8 +1,8 @@
 /**
- * Presigned PUT URL for uploading directly to S3 (Nebius Object Storage)
+ * Presigned PUT URL for uploading directly to S3-compatible object storage
  * from the browser.
  *
- * Notes for S3-compatible providers (Nebius in particular):
+ * Notes for S3-compatible providers:
  *  - The bucket MUST have CORS allowing PUT from the app origin
  *    (run `pnpm s3:set-cors`).
  *  - We deliberately do NOT pass ContentType to PutObjectCommand. If we did,

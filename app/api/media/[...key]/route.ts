@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
 import { findFileByS3Key } from "@/lib/repositories/project-files"
 import { findUserById } from "@/lib/repositories/users"
-import { getS3Bucket, getS3Prefix } from "@/lib/s3-config"
+import { getS3Bucket, getS3Prefix, isAllowedMediaObjectKey } from "@/lib/s3-config"
 import { getS3Client } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
@@ -71,11 +71,10 @@ export async function GET(request: NextRequest, { params }: Params) {
     return NextResponse.json({ message: "Invalid media key." }, { status: 400 })
   }
 
-  // Hard-scope the proxy to objects under our configured prefix. Without this,
+  // Hard-scope the proxy to objects under known app prefixes. Without this,
   // any caller could mint a signed URL for any object in the bucket — including
   // siblings owned by other tenants/apps sharing the same bucket.
-  const expectedPrefix = `${getS3Prefix()}/`
-  if (!key.startsWith(expectedPrefix)) {
+  if (!isAllowedMediaObjectKey(key)) {
     return NextResponse.json({ message: "Not found." }, { status: 404 })
   }
 

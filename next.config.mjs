@@ -5,6 +5,8 @@ const nextConfig = {
   },
   images: {
     formats: ["image/avif", "image/webp"],
+    // VideoCard backdrop uses quality={30}; default allow-list is only [75].
+    qualities: [30, 70, 75],
     localPatterns: [
       // Thumbnails proxied through the media route in raw-stream mode.
       { pathname: "/api/media/**", search: "?raw=1" },
@@ -12,7 +14,7 @@ const nextConfig = {
       { pathname: "/**", search: "" },
     ],
     // Thumbnails are referenced via same-origin /api/media/... paths, but
-    // allow the storage host too in case absolute URLs are ever stored.
+    // allow the configured storage host too in case absolute URLs are ever stored.
     remotePatterns: [
       {
         protocol: "https",

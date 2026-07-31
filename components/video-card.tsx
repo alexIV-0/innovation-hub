@@ -9,11 +9,30 @@ import type { VideoCardItem } from "@/lib/content-types"
 /**
  * /api/media URLs answer the image optimizer with a raw byte stream when
  * ?raw=1 is set (the optimizer can't follow the usual 307 to presigned S3).
+ * Also rewrites leftover absolute app-proxy / mistaken-prefix URLs so
+ * next/image never hard-crashes on a stale ISR cache entry.
  */
 function optimizableSrc(src: string): string {
-  return src.startsWith("/api/media/") && !src.includes("?")
-    ? `${src}?raw=1`
-    : src
+  let value = src.trim()
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const url = new URL(value)
+      if (url.pathname.startsWith("/api/media/")) {
+        value = `${url.pathname}${url.search}`
+      }
+    } catch {
+      // keep original
+    }
+  }
+
+  if (value.startsWith("/api/media/ffworks/")) {
+    value = value.replace("/api/media/ffworks/", "/api/media/innohub/")
+  }
+
+  return value.startsWith("/api/media/") && !value.includes("?")
+    ? `${value}?raw=1`
+    : value
 }
 
 function VideoCardInner({

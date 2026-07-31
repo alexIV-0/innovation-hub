@@ -10,7 +10,7 @@ export default async function LoginPage({
 }) {
   const { next, error } = await searchParams
   const redirectTo =
-    next && next.startsWith("/") && !next.startsWith("//") ? next : "/"
+    next && next.startsWith("/") && !next.startsWith("//") ? next : "/account"
   const googleEnabled = readGoogleOAuthConfig() !== null
 
   return (

@@ -31,7 +31,7 @@ type LoginFormProps = {
 }
 
 export function LoginForm({
-  redirectTo = "/",
+  redirectTo = "/account",
   googleEnabled = false,
   oauthError = null,
 }: LoginFormProps) {

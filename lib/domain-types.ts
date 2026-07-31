@@ -9,6 +9,45 @@ export type UserRecord = {
   role: UserRole
   isActive: boolean
   createdAt: Date
+  balanceCents: number
+}
+
+export type ProjectGroupName = "personal" | "shared" | "tools" | "archive"
+
+export type ProjectRecord = {
+  id: string
+  ownerId: string
+  name: string
+  description: string
+  groupName: ProjectGroupName
+  isPaused: boolean
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type ProjectFileRecord = {
+  id: string
+  projectId: string
+  folderPath: string
+  name: string
+  isFolder: boolean
+  s3Key: string | null
+  sizeBytes: number
+  contentType: string
+  createdAt: Date
+}
+
+export type MessageSenderRole = "user" | "team"
+
+export type ProjectMessageRecord = {
+  id: string
+  projectId: string
+  senderId: string | null
+  senderRole: MessageSenderRole
+  text: string
+  createdAt: Date
+  readByUser: boolean
+  readByTeam: boolean
 }
 
 export type UserRecordWithPassword = UserRecord & {

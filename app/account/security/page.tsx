@@ -1,7 +1,5 @@
-import { SecuritySection } from "@/components/account/sections/security-section"
+import { redirect } from "next/navigation"
 
-export const dynamic = "force-dynamic"
-
-export default function AccountSecurityPage() {
-  return <SecuritySection />
+export default function SecurityRedirect() {
+  redirect("/account/profile")
 }

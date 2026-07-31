@@ -180,6 +180,11 @@ async function resetTables() {
     DROP TABLE IF EXISTS "Idea"  CASCADE;
     DROP TABLE IF EXISTS "Video" CASCADE;
     DROP TABLE IF EXISTS "User"  CASCADE;
+    DROP TABLE IF EXISTS project_messages CASCADE;
+    DROP TABLE IF EXISTS project_files CASCADE;
+    DROP TABLE IF EXISTS project_chat_messages CASCADE;
+    DROP TABLE IF EXISTS project_media CASCADE;
+    DROP TABLE IF EXISTS projects CASCADE;
     DROP TABLE IF EXISTS ideas   CASCADE;
     DROP TABLE IF EXISTS videos  CASCADE;
     DROP TABLE IF EXISTS users   CASCADE;

@@ -107,7 +107,7 @@ function UserMenu({ user, onSignOut }: { user: SessionUser; onSignOut: () => voi
         <DropdownMenuItem asChild>
           <Link href="/account">
             <Settings className="h-4 w-4" />
-            Account settings
+            Workspace
           </Link>
         </DropdownMenuItem>
         {user.role === "ADMIN" ? (

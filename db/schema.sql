@@ -118,3 +118,89 @@ CREATE INDEX IF NOT EXISTS visitor_events_user_idx
   WHERE user_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS visitor_events_path_idx
   ON visitor_events (path);
+
+-- User wallet balance (display-only for now; top-up is a stub in the UI).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS balance_cents INTEGER NOT NULL DEFAULT 0;
+
+-- ===== FF Works workspace: projects, files, chat =====
+-- Legacy installs already have `projects` with user_id / is_active / drive_folder_id.
+-- Fresh installs get the full CREATE; existing DBs pick up columns via ALTER.
+CREATE TABLE IF NOT EXISTS projects (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  description  TEXT NOT NULL DEFAULT '',
+  group_name   TEXT NOT NULL DEFAULT 'personal',
+  is_paused    BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active    BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT 'personal';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_paused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+
+-- Keep is_paused in sync with legacy is_active when present.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'projects' AND column_name = 'is_active'
+  ) THEN
+    UPDATE projects SET is_paused = NOT COALESCE(is_active, TRUE)
+     WHERE is_paused = FALSE AND is_active = FALSE;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS projects_owner_idx
+  ON projects (user_id, group_name, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS project_files (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  folder_path   TEXT NOT NULL DEFAULT '',
+  name          TEXT NOT NULL,
+  is_folder     BOOLEAN NOT NULL DEFAULT FALSE,
+  s3_key        TEXT,
+  size_bytes    BIGINT NOT NULL DEFAULT 0,
+  content_type  TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT project_files_folder_s3_chk
+    CHECK (
+      (is_folder = TRUE  AND s3_key IS NULL) OR
+      (is_folder = FALSE AND s3_key IS NOT NULL)
+    )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS project_files_unique_name_idx
+  ON project_files (project_id, folder_path, name);
+
+CREATE INDEX IF NOT EXISTS project_files_project_folder_idx
+  ON project_files (project_id, folder_path);
+
+CREATE INDEX IF NOT EXISTS project_files_s3_key_idx
+  ON project_files (s3_key)
+  WHERE s3_key IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS project_files_created_at_idx
+  ON project_files (project_id, created_at DESC)
+  WHERE is_folder = FALSE;
+
+CREATE TABLE IF NOT EXISTS project_messages (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sender_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
+  sender_role   TEXT NOT NULL CHECK (sender_role IN ('user', 'team')),
+  text          TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  read_by_user  BOOLEAN NOT NULL DEFAULT FALSE,
+  read_by_team  BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS project_messages_project_idx
+  ON project_messages (project_id, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS project_messages_unread_user_idx
+  ON project_messages (project_id)
+  WHERE sender_role = 'team' AND read_by_user = FALSE;

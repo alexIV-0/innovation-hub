@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminSidebarLink } from "./admin-sidebar-link"
 import { AdminSidebarUser } from "./admin-sidebar-user"
@@ -54,6 +55,14 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
       </nav>
 
       <div className="space-y-3 px-3 pb-4">
+        <Link
+          href="/account"
+          onClick={onNavigate}
+          className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-white/[0.03] px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4 shrink-0" />
+          Back to dashboard
+        </Link>
         <div className="h-px bg-border/60" />
         <AdminSidebarUser
           email={email}

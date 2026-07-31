@@ -1,8 +1,16 @@
+import { IBM_Plex_Sans } from "next/font/google"
 import { redirect } from "next/navigation"
-import { AccountShell } from "@/components/account/shell/account-shell"
+import { WorkspaceShell } from "@/components/account/workspace-shell"
 import { getCurrentUser } from "@/lib/admin-auth"
 
 export const dynamic = "force-dynamic"
+
+const ibmPlex = IBM_Plex_Sans({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ibm-plex",
+  display: "swap",
+})
 
 export default async function AccountLayout({
   children,
@@ -16,18 +24,19 @@ export default async function AccountLayout({
   }
 
   if (!user.isActive) {
-    // Suspended users have nothing actionable to do here — bounce them out so
-    // they can't sit on settings pages that won't accept any of their requests.
     redirect("/")
   }
 
   return (
-    <AccountShell
-      email={user.email}
-      fullName={user.fullName ?? ""}
-      role={user.role}
-    >
-      {children}
-    </AccountShell>
+    <div className={ibmPlex.variable}>
+      <WorkspaceShell
+        email={user.email}
+        fullName={user.fullName ?? ""}
+        role={user.role}
+        balanceCents={user.balanceCents ?? 0}
+      >
+        {children}
+      </WorkspaceShell>
+    </div>
   )
 }

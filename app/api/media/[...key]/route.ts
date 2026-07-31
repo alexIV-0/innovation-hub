@@ -1,6 +1,9 @@
 import { GetObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { NextResponse, type NextRequest } from "next/server"
+import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
+import { findFileByS3Key } from "@/lib/repositories/project-files"
+import { findUserById } from "@/lib/repositories/users"
 import { getS3Bucket, getS3Prefix } from "@/lib/s3-config"
 import { getS3Client } from "@/lib/s3-client"
 
@@ -17,7 +20,6 @@ function decodeKey(segments: string[] | undefined): string | null {
   const parts: string[] = []
   for (const segment of segments) {
     if (!segment) continue
-    // Reject path-traversal attempts pre-decode and post-decode.
     if (segment.includes("..")) return null
     try {
       const decoded = decodeURIComponent(segment)
@@ -31,19 +33,50 @@ function decodeKey(segments: string[] | undefined): string | null {
   return key ? key : null
 }
 
-export async function GET(_request: NextRequest, { params }: Params) {
+async function authorizeProjectKey(
+  request: NextRequest,
+  key: string,
+): Promise<NextResponse | null> {
+  const prefix = `${getS3Prefix()}/projects/`
+  if (!key.startsWith(prefix)) return null // not a project key — public OK
+
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value
+  if (!token) {
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 })
+  }
+  const session = await verifySessionToken(token)
+  if (!session?.userId) {
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 })
+  }
+
+  const user = await findUserById(session.userId)
+  if (!user || !user.isActive) {
+    return NextResponse.json({ message: "Forbidden." }, { status: 403 })
+  }
+
+  // Admins can open any project media.
+  if (user.role === "ADMIN") return null
+
+  const file = await findFileByS3Key(key)
+  if (!file || file.ownerId !== user.id) {
+    return NextResponse.json({ message: "Not found." }, { status: 404 })
+  }
+  return null
+}
+
+export async function GET(request: NextRequest, { params }: Params) {
   const key = decodeKey((await params).key)
   if (!key) {
     return NextResponse.json({ message: "Invalid media key." }, { status: 400 })
   }
 
-  // Hard-scope the proxy to objects under our configured prefix. Without this,
-  // any caller could mint a signed URL for any object in the bucket — including
-  // siblings owned by other tenants/apps sharing the same bucket.
   const expectedPrefix = `${getS3Prefix()}/`
   if (!key.startsWith(expectedPrefix)) {
     return NextResponse.json({ message: "Not found." }, { status: 404 })
   }
+
+  const denied = await authorizeProjectKey(request, key)
+  if (denied) return denied
 
   try {
     const bucket = getS3Bucket()
@@ -56,11 +89,9 @@ export async function GET(_request: NextRequest, { params }: Params) {
       expiresIn: SIGNED_URL_TTL_SECONDS,
     })
     const response = NextResponse.redirect(signedGetUrl, { status: 307 })
-    // Allow shared CDN/browser caching of the redirect for a fraction of the
-    // signed-URL TTL so we don't re-sign on every range request from <video>.
     response.headers.set(
       "Cache-Control",
-      `public, max-age=${Math.floor(SIGNED_URL_TTL_SECONDS / 2)}, must-revalidate`,
+      `private, max-age=${Math.floor(SIGNED_URL_TTL_SECONDS / 2)}, must-revalidate`,
     )
     return response
   } catch (e) {

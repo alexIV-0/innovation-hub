@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ArrowUpRight, ChevronRight } from "lucide-react"
+import { ArrowLeft, ArrowUpRight, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { adminNavItems, isItemActive } from "./nav-config"
 import { AdminMobileSidebar } from "./admin-mobile-sidebar"
@@ -32,6 +32,17 @@ export function AdminTopbar({ email, fullName }: Props) {
       </nav>
 
       <div className="ml-auto flex items-center gap-2">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 rounded-full text-muted-foreground hover:text-foreground"
+        >
+          <Link href="/account">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Dashboard
+          </Link>
+        </Button>
         <Button
           asChild
           variant="ghost"

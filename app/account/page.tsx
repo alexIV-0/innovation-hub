@@ -1,25 +1,21 @@
-import { redirect } from "next/navigation"
-import { ProfileSection } from "@/components/account/sections/profile-section"
 import { getCurrentUser } from "@/lib/admin-auth"
+import { DashboardPageClient } from "@/components/account/dashboard-page"
+import { redirect } from "next/navigation"
 
 export const dynamic = "force-dynamic"
 
-export default async function AccountProfilePage() {
+export default async function AccountDashboardPage() {
   const user = await getCurrentUser()
-  if (!user) {
-    redirect("/login")
-  }
+  if (!user) redirect("/login")
 
   return (
-    <ProfileSection
-      user={{
-        id: user.id,
-        fullName: user.fullName,
-        email: user.email,
-        role: user.role,
-        isActive: user.isActive,
-        createdAt: user.createdAt.toISOString(),
-      }}
+    <DashboardPageClient
+      fullName={user.fullName ?? ""}
+      createdAt={
+        user.createdAt instanceof Date
+          ? user.createdAt.toISOString()
+          : String(user.createdAt)
+      }
     />
   )
 }

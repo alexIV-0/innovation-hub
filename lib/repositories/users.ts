@@ -13,7 +13,8 @@ const PUBLIC_USER_FIELDS = `
   email,
   role,
   is_active AS "isActive",
-  created_at AS "createdAt"
+  created_at AS "createdAt",
+  COALESCE(balance_cents, 0) AS "balanceCents"
 `
 
 const FULL_USER_FIELDS = `
@@ -25,7 +26,8 @@ const FULL_USER_FIELDS = `
   is_active AS "isActive",
   created_at AS "createdAt",
   auth_provider AS "authProvider",
-  provider_account_id AS "providerAccountId"
+  provider_account_id AS "providerAccountId",
+  COALESCE(balance_cents, 0) AS "balanceCents"
 `
 
 export async function findUserById(id: string): Promise<UserRecord | null> {

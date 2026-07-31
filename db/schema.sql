@@ -122,6 +122,9 @@ CREATE INDEX IF NOT EXISTS visitor_events_path_idx
 -- User wallet balance (display-only for now; top-up is a stub in the UI).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS balance_cents INTEGER NOT NULL DEFAULT 0;
 
+-- Client cabinet: each user gets a Google Drive folder (named by email).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS drive_folder_id TEXT;
+
 -- ===== FF Works workspace: projects, files, chat =====
 -- Legacy installs already have `projects` with user_id / is_active / drive_folder_id.
 -- Fresh installs get the full CREATE; existing DBs pick up columns via ALTER.
@@ -140,6 +143,10 @@ CREATE TABLE IF NOT EXISTS projects (
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT 'personal';
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_paused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_folder_id TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS yougile_chat_id TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS chat_last_read_at TIMESTAMPTZ;
 
 -- Keep is_paused in sync with legacy is_active when present.
 DO $$
@@ -155,6 +162,17 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS projects_owner_idx
   ON projects (user_id, group_name, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS projects_user_created_idx
+  ON projects (user_id, created_at DESC);
+
+-- Google Drive is the source of truth for which projects exist (see
+-- lib/project-drive.ts#listUserProjectsFromDrive): every Drive folder scan
+-- upserts by drive_folder_id, so a unique index prevents two concurrent
+-- requests from ever creating duplicate rows for the same Drive folder.
+CREATE UNIQUE INDEX IF NOT EXISTS projects_drive_folder_id_idx
+  ON projects (drive_folder_id)
+  WHERE drive_folder_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS project_files (
   id            TEXT PRIMARY KEY,
@@ -204,3 +222,77 @@ CREATE INDEX IF NOT EXISTS project_messages_project_idx
 CREATE INDEX IF NOT EXISTS project_messages_unread_user_idx
   ON project_messages (project_id)
   WHERE sender_role = 'team' AND read_by_user = FALSE;
+
+CREATE TABLE IF NOT EXISTS project_media (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  file_name     TEXT NOT NULL,
+  mime_type     TEXT NOT NULL,
+  size_bytes    BIGINT,
+  drive_file_id TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS project_media_project_created_idx
+  ON project_media (project_id, created_at DESC);
+
+-- Per-project chat, mirrored two-way with YouGile: 'client' rows come from
+-- the site (pushed to YouGile via the REST API), 'team' rows arrive via the
+-- YouGile webhook (chat_message-created from a non-bot author), 'system' is
+-- reserved for future in-chat notices.
+CREATE TABLE IF NOT EXISTS project_chat_messages (
+  id                  TEXT PRIMARY KEY,
+  project_id          TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  sender_type         TEXT NOT NULL CHECK (sender_type IN ('client', 'team', 'system')),
+  sender_user_id      TEXT,
+  sender_name         TEXT NOT NULL,
+  body                TEXT NOT NULL,
+  yougile_message_id  TEXT,
+  delivered           BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS project_chat_messages_project_created_idx
+  ON project_chat_messages (project_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS project_chat_messages_yougile_id_idx
+  ON project_chat_messages (yougile_message_id) WHERE yougile_message_id IS NOT NULL;
+
+-- Web Push subscriptions (one user can have several, one per browser/device).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint    TEXT NOT NULL,
+  p256dh      TEXT NOT NULL,
+  auth        TEXT NOT NULL,
+  user_agent  TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_idx
+  ON push_subscriptions (endpoint);
+CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx
+  ON push_subscriptions (user_id);
+
+-- Idempotent data migration: admin uploads used to bake an absolute origin into
+-- media URLs via `new URL(..., request.url)`, so local runs left values like
+-- `https://localhost:3000/api/media/...` in the DB. Strip any host and keep the
+-- stable same-origin path so prod (and any other deploy) serves them correctly.
+UPDATE videos
+SET thumbnail = regexp_replace(thumbnail, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE thumbnail ~ '^https?://[^/]+/api/media/';
+
+UPDATE videos
+SET video_url = regexp_replace(video_url, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE video_url ~ '^https?://[^/]+/api/media/';
+
+UPDATE ideas
+SET thumbnail = regexp_replace(thumbnail, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE thumbnail ~ '^https?://[^/]+/api/media/';
+
+UPDATE ideas
+SET video_url = regexp_replace(video_url, '^https?://[^/]+(/api/media/.*)$', '\1'),
+    updated_at = NOW()
+WHERE video_url ~ '^https?://[^/]+/api/media/';

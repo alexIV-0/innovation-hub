@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { videoCreateSchema } from "@/lib/admin-schemas"
@@ -25,5 +26,6 @@ export async function POST(request: NextRequest) {
   }
 
   const video = await createVideo(parsed.data)
+  revalidateTag("published-videos", "max")
   return NextResponse.json(video, { status: 201 })
 }

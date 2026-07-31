@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { userUpdateSchema } from "@/lib/admin-schemas"
 import { hashPassword } from "@/lib/auth"
+import { trashDriveFile } from "@/lib/google-drive"
 import {
   countActiveAdmins,
   deleteUser,
@@ -135,6 +136,22 @@ export async function DELETE(
         { message: "At least one active admin must remain." },
         { status: 400 },
       )
+    }
+  }
+
+  // Trash (not permanently delete) the user's Drive folder so a future
+  // signup with the same email gets a fresh folder instead of inheriting
+  // this account's projects and files. Best-effort: Drive being down must
+  // not block account deletion.
+  if (target?.driveFolderId) {
+    try {
+      await trashDriveFile(target.driveFolderId)
+    } catch (error) {
+      console.error("[admin-users] failed to trash Drive folder", {
+        userId: id,
+        driveFolderId: target.driveFolderId,
+        error,
+      })
     }
   }
 

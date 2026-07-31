@@ -38,21 +38,29 @@ export function appMediaProxyPathForKey(key: string): string {
 }
 
 /**
- * Converts direct object-storage URLs back to our stable app media route.
- * This keeps old DB records working even when bucket objects are private.
+ * Converts stored media URLs to a stable same-origin app path when possible.
+ * Fixes absolute localhost / wrong-host `/api/media/...` URLs left in the DB
+ * after local uploads, and maps private object-storage URLs back through the
+ * app proxy.
  */
 export function normalizeMediaDisplayUrl(rawUrl: string): string {
   const value = rawUrl.trim()
   if (!value) return value
   if (value.startsWith("/api/media/")) return value
 
-  const endpoint = process.env.AWS_ENDPOINT_URL?.trim().replace(/\/+$/, "")
-  const bucket = process.env.AWS_S3_BUCKET?.trim()
-  if (!endpoint || !bucket) return value
-
   try {
-    const endpointUrl = new URL(endpoint)
     const mediaUrl = new URL(value)
+    // Absolute app-proxy links (e.g. https://localhost:3000/api/media/...) must
+    // become relative so they work on any host (prod included).
+    if (mediaUrl.pathname.startsWith("/api/media/")) {
+      return `${mediaUrl.pathname}${mediaUrl.search}`
+    }
+
+    const endpoint = process.env.AWS_ENDPOINT_URL?.trim().replace(/\/+$/, "")
+    const bucket = process.env.AWS_S3_BUCKET?.trim()
+    if (!endpoint || !bucket) return value
+
+    const endpointUrl = new URL(endpoint)
     if (
       endpointUrl.protocol !== mediaUrl.protocol ||
       endpointUrl.host !== mediaUrl.host

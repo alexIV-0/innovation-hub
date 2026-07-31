@@ -1,13 +1,29 @@
+import { unstable_cache } from "next/cache"
 import { Header } from "@/components/header"
 import { FooterSection } from "@/components/footer-section"
 import { AboutShowreel } from "@/components/about-showreel"
 import { VideoGridInfinite } from "@/components/videos/video-grid-infinite"
-import { getCurrentUser } from "@/lib/admin-auth"
 import type { VideoCardItem } from "@/lib/content-types"
 import { listPublishedVideosPaginated } from "@/lib/repositories/videos"
 import { PUBLISHED_VIDEOS_PAGE_SIZE } from "@/lib/videos-pagination"
 
 export const dynamic = "force-dynamic"
+
+// The first catalog page is identical for every visitor, so serve it from
+// the data cache instead of hitting the (remote) database on each request —
+// that DB round-trip used to dominate the home page TTFB. Admin mutations
+// call revalidateTag("published-videos") for instant invalidation; the
+// 60s revalidate is just a safety net.
+const getCachedFirstPage = unstable_cache(
+  async (tags: string[] | undefined, q: string | undefined) =>
+    listPublishedVideosPaginated({
+      limit: PUBLISHED_VIDEOS_PAGE_SIZE,
+      tags,
+      q,
+    }),
+  ["published-videos-first-page"],
+  { revalidate: 60, tags: ["published-videos"] },
+)
 
 type HomePageProps = {
   searchParams?: Promise<{
@@ -56,14 +72,10 @@ export default async function Home({ searchParams }: HomePageProps) {
   const rawQuery = params?.q
   const selectedQuery = Array.isArray(rawQuery) ? rawQuery[0] : rawQuery ?? ""
 
-  const [{ items, nextCursor }, user] = await Promise.all([
-    listPublishedVideosPaginated({
-      limit: PUBLISHED_VIDEOS_PAGE_SIZE,
-      tags: selectedTags.length > 0 ? selectedTags : undefined,
-      q: selectedQuery || undefined,
-    }),
-    getCurrentUser().catch(() => null),
-  ])
+  const { items, nextCursor } = await getCachedFirstPage(
+    selectedTags.length > 0 ? selectedTags : undefined,
+    selectedQuery || undefined,
+  )
 
   const initialVideos = items.map(mapToCard)
 
@@ -80,7 +92,6 @@ export default async function Home({ searchParams }: HomePageProps) {
           initialNextCursor={nextCursor}
           initialTags={selectedTags}
           initialQuery={selectedQuery}
-          isAdmin={Boolean(user?.isActive && user.role === "ADMIN")}
         />
       </main>
       <FooterSection />

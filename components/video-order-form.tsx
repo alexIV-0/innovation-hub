@@ -118,7 +118,7 @@ export function VideoOrderForm({ video }: VideoOrderFormProps) {
       </h3>
       <p className="mt-2 text-sm text-muted-foreground">
         Reference: <span className="text-foreground">{video.title}</span>. We will
-        create a task for our team in Asana.
+        notify our team about your request.
       </p>
 
       {!sessionEmail ? (

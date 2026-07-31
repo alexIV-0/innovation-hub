@@ -11,6 +11,7 @@ import {
   fetchGoogleProfile,
   readGoogleOAuthConfig,
 } from "@/lib/google-oauth"
+import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import {
   createOAuthUser,
   findUserByEmail,
@@ -134,6 +135,12 @@ export async function GET(request: Request) {
         return loginErrorRedirect(request, "google_create_failed")
       }
     }
+  }
+
+  // Single provision call for both new and legacy accounts (idempotent).
+  // Do not call this twice — concurrent creates race into duplicate email folders.
+  if (!user.driveFolderId) {
+    provisionUserDriveFolderBackground(user.id)
   }
 
   if (!user.isActive) {

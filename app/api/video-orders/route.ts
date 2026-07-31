@@ -1,28 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import { createAsanaTask } from "@/lib/asana"
-import { publicVideoPageUrl } from "@/lib/public-site-url"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { findPublishedVideoById } from "@/lib/repositories/videos"
-import {
-  buildVideoOrderNotes,
-  videoOrderSchema,
-} from "@/lib/video-order-schemas"
+import { videoOrderSchema } from "@/lib/video-order-schemas"
 
 export const runtime = "nodejs"
 
 const RATE_LIMIT = 3
 const RATE_WINDOW_MS = 10 * 60 * 1000
-
-function taskTitle(videoTitle: string, projectName: string): string {
-  const shortProject =
-    projectName.length > 40
-      ? `${projectName.slice(0, 37).trimEnd()}…`
-      : projectName
-  const shortVideo =
-    videoTitle.length > 40 ? `${videoTitle.slice(0, 37).trimEnd()}…` : videoTitle
-  return `Video order: ${shortProject} (ref: ${shortVideo})`
-}
 
 export async function POST(request: NextRequest) {
   const auth = await requireUserApi(request)
@@ -60,34 +45,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Video not found." }, { status: 404 })
   }
 
-  const notes = buildVideoOrderNotes({
-    videoTitle: video.title,
-    videoUrl: publicVideoPageUrl(video.id),
-    name: parsed.data.name,
+  // TODO(yougile): no delivery integration is wired up yet. Send this into
+  // YouGile (chat message / task) once that integration lands — see
+  // `lib/video-order-schemas.ts` for the note builder, still usable as-is.
+  console.warn("[api/video-orders] delivery not configured", {
+    videoId: video.id,
     email: parsed.data.email,
-    projectName: parsed.data.projectName,
-    monthlyVolume: parsed.data.monthlyVolume,
-    description: parsed.data.description,
   })
 
-  try {
-    const task = await createAsanaTask({
-      name: taskTitle(video.title, parsed.data.projectName),
-      notes,
-      projectGid: process.env.ASANA_VIDEO_ORDERS_PROJECT_GID?.trim(),
-      sectionGid: process.env.ASANA_VIDEO_ORDERS_SECTION_GID?.trim(),
-    })
-
-    return NextResponse.json({
-      taskGid: task.gid,
-      url: task.permalink_url ?? null,
-      message: "Thank you! Your request was submitted.",
-    })
-  } catch (error) {
-    console.error("[api/video-orders]", error)
-    return NextResponse.json(
-      { message: "Could not submit your request. Please try again later." },
-      { status: 502 },
-    )
-  }
+  return NextResponse.json(
+    {
+      message: "Submission service is not configured. Please try again later.",
+    },
+    { status: 503 },
+  )
 }

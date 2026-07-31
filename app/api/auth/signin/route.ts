@@ -6,6 +6,7 @@ import {
   createSessionToken,
   verifyPassword,
 } from "@/lib/auth"
+import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import { findUserByEmail } from "@/lib/repositories/users"
 
 export async function POST(request: Request) {
@@ -67,6 +68,10 @@ export async function POST(request: Request) {
     role: user.role,
     email: user.email,
   })
+
+  if (!user.driveFolderId) {
+    provisionUserDriveFolderBackground(user.id)
+  }
 
   const response = NextResponse.json(
     {

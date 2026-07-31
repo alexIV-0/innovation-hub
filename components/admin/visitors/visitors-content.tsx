@@ -603,7 +603,7 @@ function timeAgo(iso: string) {
 function formatDateTime(iso: string) {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return "—"
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString("en-US", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",

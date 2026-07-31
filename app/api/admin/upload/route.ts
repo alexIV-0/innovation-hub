@@ -14,6 +14,7 @@ import { Upload } from "@aws-sdk/lib-storage"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import {
+  appMediaProxyPathForKey,
   buildS3ObjectKey,
   getS3Bucket,
   publicObjectUrlForKey,
@@ -28,11 +29,6 @@ import {
 export const runtime = "nodejs"
 /** Vercel Hobby allows 1–300s; other plans may allow more via dashboard. */
 export const maxDuration = 300
-
-function appMediaUrl(request: NextRequest, key: string): string {
-  const encodedKeyPath = key.split("/").map((segment) => encodeURIComponent(segment)).join("/")
-  return new URL(`/api/media/${encodedKeyPath}`, request.url).toString()
-}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ message }, { status })
@@ -121,7 +117,9 @@ async function runUpload(request: NextRequest): Promise<Response> {
 
     await upload.done()
 
-    const publicUrl = publicObjectUrlForKey(key) ?? appMediaUrl(request, key)
+    // Prefer CDN when configured; otherwise a same-origin relative path so
+    // local uploads never bake localhost into the DB.
+    const publicUrl = publicObjectUrlForKey(key) ?? appMediaProxyPathForKey(key)
 
     return NextResponse.json({
       key,

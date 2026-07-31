@@ -1,33 +1,32 @@
 "use client"
 
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  type DragEndEvent,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core"
-import {
-  SortableContext,
-  arrayMove,
-  rectSortingStrategy,
-  sortableKeyboardCoordinates,
-} from "@dnd-kit/sortable"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import dynamic from "next/dynamic"
 import { usePathname, useRouter } from "next/navigation"
 import { Loader2, Pencil, Search, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { VideoCard } from "@/components/video-card"
-import { SortableVideoCard } from "@/components/videos/sortable-video-card"
 import { Button } from "@/components/ui/button"
 import type { VideoCardItem } from "@/lib/content-types"
 import {
   INFINITE_SCROLL_ROOT_MARGIN,
   PUBLISHED_VIDEOS_PAGE_SIZE,
 } from "@/lib/videos-pagination"
+
+// Admin-only drag-and-drop grid: loaded on demand when edit mode is entered
+// so @dnd-kit stays out of the public visitor bundle.
+const SortableVideoGrid = dynamic(
+  () => import("@/components/videos/sortable-video-grid"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="mt-10 flex justify-center py-10">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  },
+)
 
 type TagCount = { tag: string; count: number }
 
@@ -36,7 +35,6 @@ type VideoGridInfiniteProps = {
   initialNextCursor: string | null
   initialTags?: string[]
   initialQuery?: string
-  isAdmin?: boolean
 }
 
 export function VideoGridInfinite({
@@ -44,17 +42,29 @@ export function VideoGridInfinite({
   initialNextCursor,
   initialTags = [],
   initialQuery = "",
-  isAdmin = false,
 }: VideoGridInfiniteProps) {
   const router = useRouter()
   const pathname = usePathname()
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  )
+  // Admin state is resolved client-side (like the header does) so the home
+  // page HTML stays identical for everyone and can be served from cache.
+  // The button only reveals edit *UI*; every admin API call re-checks the
+  // session server-side.
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { authenticated?: boolean; role?: string } | null) => {
+        if (!cancelled && data?.authenticated && data.role === "ADMIN") {
+          setIsAdmin(true)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const [videos, setVideos] = useState(initialVideos)
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor)
@@ -274,17 +284,6 @@ export function VideoGridInfinite({
 
   const displayVideos = editMode ? editVideos : videos
 
-  const onDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    setEditVideos((items) => {
-      const oldIndex = items.findIndex((item) => item.id === active.id)
-      const newIndex = items.findIndex((item) => item.id === over.id)
-      if (oldIndex === -1 || newIndex === -1) return items
-      return arrayMove(items, oldIndex, newIndex)
-    })
-  }
-
   const totalCount = useMemo(
     () => tagCounts.reduce((sum, row) => sum + row.count, 0),
     [tagCounts],
@@ -405,26 +404,11 @@ export function VideoGridInfinite({
         )}
 
         {editMode ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={onDragEnd}
-          >
-            <SortableContext
-              items={editVideos.map((v) => v.id)}
-              strategy={rectSortingStrategy}
-            >
-              <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {editVideos.map((video) => (
-                  <SortableVideoCard key={video.id} video={video} />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+          <SortableVideoGrid videos={editVideos} onReorder={setEditVideos} />
         ) : (
           <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {displayVideos.map((video) => (
-              <VideoCard key={video.id} video={video} />
+            {displayVideos.map((video, index) => (
+              <VideoCard key={video.id} video={video} priority={index < 3} />
             ))}
           </div>
         )}

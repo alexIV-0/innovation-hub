@@ -1,0 +1,20 @@
+{
+  "apps": [
+    {
+      "name": "ffworks",
+      "cwd": "/root/ffworks",
+      "script": "node_modules/next/dist/bin/next",
+      "args": "start -p 3000",
+      "instances": 1,
+      "exec_mode": "fork",
+      "autorestart": true,
+      "max_restarts": 10,
+      "restart_delay": 5000,
+      "max_memory_restart": "1G",
+      "time": true,
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  ]
+}

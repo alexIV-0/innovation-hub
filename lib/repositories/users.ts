@@ -14,7 +14,8 @@ const PUBLIC_USER_FIELDS = `
   role,
   is_active AS "isActive",
   created_at AS "createdAt",
-  COALESCE(balance_cents, 0) AS "balanceCents"
+  COALESCE(balance_cents, 0) AS "balanceCents",
+  drive_folder_id AS "driveFolderId"
 `
 
 const FULL_USER_FIELDS = `
@@ -27,7 +28,8 @@ const FULL_USER_FIELDS = `
   created_at AS "createdAt",
   auth_provider AS "authProvider",
   provider_account_id AS "providerAccountId",
-  COALESCE(balance_cents, 0) AS "balanceCents"
+  COALESCE(balance_cents, 0) AS "balanceCents",
+  drive_folder_id AS "driveFolderId"
 `
 
 export async function findUserById(id: string): Promise<UserRecord | null> {
@@ -182,6 +184,21 @@ export async function updateUser(
       input.role ?? null,
       input.isActive ?? null,
     ],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function setUserDriveFolderId(
+  id: string,
+  driveFolderId: string,
+): Promise<UserRecord | null> {
+  const result = await query<UserRecord>(
+    `UPDATE users
+        SET drive_folder_id = $2,
+            updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${PUBLIC_USER_FIELDS}`,
+    [id, driveFolderId],
   )
   return result.rows[0] ?? null
 }

@@ -10,19 +10,27 @@ export type UserRecord = {
   isActive: boolean
   createdAt: Date
   balanceCents: number
+  driveFolderId: string | null
 }
 
 export type ProjectGroupName = "personal" | "shared" | "tools" | "archive"
 
 export type ProjectRecord = {
   id: string
+  /** Alias of userId — used by the S3 workspace UI. */
   ownerId: string
+  /** Alias of ownerId — used by Drive / YouGile integrations. */
+  userId: string
   name: string
   description: string
   groupName: ProjectGroupName
   isPaused: boolean
+  driveFolderId: string | null
+  isActive: boolean
   createdAt: Date
   updatedAt: Date
+  /** YouGile group chat id, created lazily on the first chat message. */
+  yougileChatId: string | null
 }
 
 export type ProjectFileRecord = {
@@ -48,6 +56,30 @@ export type ProjectMessageRecord = {
   createdAt: Date
   readByUser: boolean
   readByTeam: boolean
+}
+
+export type ProjectChatSenderType = "client" | "team" | "system"
+
+export type ProjectChatMessageRecord = {
+  id: string
+  projectId: string
+  senderType: ProjectChatSenderType
+  senderUserId: string | null
+  senderName: string
+  body: string
+  yougileMessageId: string | null
+  delivered: boolean
+  createdAt: Date
+}
+
+export type ProjectMediaRecord = {
+  id: string
+  projectId: string
+  fileName: string
+  mimeType: string
+  sizeBytes: number | null
+  driveFileId: string
+  createdAt: Date
 }
 
 export type UserRecordWithPassword = UserRecord & {

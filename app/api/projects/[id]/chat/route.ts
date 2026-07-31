@@ -1,0 +1,128 @@
+import { NextResponse, type NextRequest } from "next/server"
+import { requireUserApi } from "@/lib/admin-auth"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
+import { findUserById } from "@/lib/repositories/users"
+import { findProjectForUser, setProjectYougileChatId } from "@/lib/repositories/projects"
+import {
+  insertProjectChatMessage,
+  listProjectChatMessages,
+  markProjectChatMessageDelivered,
+} from "@/lib/repositories/project-chat"
+import { sendProjectChatMessageSchema } from "@/lib/project-chat-schemas"
+import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
+import {
+  createProjectGroupChat,
+  getYouGileConfig,
+  isYouGileConfigured,
+  sendChatMessage,
+  YouGileError,
+} from "@/lib/yougile"
+
+export const runtime = "nodejs"
+
+type RouteContext = { params: Promise<{ id: string }> }
+
+const RATE_LIMIT = 20
+const RATE_WINDOW_MS = 10 * 60 * 1000
+
+export async function GET(request: NextRequest, context: RouteContext) {
+  const auth = await requireUserApi(request)
+  if (auth instanceof NextResponse) return auth
+
+  const { id } = await context.params
+  const project = await findProjectForUser(id, auth.userId)
+  if (!project) {
+    return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  }
+
+  // YouGile's webhook only fires for messages sent through its own REST
+  // API, never for messages typed directly in the YouGile app — so team
+  // replies have to be pulled here instead of pushed to us. See
+  // lib/project-chat-sync.ts for details.
+  await syncProjectChatFromYouGile(project)
+
+  const messages = await listProjectChatMessages(project.id)
+  return NextResponse.json({ messages })
+}
+
+/**
+ * Ensures the project has a YouGile group chat, creating one lazily on the
+ * first message so project creation never depends on YouGile being up.
+ */
+async function ensureYouGileChatId(
+  project: { id: string; name: string; yougileChatId: string | null },
+  ownerEmail: string,
+): Promise<string> {
+  if (project.yougileChatId) return project.yougileChatId
+
+  const config = getYouGileConfig()
+  const chat = await createProjectGroupChat({
+    title: `${project.name} — ${ownerEmail}`,
+    botUserId: config.botUserId,
+    memberIds: config.memberIds,
+  })
+  await setProjectYougileChatId(project.id, chat.id)
+  return chat.id
+}
+
+export async function POST(request: NextRequest, context: RouteContext) {
+  const auth = await requireUserApi(request)
+  if (auth instanceof NextResponse) return auth
+
+  const ip = getClientIp(request)
+  const rate = checkRateLimit(`project-chat:${auth.userId}:${ip}`, RATE_LIMIT, RATE_WINDOW_MS)
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { message: `Too many messages. Try again in ${rate.retryAfterSec} seconds.` },
+      { status: 429 },
+    )
+  }
+
+  const { id } = await context.params
+  const project = await findProjectForUser(id, auth.userId)
+  if (!project) {
+    return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  }
+
+  const payload = await request.json().catch(() => null)
+  const parsed = sendProjectChatMessageSchema.safeParse(payload)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: "Enter a valid message.", errors: parsed.error.flatten() },
+      { status: 400 },
+    )
+  }
+
+  const user = await findUserById(auth.userId)
+  const senderName = user?.fullName?.trim() || auth.email
+
+  let message = await insertProjectChatMessage({
+    projectId: project.id,
+    senderType: "client",
+    senderUserId: auth.userId,
+    senderName,
+    body: parsed.data.text,
+  })
+
+  // The message is already safely stored; a YouGile delivery failure should
+  // not make the user lose it — just log and leave `delivered: false`.
+  if (isYouGileConfigured()) {
+    try {
+      const chatId = await ensureYouGileChatId(project, auth.email)
+      const sent = await sendChatMessage({
+        chatId,
+        text: `${senderName}: ${parsed.data.text}`,
+      })
+      const yougileMessageId = String(sent.id)
+      await markProjectChatMessageDelivered(message.id, yougileMessageId)
+      message = { ...message, yougileMessageId, delivered: true }
+    } catch (error) {
+      console.error("[api/projects/chat] YouGile delivery failed", {
+        projectId: project.id,
+        error: error instanceof YouGileError ? error.message : error,
+      })
+    }
+  }
+
+  return NextResponse.json({ message })
+}

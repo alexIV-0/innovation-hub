@@ -17,7 +17,7 @@ function avatarLetter(value: string) {
 
 function formatDate(value: string) {
   try {
-    return new Date(value).toLocaleDateString(undefined, {
+    return new Date(value).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     })

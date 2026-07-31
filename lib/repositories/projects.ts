@@ -1,16 +1,34 @@
 import { randomUUID } from "node:crypto"
 import { query } from "@/lib/db"
-import type { ProjectGroupName, ProjectRecord } from "@/lib/domain-types"
+import type {
+  ProjectGroupName,
+  ProjectMediaRecord,
+  ProjectRecord,
+} from "@/lib/domain-types"
 
 const PROJECT_FIELDS = `
   id,
   user_id AS "ownerId",
+  user_id AS "userId",
   name,
   COALESCE(description, '') AS description,
   COALESCE(group_name, 'personal') AS "groupName",
   COALESCE(is_paused, FALSE) AS "isPaused",
+  drive_folder_id AS "driveFolderId",
+  COALESCE(is_active, TRUE) AS "isActive",
   created_at AS "createdAt",
-  updated_at AS "updatedAt"
+  updated_at AS "updatedAt",
+  yougile_chat_id AS "yougileChatId"
+`
+
+const MEDIA_FIELDS = `
+  id,
+  project_id AS "projectId",
+  file_name AS "fileName",
+  mime_type AS "mimeType",
+  size_bytes AS "sizeBytes",
+  drive_file_id AS "driveFileId",
+  created_at AS "createdAt"
 `
 
 export type ProjectWithUnread = ProjectRecord & {
@@ -45,6 +63,19 @@ export async function listProjectsByOwner(
   return result.rows
 }
 
+export async function listProjectsByUserId(
+  userId: string,
+): Promise<ProjectRecord[]> {
+  const result = await query<ProjectRecord>(
+    `SELECT ${PROJECT_FIELDS}
+       FROM projects
+      WHERE user_id = $1
+      ORDER BY created_at DESC`,
+    [userId],
+  )
+  return result.rows
+}
+
 export async function findProjectById(
   id: string,
 ): Promise<ProjectRecord | null> {
@@ -68,23 +99,55 @@ export async function findOwnedProject(
   return result.rows[0] ?? null
 }
 
+export async function findProjectForUser(
+  id: string,
+  userId: string,
+): Promise<ProjectRecord | null> {
+  return findOwnedProject(id, userId)
+}
+
+/**
+ * Looks a project up by its Drive folder id rather than our own primary key.
+ * Used when reconciling the DB cache against a live scan of the user's Drive
+ * folder — Drive folder id is the stable identity there, our own id is not.
+ */
+export async function findProjectByDriveFolderId(
+  driveFolderId: string,
+): Promise<ProjectRecord | null> {
+  const result = await query<ProjectRecord>(
+    `SELECT ${PROJECT_FIELDS} FROM projects WHERE drive_folder_id = $1`,
+    [driveFolderId],
+  )
+  return result.rows[0] ?? null
+}
+
 export async function createProject(input: {
-  ownerId: string
+  ownerId?: string
+  userId?: string
   name: string
   description?: string
   groupName?: ProjectGroupName
+  driveFolderId?: string | null
 }): Promise<ProjectRecord> {
+  const ownerId = input.ownerId ?? input.userId
+  if (!ownerId) {
+    throw new Error("createProject requires ownerId or userId")
+  }
+
   const id = randomUUID()
   const result = await query<ProjectRecord>(
-    `INSERT INTO projects (id, user_id, name, description, group_name, is_paused, is_active)
-     VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, TRUE)
+    `INSERT INTO projects (
+        id, user_id, name, description, group_name, is_paused, is_active, drive_folder_id
+     )
+     VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, TRUE, $6)
      RETURNING ${PROJECT_FIELDS}`,
     [
       id,
-      input.ownerId,
+      ownerId,
       input.name,
       input.description ?? "",
       input.groupName ?? "personal",
+      input.driveFolderId ?? null,
     ],
   )
   const project = result.rows[0]
@@ -101,6 +164,52 @@ export async function createProject(input: {
   return project
 }
 
+export async function setProjectDriveFolderId(
+  id: string,
+  driveFolderId: string,
+): Promise<ProjectRecord | null> {
+  const result = await query<ProjectRecord>(
+    `UPDATE projects
+        SET drive_folder_id = $2,
+            updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${PROJECT_FIELDS}`,
+    [id, driveFolderId],
+  )
+  return result.rows[0] ?? null
+}
+
+/**
+ * Looks a project up by its YouGile group chat id — used by the webhook
+ * receiver to route an incoming `chat_message-created` event without
+ * requiring the caller to be authenticated as the owning user.
+ */
+export async function findProjectByYougileChatId(
+  yougileChatId: string,
+): Promise<ProjectRecord | null> {
+  const result = await query<ProjectRecord>(
+    `SELECT ${PROJECT_FIELDS} FROM projects WHERE yougile_chat_id = $1`,
+    [yougileChatId],
+  )
+  return result.rows[0] ?? null
+}
+
+/** Persists the YouGile group chat id once it has been lazily created. */
+export async function setProjectYougileChatId(
+  id: string,
+  yougileChatId: string,
+): Promise<ProjectRecord | null> {
+  const result = await query<ProjectRecord>(
+    `UPDATE projects
+        SET yougile_chat_id = $2,
+            updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${PROJECT_FIELDS}`,
+    [id, yougileChatId],
+  )
+  return result.rows[0] ?? null
+}
+
 export async function updateProject(
   id: string,
   ownerId: string,
@@ -109,10 +218,17 @@ export async function updateProject(
     description?: string
     groupName?: ProjectGroupName
     isPaused?: boolean
+    isActive?: boolean
   },
 ): Promise<ProjectRecord | null> {
-  const isActive =
-    input.isPaused === undefined ? null : !input.isPaused
+  let isPaused = input.isPaused
+  let isActive = input.isActive
+
+  if (input.isPaused !== undefined && input.isActive === undefined) {
+    isActive = !input.isPaused
+  } else if (input.isActive !== undefined && input.isPaused === undefined) {
+    isPaused = !input.isActive
+  }
 
   const result = await query<ProjectRecord>(
     `UPDATE projects
@@ -130,8 +246,8 @@ export async function updateProject(
       input.name ?? null,
       input.description ?? null,
       input.groupName ?? null,
-      input.isPaused ?? null,
-      isActive,
+      isPaused ?? null,
+      isActive ?? null,
     ],
   )
   return result.rows[0] ?? null
@@ -148,10 +264,133 @@ export async function deleteProject(
   return (result.rowCount ?? 0) > 0
 }
 
+export async function listProjectMedia(
+  projectId: string,
+): Promise<ProjectMediaRecord[]> {
+  const result = await query<
+    ProjectMediaRecord & { sizeBytes: number | string | null }
+  >(
+    `SELECT ${MEDIA_FIELDS}
+       FROM project_media
+      WHERE project_id = $1
+      ORDER BY created_at DESC`,
+    [projectId],
+  )
+  return result.rows.map(normalizeMedia)
+}
+
+export async function findProjectMedia(
+  id: string,
+  projectId: string,
+): Promise<ProjectMediaRecord | null> {
+  const result = await query<
+    ProjectMediaRecord & { sizeBytes: number | string | null }
+  >(
+    `SELECT ${MEDIA_FIELDS}
+       FROM project_media
+      WHERE id = $1 AND project_id = $2`,
+    [id, projectId],
+  )
+  const row = result.rows[0]
+  return row ? normalizeMedia(row) : null
+}
+
+function normalizeMedia(
+  row: ProjectMediaRecord & { sizeBytes: number | string | null },
+): ProjectMediaRecord {
+  const raw = row.sizeBytes
+  const sizeBytes =
+    raw == null
+      ? null
+      : typeof raw === "number"
+        ? raw
+        : Number.parseInt(String(raw), 10)
+  return {
+    ...row,
+    sizeBytes: Number.isFinite(sizeBytes as number)
+      ? (sizeBytes as number)
+      : null,
+  }
+}
+
+export async function createProjectMedia(input: {
+  projectId: string
+  fileName: string
+  mimeType: string
+  sizeBytes?: number | null
+  driveFileId: string
+}): Promise<ProjectMediaRecord> {
+  const id = randomUUID()
+  const result = await query<
+    ProjectMediaRecord & { sizeBytes: number | string | null }
+  >(
+    `INSERT INTO project_media (
+        id, project_id, file_name, mime_type, size_bytes, drive_file_id
+     )
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING ${MEDIA_FIELDS}`,
+    [
+      id,
+      input.projectId,
+      input.fileName,
+      input.mimeType,
+      input.sizeBytes ?? null,
+      input.driveFileId,
+    ],
+  )
+  return normalizeMedia(result.rows[0])
+}
+
+export async function deleteProjectMedia(id: string, projectId: string) {
+  await query(`DELETE FROM project_media WHERE id = $1 AND project_id = $2`, [
+    id,
+    projectId,
+  ])
+}
+
+export async function deleteProjectMediaByDriveFileId(
+  driveFileId: string,
+  projectId: string,
+) {
+  await query(
+    `DELETE FROM project_media WHERE drive_file_id = $1 AND project_id = $2`,
+    [driveFileId, projectId],
+  )
+}
+
+/**
+ * Active projects with a linked YouGile chat — polled in the background by
+ * lib/chat-push-poller.ts so team replies get pulled in (and pushed to the
+ * owner) even when nobody has the site open.
+ */
+export async function listProjectsWithYougileChat(): Promise<ProjectRecord[]> {
+  const result = await query<ProjectRecord>(
+    `SELECT ${PROJECT_FIELDS}
+       FROM projects
+      WHERE yougile_chat_id IS NOT NULL AND is_active = TRUE`,
+  )
+  return result.rows
+}
+
 export async function countProjectsByOwner(ownerId: string): Promise<number> {
   const result = await query<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM projects WHERE user_id = $1`,
     [ownerId],
+  )
+  return result.rows[0]?.count ?? 0
+}
+
+export async function countProjectsByUserId(userId: string): Promise<number> {
+  return countProjectsByOwner(userId)
+}
+
+export async function countMediaByUserId(userId: string): Promise<number> {
+  const result = await query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count
+       FROM project_media m
+       JOIN projects p ON p.id = m.project_id
+      WHERE p.user_id = $1`,
+    [userId],
   )
   return result.rows[0]?.count ?? 0
 }

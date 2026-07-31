@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { reorderSchema } from "@/lib/admin-schemas"
@@ -24,5 +25,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Already at boundary." }, { status: 400 })
   }
 
+  revalidateTag("published-videos", "max")
   return NextResponse.json({ message: "Reordered." })
 }

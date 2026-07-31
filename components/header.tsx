@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
@@ -13,7 +13,16 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { ChevronDown, LogIn, LogOut, Menu, Settings, User } from "lucide-react"
+import {
+  ChevronDown,
+  FolderKanban,
+  LogIn,
+  LogOut,
+  Menu,
+  Settings,
+  User,
+  UserRound,
+} from "lucide-react"
 import type { UserRole } from "@/lib/domain-types"
 
 type SessionUser = {
@@ -108,6 +117,18 @@ function UserMenu({ user, onSignOut }: { user: SessionUser; onSignOut: () => voi
           <Link href="/account">
             <Settings className="h-4 w-4" />
             Workspace
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/account/projects">
+            <FolderKanban className="h-4 w-4" />
+            Projects
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/account/profile">
+            <UserRound className="h-4 w-4" />
+            Profile
           </Link>
         </DropdownMenuItem>
         {user.role === "ADMIN" ? (

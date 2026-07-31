@@ -23,13 +23,15 @@ export const updateProjectSchema = z
     description: z.string().trim().max(4000).optional(),
     groupName: projectGroupSchema.optional(),
     isPaused: z.boolean().optional(),
+    isActive: z.boolean().optional(),
   })
   .refine(
     (data) =>
       data.name !== undefined ||
       data.description !== undefined ||
       data.groupName !== undefined ||
-      data.isPaused !== undefined,
+      data.isPaused !== undefined ||
+      data.isActive !== undefined,
     { message: "Nothing to update." },
   )
 
@@ -90,6 +92,34 @@ export const statsQuerySchema = z.object({
   range: z.enum(["day", "week", "month"]).default("week"),
   projectId: z.string().uuid().optional().nullable(),
 })
+
+export const updateFolderStateSchema = z.object({
+  enabled: z.boolean(),
+})
+
+export type UpdateFolderStateInput = z.infer<typeof updateFolderStateSchema>
+
+const exposedOptionValueSchema = z.union([
+  z.boolean(),
+  z.number().finite(),
+  z.string().max(10_000),
+])
+
+export const updateExposedOptionsSchema = z.object({
+  changes: z
+    .array(
+      z.object({
+        path: z.array(z.string().min(1).max(200)).min(1).max(32),
+        value: exposedOptionValueSchema,
+      }),
+    )
+    .min(1)
+    .max(100),
+})
+
+export type UpdateExposedOptionsInput = z.infer<
+  typeof updateExposedOptionsSchema
+>
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>

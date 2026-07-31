@@ -1,3 +1,4 @@
+import { revalidateTag } from "next/cache"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { videoUpdateSchema } from "@/lib/admin-schemas"
@@ -26,6 +27,7 @@ export async function PATCH(
     return NextResponse.json({ message: "Video not found." }, { status: 404 })
   }
 
+  revalidateTag("published-videos", "max")
   return NextResponse.json(video)
 }
 
@@ -38,5 +40,6 @@ export async function DELETE(
 
   const { id } = await context.params
   await deleteVideo(id)
+  revalidateTag("published-videos", "max")
   return NextResponse.json({ message: "Video deleted." })
 }

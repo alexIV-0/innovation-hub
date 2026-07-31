@@ -11,7 +11,6 @@ import {
   fetchGoogleProfile,
   readGoogleOAuthConfig,
 } from "@/lib/google-oauth"
-import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import {
   createOAuthUser,
   findUserByEmail,
@@ -139,8 +138,15 @@ export async function GET(request: Request) {
 
   // Single provision call for both new and legacy accounts (idempotent).
   // Do not call this twice — concurrent creates race into duplicate email folders.
+  // Lazy import so a missing googleapis install cannot break Google sign-in.
   if (!user.driveFolderId) {
-    provisionUserDriveFolderBackground(user.id)
+    void import("@/lib/provision-drive")
+      .then(({ provisionUserDriveFolderBackground }) => {
+        provisionUserDriveFolderBackground(user.id)
+      })
+      .catch((error) => {
+        console.error("[google-oauth] drive provision unavailable", error)
+      })
   }
 
   if (!user.isActive) {

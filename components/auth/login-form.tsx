@@ -62,7 +62,18 @@ export function LoginForm({
         body: JSON.stringify(values),
       })
 
-      const data = (await response.json()) as { message?: string; role?: "USER" | "ADMIN" }
+      const raw = await response.text()
+      let data: { message?: string; role?: "USER" | "ADMIN" } = {}
+      try {
+        data = raw ? (JSON.parse(raw) as typeof data) : {}
+      } catch {
+        setServerError(
+          response.ok
+            ? "Unexpected server response. Please try again."
+            : `Sign in failed (HTTP ${response.status}). Please try again.`,
+        )
+        return
+      }
 
       if (!response.ok) {
         setServerError(data.message ?? "Sign in failed. Please try again.")
@@ -74,7 +85,7 @@ export function LoginForm({
       const target =
         redirectTo.startsWith("/") && !redirectTo.startsWith("//")
           ? redirectTo
-          : "/"
+          : "/account"
       window.location.assign(target)
     } catch {
       setServerError("Unable to reach the server. Please try again.")

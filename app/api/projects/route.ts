@@ -1,10 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
+import {
+  createDriveFolder,
+  GoogleDriveError,
+  isGoogleDriveConfigured,
+  writeDriveTextFile,
+} from "@/lib/google-drive"
 import { createProjectSchema } from "@/lib/project-schemas"
+import { listUserProjects } from "@/lib/project-drive"
+import { provisionUserDriveFolder } from "@/lib/provision-drive"
+import { countUnreadForProjects } from "@/lib/repositories/project-chat"
 import {
   createProject,
-  listProjectsByOwner,
+  setProjectDriveFolderId,
 } from "@/lib/repositories/projects"
+import { findUserById } from "@/lib/repositories/users"
 
 export const runtime = "nodejs"
 
@@ -12,35 +22,132 @@ export async function GET(request: NextRequest) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
-  const projects = await listProjectsByOwner(auth.userId)
-  return NextResponse.json({ projects })
+  if (isGoogleDriveConfigured()) {
+    const user = await findUserById(auth.userId)
+    if (user && !user.driveFolderId) {
+      await provisionUserDriveFolder(auth.userId)
+    }
+  }
+
+  const fresh = await findUserById(auth.userId)
+  const projects = await listUserProjects({
+    userId: auth.userId,
+    userDriveFolderId: fresh?.driveFolderId ?? null,
+  })
+
+  const unread = await countUnreadForProjects(projects.map((p) => p.id))
+
+  return NextResponse.json({
+    projects: projects.map((p) => ({
+      ...p,
+      ownerId: p.userId,
+      isPaused: !p.isActive,
+      unreadCount: unread[p.id] ?? 0,
+    })),
+    driveConfigured: isGoogleDriveConfigured(),
+  })
 }
 
 export async function POST(request: NextRequest) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ message: "Invalid JSON." }, { status: 400 })
-  }
-
-  const parsed = createProjectSchema.safeParse(body)
+  const payload = await request.json().catch(() => null)
+  const parsed = createProjectSchema.safeParse(payload)
   if (!parsed.success) {
     return NextResponse.json(
-      { message: parsed.error.issues[0]?.message ?? "Invalid input." },
+      {
+        message: parsed.error.issues[0]?.message ?? "Invalid project data.",
+        errors: parsed.error.flatten(),
+      },
       { status: 400 },
     )
   }
 
+  const { name, description, groupName } = parsed.data
+
+  let driveFolderId: string | null = null
+
+  if (isGoogleDriveConfigured()) {
+    try {
+      const userFolderId = await provisionUserDriveFolder(auth.userId)
+      if (!userFolderId) {
+        return NextResponse.json(
+          {
+            message:
+              "Could not prepare your workspace. Please try again later.",
+          },
+          { status: 503 },
+        )
+      }
+
+      driveFolderId = await createDriveFolder({
+        name,
+        parentId: userFolderId,
+        reuseExisting: false,
+      })
+
+      await writeDriveTextFile({
+        name: "project-meta.json",
+        parentId: driveFolderId,
+        mimeType: "application/json",
+        content: JSON.stringify(
+          {
+            name,
+            description,
+            ownerEmail: auth.email,
+            createdAt: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+      })
+
+      // Default IN / OUT folders on Drive (options is created by automation).
+      await Promise.all([
+        createDriveFolder({
+          name: "IN",
+          parentId: driveFolderId,
+          reuseExisting: true,
+        }),
+        createDriveFolder({
+          name: "OUT",
+          parentId: driveFolderId,
+          reuseExisting: true,
+        }),
+      ])
+    } catch (error) {
+      console.error("[projects] Drive folder create failed", error)
+      const message =
+        error instanceof GoogleDriveError
+          ? error.message
+          : "Storage is temporarily unavailable."
+      return NextResponse.json({ message }, { status: 503 })
+    }
+  }
+
   const project = await createProject({
-    ownerId: auth.userId,
-    name: parsed.data.name,
-    description: parsed.data.description,
-    groupName: parsed.data.groupName,
+    userId: auth.userId,
+    name,
+    description,
+    groupName,
+    driveFolderId,
   })
 
-  return NextResponse.json({ project }, { status: 201 })
+  if (driveFolderId && !project.driveFolderId) {
+    await setProjectDriveFolderId(project.id, driveFolderId)
+  }
+
+  return NextResponse.json(
+    {
+      project: {
+        ...project,
+        ownerId: project.userId,
+        isPaused: !project.isActive,
+        driveFolderId: driveFolderId ?? project.driveFolderId,
+        unreadCount: 0,
+      },
+    },
+    { status: 201 },
+  )
 }

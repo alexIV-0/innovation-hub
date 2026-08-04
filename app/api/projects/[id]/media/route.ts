@@ -4,6 +4,7 @@ import { requireUserApi } from "@/lib/admin-auth"
 import {
   deleteDriveFile,
   GoogleDriveError,
+  isDriveFileUnderFolder,
   isGoogleDriveConfigured,
   uploadDriveFile,
 } from "@/lib/google-drive"
@@ -80,8 +81,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     )
   }
 
-  const maxBytes = getMaxBytes()
   const url = new URL(request.url)
+  const parentParam = url.searchParams.get("parentId")?.trim() || ""
+  let parentId = project.driveFolderId
+  if (parentParam && parentParam !== project.driveFolderId) {
+    const under = await isDriveFileUnderFolder(
+      parentParam,
+      project.driveFolderId,
+    )
+    if (!under) {
+      return jsonError("Invalid upload folder.", 400)
+    }
+    parentId = parentParam
+  }
+
+  const maxBytes = getMaxBytes()
   const fileNameRaw =
     url.searchParams.get("fileName") ??
     request.headers.get("x-file-name") ??
@@ -138,7 +152,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     driveFileId = await uploadDriveFile({
       name: fileName,
-      parentId: project.driveFolderId,
+      parentId,
       mimeType: contentType,
       body: Readable.from(buffer),
     })

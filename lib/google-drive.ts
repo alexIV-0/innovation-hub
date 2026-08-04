@@ -682,3 +682,76 @@ export function driveFolderWebLink(folderId: string): string {
 export function driveFileWebLink(fileId: string): string {
   return `https://drive.google.com/file/d/${fileId}/view`
 }
+
+/** Walk parent chain to decide whether `fileId` lives under `rootFolderId`. */
+export async function isDriveFileUnderFolder(
+  fileId: string,
+  rootFolderId: string,
+): Promise<boolean> {
+  if (fileId === rootFolderId) return true
+  const seen = new Set<string>()
+  let current: string | null = fileId
+  while (current) {
+    if (current === rootFolderId) return true
+    if (seen.has(current)) return false
+    seen.add(current)
+    const info = await getDriveFileInfo(current)
+    if (!info || info.parents.length === 0) return false
+    // Prefer the first parent; shared files may have multiple.
+    current = info.parents[0] ?? null
+  }
+  return false
+}
+
+export async function renameDriveFile(
+  fileId: string,
+  name: string,
+): Promise<void> {
+  const { drive, config } = getDrive()
+  try {
+    await drive.files.update({
+      ...driveFlags(config),
+      fileId,
+      requestBody: { name: sanitizeDriveName(name) },
+    })
+  } catch (error) {
+    throw new GoogleDriveError(
+      error instanceof Error ? error.message : "Failed to rename Drive file.",
+      { cause: error },
+    )
+  }
+}
+
+/** Stream a Drive file's binary content (for cabinet download). */
+export async function downloadDriveFileMedia(fileId: string): Promise<{
+  body: NodeJS.ReadableStream
+  mimeType: string
+  name: string
+  size: number | null
+}> {
+  const { drive } = getDrive()
+  try {
+    const meta = await drive.files.get({
+      fileId,
+      fields: "id, name, mimeType, size",
+      supportsAllDrives: true,
+    })
+    const response = await drive.files.get(
+      { fileId, alt: "media", supportsAllDrives: true },
+      { responseType: "stream" },
+    )
+    return {
+      body: response.data as NodeJS.ReadableStream,
+      mimeType: meta.data.mimeType ?? "application/octet-stream",
+      name: meta.data.name ?? "download",
+      size: meta.data.size ? Number(meta.data.size) : null,
+    }
+  } catch (error) {
+    throw new GoogleDriveError(
+      error instanceof Error
+        ? error.message
+        : "Failed to download Drive file.",
+      { cause: error },
+    )
+  }
+}

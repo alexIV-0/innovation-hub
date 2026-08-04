@@ -1,5 +1,6 @@
 import {
   ensureUserEmailFolder,
+  formatDriveError,
   GoogleDriveConfigError,
   GoogleDriveError,
   isGoogleDriveConfigured,
@@ -40,18 +41,15 @@ export async function provisionUserDriveFolder(
       await setUserDriveFolderId(user.id, folderId)
       return folderId
     } catch (error) {
-      if (
-        error instanceof GoogleDriveConfigError ||
+      console.error("[google-drive] provision user folder failed", {
+        userId,
+        email: user.email,
+        message: formatDriveError(error),
+        ...(error instanceof GoogleDriveConfigError ||
         error instanceof GoogleDriveError
-      ) {
-        console.error("[google-drive] provision user folder failed", {
-          userId,
-          email: user.email,
-          message: error.message,
-        })
-      } else {
-        console.error("[google-drive] provision user folder failed", error)
-      }
+          ? {}
+          : { error }),
+      })
       return null
     }
   })().finally(() => {

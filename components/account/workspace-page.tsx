@@ -249,6 +249,7 @@ export function WorkspacePageClient() {
   const [descDraft, setDescDraft] = useState("")
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [mobileShowProject, setMobileShowProject] = useState(false)
   /** Nested path inside IN / OUT panes (cozy mode). */
   const [inPath, setInPath] = useState<DriveFile[]>([])
@@ -444,22 +445,30 @@ export function WorkspacePageClient() {
   }
 
   const createProject = async () => {
+    if (creating) return
     const name =
       lang === "ru"
         ? `Новый проект ${projects.length + 1}`
         : `New project ${projects.length + 1}`
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    })
-    if (!res.ok) {
-      toast.error("Failed")
-      return
+    setCreating(true)
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        toast.error(
+          typeof data?.message === "string" ? data.message : t.createFailed,
+        )
+        return
+      }
+      await loadProjects()
+      selectProject(data.project.id)
+    } finally {
+      setCreating(false)
     }
-    const data = await res.json()
-    await loadProjects()
-    selectProject(data.project.id)
   }
 
   const patchProject = async (id: string, body: Record<string, unknown>) => {
@@ -750,11 +759,12 @@ export function WorkspacePageClient() {
       <div className="shrink-0 border-t border-white/[0.07] p-3">
         <button
           type="button"
-          onClick={createProject}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-[9px] bg-[#1d6ff2] text-[14px] font-medium text-white hover:bg-[#175fd6]"
+          onClick={() => void createProject()}
+          disabled={creating}
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-[9px] bg-[#1d6ff2] text-[14px] font-medium text-white hover:bg-[#175fd6] disabled:opacity-60"
         >
           <Plus className="h-[18px] w-[18px]" />
-          {t.newProject}
+          {creating ? t.creatingProject : t.newProject}
         </button>
       </div>
     </section>
@@ -1311,11 +1321,12 @@ export function WorkspacePageClient() {
             </div>
             <button
               type="button"
-              onClick={createProject}
-              className="flex h-[52px] items-center gap-2 rounded-xl bg-[#1d6ff2] px-[22px] text-[15px] font-medium text-white hover:bg-[#3b8bf0]"
+              onClick={() => void createProject()}
+              disabled={creating}
+              className="flex h-[52px] items-center gap-2 rounded-xl bg-[#1d6ff2] px-[22px] text-[15px] font-medium text-white hover:bg-[#3b8bf0] disabled:opacity-60"
             >
               <Plus className="h-5 w-5" />
-              {t.newProject}
+              {creating ? t.creatingProject : t.newProject}
             </button>
           </div>
         </div>
@@ -1427,8 +1438,9 @@ export function WorkspacePageClient() {
                 </div>
                 <button
                   type="button"
-                  onClick={createProject}
-                  className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl bg-[#1d6ff2] text-white"
+                  onClick={() => void createProject()}
+                  disabled={creating}
+                  className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl bg-[#1d6ff2] text-white disabled:opacity-60"
                 >
                   <Plus className="h-[22px] w-[22px]" />
                 </button>

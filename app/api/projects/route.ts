@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import {
   createDriveFolder,
+  formatDriveError,
   GoogleDriveError,
   isGoogleDriveConfigured,
   writeDriveTextFile,
@@ -17,6 +18,7 @@ import {
 import { findUserById } from "@/lib/repositories/users"
 
 export const runtime = "nodejs"
+export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
   const auth = await requireUserApi(request)
@@ -75,7 +77,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             message:
-              "Could not prepare your workspace. Please try again later.",
+              "Could not prepare Google Drive workspace. The Drive refresh token may be expired — re-run `node scripts/google-drive-oauth.mjs`, update GOOGLE_DRIVE_REFRESH_TOKEN on the server, and restart.",
           },
           { status: 503 },
         )
@@ -118,10 +120,10 @@ export async function POST(request: NextRequest) {
       ])
     } catch (error) {
       console.error("[projects] Drive folder create failed", error)
-      const message =
-        error instanceof GoogleDriveError
-          ? error.message
-          : "Storage is temporarily unavailable."
+      const message = formatDriveError(
+        error instanceof GoogleDriveError ? error : error,
+        "Storage is temporarily unavailable.",
+      )
       return NextResponse.json({ message }, { status: 503 })
     }
   }

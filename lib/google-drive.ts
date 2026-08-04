@@ -17,6 +17,54 @@ export class GoogleDriveError extends Error {
   }
 }
 
+/** True when OAuth refresh token is expired/revoked or credentials are rejected. */
+export function isDriveAuthFailure(error: unknown): boolean {
+  const blob = driveErrorBlob(error).toLowerCase()
+  return (
+    blob.includes("invalid_grant") ||
+    blob.includes("invalid_client") ||
+    blob.includes("unauthorized") ||
+    blob.includes("token has been expired or revoked")
+  )
+}
+
+function driveErrorBlob(error: unknown): string {
+  if (error == null) return ""
+  if (typeof error === "string") return error
+  if (error instanceof Error) {
+    const cause =
+      "cause" in error && error.cause != null
+        ? driveErrorBlob(error.cause)
+        : ""
+    return `${error.message} ${cause}`.trim()
+  }
+  if (typeof error === "object") {
+    try {
+      return JSON.stringify(error)
+    } catch {
+      return String(error)
+    }
+  }
+  return String(error)
+}
+
+/** Human-readable Drive failure; auth expiry gets an actionable message. */
+export function formatDriveError(
+  error: unknown,
+  fallback = "Google Drive request failed.",
+): string {
+  if (isDriveAuthFailure(error)) {
+    return (
+      "Google Drive authorization expired or was revoked. " +
+      "Re-run `node scripts/google-drive-oauth.mjs` and update " +
+      "GOOGLE_DRIVE_REFRESH_TOKEN on the server, then restart the app."
+    )
+  }
+  if (error instanceof GoogleDriveError) return error.message
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 type DriveBaseConfig = {
   rootFolderId: string
   sharedDriveId?: string
@@ -300,10 +348,9 @@ export async function listDriveChildren(
       pageToken = response.data.nextPageToken ?? undefined
     } while (pageToken)
   } catch (error) {
-    throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to list Drive folder.",
-      { cause: error },
-    )
+    throw new GoogleDriveError(formatDriveError(error, "Failed to list Drive folder."), {
+      cause: error,
+    })
   }
 
   return files
@@ -343,7 +390,7 @@ export async function findDriveChildByName(
     }
   } catch (error) {
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to search Drive folder.",
+      formatDriveError(error, "Failed to search Drive folder."),
       { cause: error },
     )
   }
@@ -381,7 +428,7 @@ export async function getDriveFileInfo(fileId: string): Promise<{
         : null
     if (status === 404) return null
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to read Drive file.",
+      formatDriveError(error, "Failed to read Drive file."),
       { cause: error },
     )
   }
@@ -399,9 +446,7 @@ export async function downloadDriveTextFile(fileId: string): Promise<string> {
     return typeof data === "string" ? data : JSON.stringify(data)
   } catch (error) {
     throw new GoogleDriveError(
-      error instanceof Error
-        ? error.message
-        : "Failed to download Drive file.",
+      formatDriveError(error, "Failed to download Drive file."),
       { cause: error },
     )
   }
@@ -425,7 +470,7 @@ export async function updateDriveTextFile(input: {
     })
   } catch (error) {
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to update Drive file.",
+      formatDriveError(error, "Failed to update Drive file."),
       { cause: error },
     )
   }
@@ -455,7 +500,7 @@ async function createDriveFolderUnique(input: {
     return id
   } catch (error) {
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to create Drive folder.",
+      formatDriveError(error, "Failed to create Drive folder."),
       { cause: error },
     )
   }
@@ -580,7 +625,7 @@ export async function writeDriveTextFile(input: {
     return id
   } catch (error) {
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to write Drive file.",
+      formatDriveError(error, "Failed to write Drive file."),
       { cause: error },
     )
   }
@@ -617,7 +662,7 @@ export async function uploadDriveFile(input: {
     return id
   } catch (error) {
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to upload Drive file.",
+      formatDriveError(error, "Failed to upload Drive file."),
       { cause: error },
     )
   }
@@ -640,7 +685,7 @@ export async function deleteDriveFile(fileId: string): Promise<void> {
         : null
     if (status === 404) return
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to delete Drive file.",
+      formatDriveError(error, "Failed to delete Drive file."),
       { cause: error },
     )
   }
@@ -669,7 +714,7 @@ export async function trashDriveFile(fileId: string): Promise<void> {
         : null
     if (status === 404) return
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to trash Drive file.",
+      formatDriveError(error, "Failed to trash Drive file."),
       { cause: error },
     )
   }
@@ -716,7 +761,7 @@ export async function renameDriveFile(
     })
   } catch (error) {
     throw new GoogleDriveError(
-      error instanceof Error ? error.message : "Failed to rename Drive file.",
+      formatDriveError(error, "Failed to rename Drive file."),
       { cause: error },
     )
   }

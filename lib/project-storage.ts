@@ -183,7 +183,7 @@ export function extractExposedOptions(root: unknown): ExposedOption[] {
   return out
 }
 
-async function getObjectText(key: string): Promise<string | null> {
+export async function getObjectText(key: string): Promise<string | null> {
   if (!isS3Configured()) return null
   try {
     const response = await getS3Client().send(

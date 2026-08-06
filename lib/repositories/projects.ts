@@ -152,13 +152,12 @@ export async function createProject(input: {
   )
   const project = result.rows[0]
 
-  await query(
-    `INSERT INTO project_files (id, project_id, folder_path, name, is_folder, s3_key, size_bytes, content_type)
-     VALUES
-       ($1, $3, '', 'IN',  TRUE, NULL, 0, ''),
-       ($2, $3, '', 'OUT', TRUE, NULL, 0, '')
-     ON CONFLICT (project_id, folder_path, name) DO NOTHING`,
-    [randomUUID(), randomUUID(), id],
+  const { writeFolderCreate } = await import("@/lib/storage/write-path")
+  await writeFolderCreate({ projectId: id, folderPath: "", name: "IN" }).catch(
+    () => undefined,
+  )
+  await writeFolderCreate({ projectId: id, folderPath: "", name: "OUT" }).catch(
+    () => undefined,
   )
 
   return project

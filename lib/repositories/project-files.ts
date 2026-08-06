@@ -19,9 +19,10 @@ export async function listFilesInFolder(
   folderPath: string,
 ): Promise<ProjectFileRecord[]> {
   const result = await query<ProjectFileRecord>(
-    `SELECT ${FILE_FIELDS}
+      `SELECT ${FILE_FIELDS}
        FROM project_files
       WHERE project_id = $1 AND folder_path = $2
+        AND deleted_at IS NULL
       ORDER BY is_folder DESC, lower(name) ASC`,
     [projectId, folderPath],
   )
@@ -32,9 +33,10 @@ export async function listAllProjectFiles(
   projectId: string,
 ): Promise<ProjectFileRecord[]> {
   const result = await query<ProjectFileRecord>(
-    `SELECT ${FILE_FIELDS}
+      `SELECT ${FILE_FIELDS}
        FROM project_files
       WHERE project_id = $1
+        AND deleted_at IS NULL
       ORDER BY folder_path ASC, is_folder DESC, lower(name) ASC`,
     [projectId],
   )

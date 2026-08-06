@@ -1,20 +1,18 @@
 import { randomUUID } from "node:crypto"
-import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { projectUploadObjectKey } from "@/lib/project-storage"
 import {
-  createFile,
   findFileById,
   listAllProjectFiles,
 } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
-import { getS3Bucket } from "@/lib/s3-config"
-import { getS3Client, isS3Configured } from "@/lib/s3-client"
+import { isS3Configured } from "@/lib/s3-client"
 import {
   resolveUploadContentType,
   safeBaseFileName,
 } from "@/lib/s3-upload-policy"
+import { writeR2PutFromBuffer } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 export const maxDuration = 120
@@ -168,30 +166,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const s3Key = projectUploadObjectKey(project.id, folderPath, objectName)
 
   try {
-    await getS3Client().send(
-      new PutObjectCommand({
-        Bucket: getS3Bucket(),
-        Key: s3Key,
-        Body: buffer,
-        ContentType: contentType,
-      }),
-    )
-  } catch (error) {
-    console.error("[project-media] R2 upload failed", error)
-    return jsonError(
-      error instanceof Error ? error.message : "Failed to upload file.",
-      503,
-    )
-  }
-
-  try {
-    const file = await createFile({
+    const file = await writeR2PutFromBuffer({
       projectId: project.id,
-      folderPath,
-      name: fileName,
-      s3Key,
-      sizeBytes: buffer.length,
+      key: s3Key,
+      body: buffer,
       contentType,
+      fileName,
+      folderPath,
     })
     return NextResponse.json(
       {
@@ -200,24 +181,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
         fileName: file.name,
         mimeType: file.contentType,
         sizeBytes: file.sizeBytes,
-        driveFileId: null,
         s3Key: file.s3Key,
         createdAt: file.createdAt,
       },
       { status: 201 },
     )
   } catch (error) {
-    console.error("[project-media] DB insert failed after R2 upload", error)
-    try {
-      await getS3Client().send(
-        new DeleteObjectCommand({ Bucket: getS3Bucket(), Key: s3Key }),
-      )
-    } catch (cleanupError) {
-      console.error("[project-media] cleanup of orphaned R2 object failed", {
-        s3Key,
-        cleanupError,
-      })
-    }
-    return jsonError("Failed to save the uploaded file.", 500)
+    console.error("[project-media] upload failed", error)
+    return jsonError(
+      error instanceof Error ? error.message : "Failed to upload file.",
+      503,
+    )
   }
 }

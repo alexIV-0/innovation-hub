@@ -108,7 +108,7 @@ function fileIcon(mimeType: string, isFolder: boolean, className = "h-4 w-4") {
   return <File className={className} />
 }
 
-/** Google Drive-style color coding so tile types are distinguishable at a glance. */
+/** Tile color coding so file types are distinguishable at a glance. */
 function tileTone(mimeType: string, isFolder: boolean): string {
   if (isFolder) return "bg-amber-400/15 text-amber-300"
   if (mimeType.startsWith("video/")) return "bg-fuchsia-400/15 text-fuchsia-300"

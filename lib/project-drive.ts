@@ -1,9 +1,6 @@
 /**
- * @deprecated Runtime cabinet uses R2 via `lib/project-storage.ts`.
- * This module remains only as a reference for the old Drive SSOT behaviour.
- * Do not import from app/ or components/.
- *
- * One-time data copy: `node scripts/migrate-drive-to-r2.mjs`
+ * @deprecated Runtime uses R2 via `lib/project-storage.ts` and `lib/storage/*`.
+ * This module is a compatibility shim. Do not add new Drive logic.
  */
 
 export { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"

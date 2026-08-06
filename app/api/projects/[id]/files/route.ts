@@ -6,15 +6,17 @@ import {
   deleteFileSchema,
   renameFileSchema,
 } from "@/lib/project-schemas"
-import { getS3Bucket } from "@/lib/s3-config"
-import { getS3Client } from "@/lib/s3-client"
 import {
-  createFolder,
-  deleteFileCascade,
+  findFileById,
   listFilesInFolder,
-  renameOrMoveFile,
 } from "@/lib/repositories/project-files"
 import { findOwnedProject } from "@/lib/repositories/projects"
+import {
+  writeFileDelete,
+  writeFolderCreate,
+  writeRename,
+} from "@/lib/storage/write-path"
+import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
 
 export const runtime = "nodejs"
 
@@ -60,8 +62,15 @@ export async function POST(request: NextRequest, { params }: Params) {
     )
   }
 
+  if (parsed.data.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
+    return NextResponse.json(
+      { message: "This folder name is reserved." },
+      { status: 403 },
+    )
+  }
+
   try {
-    const file = await createFolder({
+    const file = await writeFolderCreate({
       projectId: id,
       folderPath: parsed.data.folderPath,
       name: parsed.data.name,
@@ -105,8 +114,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   }
 
   try {
-    const file = await renameOrMoveFile({
-      id: parsed.data.id,
+    const file = await writeRename({
+      fileId: parsed.data.id,
       projectId: id,
       name: parsed.data.name,
       folderPath: parsed.data.folderPath,
@@ -152,21 +161,18 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     )
   }
 
-  const { deletedS3Keys } = await deleteFileCascade(parsed.data.id, id)
-
-  if (deletedS3Keys.length > 0) {
-    try {
-      const client = getS3Client()
-      const bucket = getS3Bucket()
-      await Promise.allSettled(
-        deletedS3Keys.map((key) =>
-          client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
-        ),
-      )
-    } catch {
-      // ignore
-    }
+  const existing = await findFileById(parsed.data.id)
+  if (existing?.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
+    return NextResponse.json(
+      { message: "This item is managed by automation." },
+      { status: 403 },
+    )
   }
+
+  await writeFileDelete({
+    projectId: id,
+    fileId: parsed.data.id,
+  })
 
   return NextResponse.json({ ok: true })
 }

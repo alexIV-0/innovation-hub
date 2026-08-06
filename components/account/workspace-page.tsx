@@ -237,6 +237,7 @@ export function WorkspacePageClient() {
   )
   const [rootFiles, setRootFiles] = useState<DriveFile[]>([])
   const [driveAvailable, setDriveAvailable] = useState(true)
+  const storageCursorRef = useRef(0)
   const [path, setPath] = useState<DriveFile[]>([])
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [selectedFile, setSelectedFile] = useState<DriveFile | null>(null)
@@ -330,6 +331,16 @@ export function WorkspacePageClient() {
           setOutPath([])
         }
         setSelectedFile(null)
+
+        const cursorRes = await fetch(
+          `/api/storage/v1/tree?projectId=${encodeURIComponent(projectId)}`,
+        )
+        if (cursorRes.ok) {
+          const cursorData = await cursorRes.json()
+          if (typeof cursorData.cursor === "number") {
+            storageCursorRef.current = cursorData.cursor
+          }
+        }
       } finally {
         setLoadingFiles(false)
       }
@@ -387,10 +398,43 @@ export function WorkspacePageClient() {
       setSelectedFile(null)
       setMessages([])
       setDriveAvailable(true)
+      storageCursorRef.current = 0
       return
     }
     void loadDrive(selectedId, false)
   }, [selectedId, loadDrive])
+
+  useEffect(() => {
+    if (!selectedId || !driveAvailable) return
+    const projectId = selectedId
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const since = storageCursorRef.current
+          const res = await fetch(
+            `/api/storage/v1/delta?projectId=${encodeURIComponent(projectId)}&since=${since}`,
+          )
+          if (!res.ok) return
+          const data = await res.json()
+          if (data.truncated) {
+            await loadDrive(projectId, true)
+            return
+          }
+          if (Array.isArray(data.changes) && data.changes.length > 0) {
+            if (typeof data.cursor === "number") {
+              storageCursorRef.current = data.cursor
+            }
+            await loadDrive(projectId, true)
+          } else if (typeof data.cursor === "number") {
+            storageCursorRef.current = data.cursor
+          }
+        } catch {
+          // ignore poll errors
+        }
+      })()
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [selectedId, driveAvailable, loadDrive])
 
   useEffect(() => {
     if (selected) setDescDraft(selected.description ?? "")

@@ -3,12 +3,8 @@ import { PutObjectCommand } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import {
-  confirmUploadSchema,
-  presignUploadSchema,
-} from "@/lib/project-schemas"
+import { confirmUploadSchema, presignUploadSchema } from "@/lib/project-schemas"
 import { isAllowedProjectContentType } from "@/lib/project-upload-policy"
-import { createFile } from "@/lib/repositories/project-files"
 import { findOwnedProject } from "@/lib/repositories/projects"
 import { safeBaseFileName } from "@/lib/s3-upload-policy"
 import {
@@ -17,6 +13,7 @@ import {
   getS3Bucket,
 } from "@/lib/s3-config"
 import { getS3Client } from "@/lib/s3-client"
+import { writeNotifyUpload } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -60,10 +57,10 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     try {
-      const file = await createFile({
+      const file = await writeNotifyUpload({
         projectId,
         folderPath: parsed.data.folderPath,
-        name: safeBaseFileName(parsed.data.fileName),
+        fileName: safeBaseFileName(parsed.data.fileName),
         s3Key: parsed.data.s3Key,
         sizeBytes: parsed.data.sizeBytes,
         contentType: parsed.data.contentType,

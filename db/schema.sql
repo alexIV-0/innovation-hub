@@ -183,6 +183,12 @@ CREATE TABLE IF NOT EXISTS project_files (
   s3_key        TEXT,
   size_bytes    BIGINT NOT NULL DEFAULT 0,
   content_type  TEXT NOT NULL DEFAULT '',
+  etag          TEXT,
+  content_hash  TEXT,
+  origin_mtime  INTEGER,
+  deleted_at    TIMESTAMPTZ,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seq      BIGINT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT project_files_folder_s3_chk
     CHECK (
@@ -190,6 +196,43 @@ CREATE TABLE IF NOT EXISTS project_files (
       (is_folder = FALSE AND s3_key IS NOT NULL)
     )
 );
+
+CREATE TABLE IF NOT EXISTS storage_changes (
+  seq          BIGSERIAL PRIMARY KEY,
+  project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  key          TEXT NOT NULL,
+  op           TEXT NOT NULL CHECK (op IN ('put', 'delete')),
+  size         BIGINT,
+  etag         TEXT,
+  content_hash TEXT,
+  event_time   INTEGER NOT NULL,
+  event_id     TEXT UNIQUE,
+  payload      JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS storage_changes_project_seq_idx
+  ON storage_changes (project_id, seq);
+
+CREATE INDEX IF NOT EXISTS storage_changes_key_idx
+  ON storage_changes (key);
+
+CREATE INDEX IF NOT EXISTS storage_changes_seq_idx
+  ON storage_changes (seq);
+
+CREATE TABLE IF NOT EXISTS machine_tokens (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id   TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  token_hash   TEXT NOT NULL UNIQUE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at   TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS machine_tokens_user_idx
+  ON machine_tokens (user_id)
+  WHERE revoked_at IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS project_files_unique_name_idx
   ON project_files (project_id, folder_path, name);

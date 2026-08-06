@@ -2,11 +2,13 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import {
   ProjectStorageError,
+  projectOptionsKey,
   updateProjectExposedOptions,
 } from "@/lib/project-storage"
 import { updateExposedOptionsSchema } from "@/lib/project-schemas"
 import { findProjectForUser } from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
+import { journalStorageEvent } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -45,6 +47,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const options = await updateProjectExposedOptions({
       projectId: project.id,
       changes: parsed.data.changes,
+    })
+    await journalStorageEvent({
+      projectId: project.id,
+      key: projectOptionsKey(project.id),
+      op: "put",
+      payload: { name: "options.json", folderPath: "options" },
     })
     return NextResponse.json({ options })
   } catch (error) {

@@ -4,9 +4,9 @@ import {
   loadProjectStorageState,
   OPTIONS_FOLDER_NAME,
 } from "@/lib/project-storage"
-import { createFolder } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
+import { writeFolderCreate } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -15,6 +15,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 /**
  * Live listing of the project's file tree from Postgres + automation JSON
  * from R2. The service `options` folder is hidden.
+ * @deprecated Prefer GET /api/storage/v1/tree — kept for cabinet UI compatibility.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
@@ -29,8 +30,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const state = await loadProjectStorageState(project.id)
     return NextResponse.json({
-      driveFolderId: null,
       ...state,
+      storageAvailable: state.available,
     })
   } catch (error) {
     console.error("[project-storage] listing failed", error)
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const folder = await createFolder({
+    const folder = await writeFolderCreate({
       projectId: project.id,
       folderPath: parentFolderPath,
       name,

@@ -1,15 +1,12 @@
-import { DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
+import { GetObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
-import {
-  deleteFileCascade,
-  findFileById,
-  renameOrMoveFile,
-} from "@/lib/repositories/project-files"
+import { findFileById } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
 import { getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
+import { writeFileDelete, writeRename } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -107,8 +104,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const file = await renameOrMoveFile({
-      id: fileId,
+    const file = await writeRename({
+      fileId,
       projectId: id,
       name,
     })
@@ -137,17 +134,10 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   const owned = await requireOwnedFile(id, auth.userId, fileId)
   if ("error" in owned && owned.error) return owned.error
 
-  const { deletedS3Keys } = await deleteFileCascade(fileId, id)
-
-  if (deletedS3Keys.length > 0 && isS3Configured()) {
-    const client = getS3Client()
-    const bucket = getS3Bucket()
-    await Promise.allSettled(
-      deletedS3Keys.map((key) =>
-        client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
-      ),
-    )
-  }
+  await writeFileDelete({
+    projectId: id,
+    fileId,
+  })
 
   return NextResponse.json({ ok: true })
 }

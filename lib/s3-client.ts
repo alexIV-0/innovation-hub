@@ -8,19 +8,34 @@ function envFlag(name: string, defaultWhenUnset: boolean): boolean {
   return v === "1" || v.toLowerCase() === "true"
 }
 
-export function getS3Client(): S3Client {
-  if (client) return client
-
-  const accessKeyId =
+function readAccessKeyId(): string {
+  return (
     process.env.S3_KEY_ID ??
     process.env.AWS_KEY_ID ??
     process.env.AWS_ACCESS_KEY_ID ??
     ""
-  const secretAccessKey =
+  )
+}
+
+function readSecretAccessKey(): string {
+  return (
     process.env.S3_SECRET_KEY ??
     process.env.AWS_SECRET_KEY ??
     process.env.AWS_SECRET_ACCESS_KEY ??
     ""
+  )
+}
+
+/** True when bucket + credentials are present (R2 / S3-compatible). */
+export function isS3Configured(): boolean {
+  return Boolean(process.env.AWS_S3_BUCKET?.trim() && readAccessKeyId() && readSecretAccessKey())
+}
+
+export function getS3Client(): S3Client {
+  if (client) return client
+
+  const accessKeyId = readAccessKeyId()
+  const secretAccessKey = readSecretAccessKey()
 
   if (!accessKeyId || !secretAccessKey) {
     throw new Error(

@@ -7,13 +7,11 @@ import {
   ArrowLeft,
   ChevronRight,
   Download,
-  ExternalLink,
   FileText,
   Folder,
   FolderOpen,
   Grid3X3,
   Image as ImageIcon,
-  Link2,
   List,
   Loader2,
   MessageCircle,
@@ -81,8 +79,9 @@ type ContextMenu = {
   kind: "file" | "empty" | "project"
   file?: DriveFile
   projectId?: string
-  /** When set, empty-menu / upload targets this Drive folder id. */
-  parentId?: string
+  /** Logical folder path for empty-menu / upload target. */
+  folderPath?: string
+  parentId?: string | null
 }
 
 const GROUP_ORDER = ["shared", "personal", "tools", "archive"] as const
@@ -147,18 +146,16 @@ function fileColor(f: DriveFile) {
   return "#8b93a3"
 }
 
-function driveOpenUrl(f: DriveFile) {
-  return f.isFolder
-    ? `https://drive.google.com/drive/folders/${f.id}`
-    : `https://drive.google.com/file/d/${f.id}/view`
-}
-
 function findChildByName(files: DriveFile[], name: string) {
   const lower = name.toLowerCase()
   return files.find((f) => f.isFolder && f.name.toLowerCase() === lower) ?? null
 }
 
-/** Re-walk a path by id after a Drive tree refresh. */
+function pathToFolderPath(nodes: DriveFile[]): string {
+  return nodes.map((n) => n.name).join("/")
+}
+
+/** Re-walk a path by id after a storage tree refresh. */
 function resolvePath(root: DriveFile[], oldPath: DriveFile[]): DriveFile[] {
   const next: DriveFile[] = []
   let children = root
@@ -189,13 +186,14 @@ function mapProject(raw: Record<string, unknown>): Project {
 function uploadViaXhr(
   projectId: string,
   file: File,
-  parentId: string,
+  opts: { parentId?: string | null; folderPath?: string },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const qs = new URLSearchParams({
       fileName: file.name,
-      parentId,
     })
+    if (opts.parentId) qs.set("parentId", opts.parentId)
+    else qs.set("folderPath", opts.folderPath ?? "")
     const xhr = new XMLHttpRequest()
     xhr.open("POST", `/api/projects/${projectId}/media?${qs.toString()}`)
     xhr.withCredentials = true
@@ -223,7 +221,10 @@ export function WorkspacePageClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const uploadParentRef = useRef<string | null>(null)
+  const uploadTargetRef = useRef<{
+    parentId: string | null
+    folderPath: string
+  }>({ parentId: null, folderPath: "" })
 
   const [projects, setProjects] = useState<Project[]>([])
   const [loadingProjects, setLoadingProjects] = useState(true)
@@ -235,7 +236,6 @@ export function WorkspacePageClient() {
     searchParams.get("id"),
   )
   const [rootFiles, setRootFiles] = useState<DriveFile[]>([])
-  const [driveFolderId, setDriveFolderId] = useState<string | null>(null)
   const [driveAvailable, setDriveAvailable] = useState(true)
   const [path, setPath] = useState<DriveFile[]>([])
   const [loadingFiles, setLoadingFiles] = useState(false)
@@ -262,10 +262,10 @@ export function WorkspacePageClient() {
     [path, rootFiles],
   )
 
+  const currentFolderPath = pathToFolderPath(path)
+
   const currentParentId =
-    path.length > 0
-      ? path[path.length - 1].id
-      : driveFolderId ?? selected?.driveFolderId ?? null
+    path.length > 0 ? path[path.length - 1].id : null
 
   const inFolder = useMemo(
     () => findChildByName(rootFiles, "IN"),
@@ -305,7 +305,6 @@ export function WorkspacePageClient() {
         if (!data.available) {
           setDriveAvailable(false)
           setRootFiles([])
-          setDriveFolderId(null)
           setPath([])
           setInPath([])
           setOutPath([])
@@ -315,14 +314,6 @@ export function WorkspacePageClient() {
         setDriveAvailable(true)
         const files: DriveFile[] = data.files ?? []
         setRootFiles(files)
-        setDriveFolderId(data.driveFolderId ?? null)
-        setProjects((prev) =>
-          prev.map((p) =>
-            p.id === projectId
-              ? { ...p, driveFolderId: data.driveFolderId ?? p.driveFolderId }
-              : p,
-          ),
-        )
         if (keepPath) {
           setPath((prev) => resolvePath(files, prev))
           setInPath((prev) => {
@@ -395,7 +386,6 @@ export function WorkspacePageClient() {
       setOutPath([])
       setSelectedFile(null)
       setMessages([])
-      setDriveFolderId(null)
       setDriveAvailable(true)
       return
     }
@@ -549,14 +539,14 @@ export function WorkspacePageClient() {
     setSelectedFile(null)
   }
 
-  const createFolder = async (parentId: string | null) => {
-    if (!selectedId || !parentId) return
+  const createFolder = async (folderPath: string) => {
+    if (!selectedId) return
     const name = prompt(t.folderNamePrompt)
     if (!name?.trim()) return
     const res = await fetch(`/api/projects/${selectedId}/drive`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), parentId }),
+      body: JSON.stringify({ name: name.trim(), folderPath }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
@@ -601,28 +591,18 @@ export function WorkspacePageClient() {
     await loadDrive(selectedId, true)
   }
 
-  const shareItem = async (file: DriveFile) => {
-    const url = driveOpenUrl(file)
-    try {
-      await navigator.clipboard.writeText(url)
-      toast.success(t.mShare)
-    } catch {
-      toast.error("Failed")
-    }
-  }
-
   const uploadFiles = async (
     fileList: FileList | File[],
-    parentId: string | null,
+    target: { parentId: string | null; folderPath: string },
   ) => {
-    if (!selectedId || !parentId) return
+    if (!selectedId) return
     const list = Array.from(fileList)
     if (!list.length) return
     setUploading(true)
     try {
       for (const file of list) {
         try {
-          await uploadViaXhr(selectedId, file, parentId)
+          await uploadViaXhr(selectedId, file, target)
         } catch (err) {
           toast.error(
             err instanceof Error ? err.message : `Upload failed: ${file.name}`,
@@ -635,8 +615,11 @@ export function WorkspacePageClient() {
     }
   }
 
-  const triggerUpload = (parentId: string | null) => {
-    uploadParentRef.current = parentId
+  const triggerUpload = (target: {
+    parentId: string | null
+    folderPath: string
+  }) => {
+    uploadTargetRef.current = target
     fileInputRef.current?.click()
   }
 
@@ -791,7 +774,7 @@ export function WorkspacePageClient() {
     : null
 
   const fileBrowser = (
-    parentId: string | null,
+    target: { parentId: string | null; folderPath: string },
     items: DriveFile[],
     opts: {
       mode: ViewMode
@@ -803,12 +786,17 @@ export function WorkspacePageClient() {
   ) => (
     <div
       className="relative flex min-h-0 flex-1 overflow-hidden rounded-[14px] border border-white/10 bg-[hsl(226_26%_9.5%)]"
-      onContextMenu={(e) => openContext(e, "empty", { parentId: parentId ?? undefined })}
+      onContextMenu={(e) =>
+        openContext(e, "empty", {
+          folderPath: target.folderPath,
+          parentId: target.parentId,
+        })
+      }
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault()
         if (e.dataTransfer.files.length)
-          void uploadFiles(e.dataTransfer.files, parentId)
+          void uploadFiles(e.dataTransfer.files, target)
       }}
     >
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -917,6 +905,10 @@ export function WorkspacePageClient() {
         : folder
     const items = parent?.children ?? []
     const parentId = parent?.id ?? null
+    const folderPath = folder
+      ? pathToFolderPath([folder, ...nestedPath])
+      : ""
+    const target = { parentId, folderPath }
     const paneCrumbs = folder
       ? [
           { name: label, idx: -1 },
@@ -941,14 +933,14 @@ export function WorkspacePageClient() {
             <div className="mb-2 flex shrink-0 gap-2 px-1">
               <button
                 type="button"
-                onClick={() => void createFolder(parentId)}
+                onClick={() => void createFolder(folderPath)}
                 className="rounded-lg border border-white/10 px-2.5 py-1 text-[11.5px] text-[#c3c8d2] hover:bg-white/5"
               >
                 {t.mNewFolder}
               </button>
               <button
                 type="button"
-                onClick={() => triggerUpload(parentId)}
+                onClick={() => triggerUpload(target)}
                 disabled={uploading}
                 className="flex items-center gap-1 rounded-lg bg-[#1d6ff2] px-2.5 py-1 text-[11.5px] text-white hover:bg-[#175fd6] disabled:opacity-60"
               >
@@ -960,7 +952,7 @@ export function WorkspacePageClient() {
                 {t.upload}
               </button>
             </div>
-            {fileBrowser(parentId, items, {
+            {fileBrowser(target, items, {
               mode: "list",
               crumbs: paneCrumbs,
               onCrumb: (idx) =>
@@ -1114,14 +1106,19 @@ export function WorkspacePageClient() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => void createFolder(currentParentId)}
+                        onClick={() => void createFolder(currentFolderPath)}
                         className="rounded-lg border border-white/10 px-3 py-1.5 text-[12px] text-[#c3c8d2] hover:bg-white/5"
                       >
                         {t.mNewFolder}
                       </button>
                       <button
                         type="button"
-                        onClick={() => triggerUpload(currentParentId)}
+                        onClick={() =>
+                          triggerUpload({
+                            parentId: currentParentId,
+                            folderPath: currentFolderPath,
+                          })
+                        }
                         disabled={uploading}
                         className="flex items-center gap-1.5 rounded-lg bg-[#1d6ff2] px-3 py-1.5 text-[12px] text-white hover:bg-[#175fd6] disabled:opacity-60"
                       >
@@ -1134,7 +1131,13 @@ export function WorkspacePageClient() {
                       </button>
                     </div>
                   </div>
-                  {fileBrowser(currentParentId, currentItems, {
+                  {fileBrowser(
+                    {
+                      parentId: currentParentId,
+                      folderPath: currentFolderPath,
+                    },
+                    currentItems,
+                    {
                     mode: view,
                     onOpenFolder: openFolder,
                     showPreview: true,
@@ -1210,7 +1213,12 @@ export function WorkspacePageClient() {
                 <div className="mb-2 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => triggerUpload(currentParentId)}
+                    onClick={() =>
+                      triggerUpload({
+                        parentId: currentParentId,
+                        folderPath: currentFolderPath,
+                      })
+                    }
                     className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#1d6ff2] py-2.5 text-[14px] text-white"
                   >
                     <Upload className="h-4 w-4" />
@@ -1218,7 +1226,7 @@ export function WorkspacePageClient() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void createFolder(currentParentId)}
+                    onClick={() => void createFolder(currentFolderPath)}
                     className="rounded-xl border border-white/10 px-3 py-2.5 text-[14px] text-[#c3c8d2]"
                   >
                     <Folder className="h-4 w-4" />
@@ -1392,10 +1400,7 @@ export function WorkspacePageClient() {
         className="hidden"
         onChange={(e) => {
           if (e.target.files) {
-            void uploadFiles(
-              e.target.files,
-              uploadParentRef.current ?? currentParentId,
-            )
+            void uploadFiles(e.target.files, uploadTargetRef.current)
           }
           e.target.value = ""
         }}
@@ -1549,23 +1554,6 @@ export function WorkspacePageClient() {
               />
               <div className="my-1 h-px bg-white/10" />
               <MenuBtn
-                icon={<Link2 className="h-[18px] w-[18px]" />}
-                label={t.mShare}
-                onClick={() => {
-                  void shareItem(menu.file!)
-                  setMenu(null)
-                }}
-              />
-              <MenuBtn
-                icon={<ExternalLink className="h-[18px] w-[18px]" />}
-                label={t.mOpenDrive}
-                onClick={() => {
-                  window.open(driveOpenUrl(menu.file!), "_blank")
-                  setMenu(null)
-                }}
-              />
-              <div className="my-1 h-px bg-white/10" />
-              <MenuBtn
                 icon={<Trash2 className="h-[18px] w-[18px]" />}
                 label={t.mDelete}
                 danger
@@ -1582,7 +1570,7 @@ export function WorkspacePageClient() {
                 icon={<Folder className="h-[18px] w-[18px]" />}
                 label={t.mNewFolder}
                 onClick={() => {
-                  void createFolder(menu.parentId ?? currentParentId)
+                  void createFolder(menu.folderPath ?? currentFolderPath)
                   setMenu(null)
                 }}
               />
@@ -1590,7 +1578,10 @@ export function WorkspacePageClient() {
                 icon={<Upload className="h-[18px] w-[18px]" />}
                 label={t.mUploadFile}
                 onClick={() => {
-                  triggerUpload(menu.parentId ?? currentParentId)
+                  triggerUpload({
+                    parentId: menu.parentId ?? currentParentId,
+                    folderPath: menu.folderPath ?? currentFolderPath,
+                  })
                   setMenu(null)
                 }}
               />
@@ -1615,23 +1606,6 @@ export function WorkspacePageClient() {
                   setMenu(null)
                 }}
               />
-              {(() => {
-                const proj = projects.find((p) => p.id === menu.projectId)
-                if (!proj?.driveFolderId) return null
-                return (
-                  <MenuBtn
-                    icon={<ExternalLink className="h-[18px] w-[18px]" />}
-                    label={t.mOpenDrive}
-                    onClick={() => {
-                      window.open(
-                        `https://drive.google.com/drive/folders/${proj.driveFolderId}`,
-                        "_blank",
-                      )
-                      setMenu(null)
-                    }}
-                  />
-                )
-              })()}
             </>
           )}
         </div>

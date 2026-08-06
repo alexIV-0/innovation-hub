@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import { GoogleDriveError, isGoogleDriveConfigured } from "@/lib/google-drive"
 import {
-  ProjectDriveStateError,
+  ProjectStorageError,
   updateProjectExposedOptions,
-} from "@/lib/project-drive"
+} from "@/lib/project-storage"
 import { updateExposedOptionsSchema } from "@/lib/project-schemas"
 import { findProjectForUser } from "@/lib/repositories/projects"
+import { isS3Configured } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
 
@@ -14,7 +14,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 /**
  * Save edits to automation parameters exposed to the site
- * (`exposedToSite: true` entries in options/options.json).
+ * (`exposedToSite: true` entries in options/options.json on R2).
  */
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
@@ -25,9 +25,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
-  if (!isGoogleDriveConfigured() || !project.driveFolderId) {
+  if (!isS3Configured()) {
     return NextResponse.json(
-      { message: "Google Drive is not available for this project." },
+      { message: "Object storage is not available for this project." },
       { status: 409 },
     )
   }
@@ -43,19 +43,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const options = await updateProjectExposedOptions({
-      driveFolderId: project.driveFolderId,
+      projectId: project.id,
       changes: parsed.data.changes,
     })
     return NextResponse.json({ options })
   } catch (error) {
-    if (error instanceof ProjectDriveStateError) {
+    if (error instanceof ProjectStorageError) {
       return NextResponse.json({ message: error.message }, { status: 409 })
     }
-    console.error("[project-drive] options update failed", error)
-    const message =
-      error instanceof GoogleDriveError
-        ? error.message
-        : "Failed to update automation options."
-    return NextResponse.json({ message }, { status: 503 })
+    console.error("[project-storage] options update failed", error)
+    return NextResponse.json(
+      {
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to update automation options.",
+      },
+      { status: 503 },
+    )
   }
 }

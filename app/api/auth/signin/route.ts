@@ -8,16 +8,6 @@ import {
 } from "@/lib/auth"
 import { findUserByEmail } from "@/lib/repositories/users"
 
-function scheduleDriveProvision(userId: string) {
-  void import("@/lib/provision-drive")
-    .then(({ provisionUserDriveFolderBackground }) => {
-      provisionUserDriveFolderBackground(userId)
-    })
-    .catch((error) => {
-      console.error("[auth] drive provision unavailable", error)
-    })
-}
-
 export async function POST(request: Request) {
   try {
     const payload = await request.json().catch(() => null)
@@ -78,10 +68,6 @@ export async function POST(request: Request) {
       role: user.role,
       email: user.email,
     })
-
-    if (!user.driveFolderId) {
-      scheduleDriveProvision(user.id)
-    }
 
     const response = NextResponse.json(
       {

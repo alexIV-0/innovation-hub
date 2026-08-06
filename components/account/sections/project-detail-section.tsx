@@ -367,16 +367,17 @@ export function ProjectDetailSection({
       // the plain DB flag when automation hasn't been set up for this
       // project yet (409 = no folderState.json to rewrite) or Drive isn't
       // wired up at all — mirrors the toggle on the projects list page.
-      let response = project.driveFolderId
-        ? await fetch(`/api/projects/${project.id}/drive/folder-state`, {
-            method: "PATCH",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ enabled: next }),
-          })
-        : null
+      let response = await fetch(
+        `/api/projects/${project.id}/drive/folder-state`,
+        {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: next }),
+        },
+      )
 
-      if (!response || response.status === 409) {
+      if (response.status === 409) {
         response = await fetch(`/api/projects/${project.id}`, {
           method: "PATCH",
           credentials: "same-origin",

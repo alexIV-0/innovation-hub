@@ -387,9 +387,9 @@ export async function countProjectsByUserId(userId: string): Promise<number> {
 export async function countMediaByUserId(userId: string): Promise<number> {
   const result = await query<{ count: number }>(
     `SELECT COUNT(*)::int AS count
-       FROM project_media m
-       JOIN projects p ON p.id = m.project_id
-      WHERE p.user_id = $1`,
+       FROM project_files f
+       JOIN projects p ON p.id = f.project_id
+      WHERE p.user_id = $1 AND f.is_folder = FALSE`,
     [userId],
   )
   return result.rows[0]?.count ?? 0

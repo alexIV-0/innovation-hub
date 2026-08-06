@@ -1,22 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import {
-  createDriveFolder,
-  GoogleDriveError,
-  isDriveFileUnderFolder,
-  isGoogleDriveConfigured,
-} from "@/lib/google-drive"
-import { loadProjectDriveState, OPTIONS_FOLDER_NAME } from "@/lib/project-drive"
+  loadProjectStorageState,
+  OPTIONS_FOLDER_NAME,
+} from "@/lib/project-storage"
+import { createFolder } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
+import { isS3Configured } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
 
 type RouteContext = { params: Promise<{ id: string }> }
 
 /**
- * Live listing of the project's Google Drive folder. Files can appear there
- * outside of the site UI, so the cabinet reads Drive directly instead of
- * relying on the local media table. The service `options` folder is hidden.
+ * Live listing of the project's file tree from Postgres + automation JSON
+ * from R2. The service `options` folder is hidden.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
@@ -28,28 +26,27 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
 
-  if (!isGoogleDriveConfigured() || !project.driveFolderId) {
-    return NextResponse.json({ available: false })
-  }
-
   try {
-    const state = await loadProjectDriveState(project.driveFolderId)
+    const state = await loadProjectStorageState(project.id)
     return NextResponse.json({
-      available: true,
-      driveFolderId: project.driveFolderId,
+      driveFolderId: null,
       ...state,
     })
   } catch (error) {
-    console.error("[project-drive] listing failed", error)
-    const message =
-      error instanceof GoogleDriveError
-        ? error.message
-        : "Failed to load project files from Google Drive."
-    return NextResponse.json({ message }, { status: 503 })
+    console.error("[project-storage] listing failed", error)
+    return NextResponse.json(
+      {
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to load project files.",
+      },
+      { status: 503 },
+    )
   }
 }
 
-/** Create a subfolder inside the project Drive tree. */
+/** Create a subfolder inside the project file tree. */
 export async function POST(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
@@ -59,9 +56,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
-  if (!isGoogleDriveConfigured() || !project.driveFolderId) {
+  if (!isS3Configured()) {
     return NextResponse.json(
-      { message: "Google Drive is not available for this project." },
+      { message: "Object storage is not available for this project." },
       { status: 409 },
     )
   }
@@ -69,10 +66,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const body = await request.json().catch(() => null)
   const name =
     typeof body?.name === "string" ? body.name.trim().slice(0, 180) : ""
-  const parentId =
-    typeof body?.parentId === "string" && body.parentId
-      ? body.parentId
-      : project.driveFolderId
+  const parentFolderPath =
+    typeof body?.folderPath === "string"
+      ? body.folderPath
+      : typeof body?.parentFolderPath === "string"
+        ? body.parentFolderPath
+        : ""
 
   if (!name || name.includes("/") || name.includes("\\")) {
     return NextResponse.json({ message: "Invalid folder name." }, { status: 400 })
@@ -84,24 +83,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
     )
   }
 
-  const under = await isDriveFileUnderFolder(parentId, project.driveFolderId)
-  if (!under) {
-    return NextResponse.json({ message: "Invalid parent folder." }, { status: 400 })
-  }
-
   try {
-    const folderId = await createDriveFolder({
+    const folder = await createFolder({
+      projectId: project.id,
+      folderPath: parentFolderPath,
       name,
-      parentId,
-      reuseExisting: false,
     })
-    return NextResponse.json({ id: folderId, name }, { status: 201 })
+    return NextResponse.json(
+      { id: folder.id, name: folder.name, folderPath: folder.folderPath },
+      { status: 201 },
+    )
   } catch (error) {
-    console.error("[project-drive] create folder failed", error)
-    const message =
-      error instanceof GoogleDriveError
-        ? error.message
-        : "Failed to create folder."
-    return NextResponse.json({ message }, { status: 503 })
+    console.error("[project-storage] create folder failed", error)
+    const msg = error instanceof Error ? error.message : "Failed to create folder."
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      return NextResponse.json(
+        { message: "A file or folder with that name already exists." },
+        { status: 409 },
+      )
+    }
+    return NextResponse.json({ message: msg }, { status: 503 })
   }
 }

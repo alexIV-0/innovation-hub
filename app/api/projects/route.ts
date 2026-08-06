@@ -1,21 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import {
-  createDriveFolder,
-  formatDriveError,
-  GoogleDriveError,
-  isGoogleDriveConfigured,
-  writeDriveTextFile,
-} from "@/lib/google-drive"
 import { createProjectSchema } from "@/lib/project-schemas"
-import { listUserProjects } from "@/lib/project-drive"
-import { provisionUserDriveFolder } from "@/lib/provision-drive"
+import { writeProjectMeta } from "@/lib/project-storage"
 import { countUnreadForProjects } from "@/lib/repositories/project-chat"
-import {
-  createProject,
-  setProjectDriveFolderId,
-} from "@/lib/repositories/projects"
-import { findUserById } from "@/lib/repositories/users"
+import { createProject, listProjectsByUserId } from "@/lib/repositories/projects"
+import { isS3Configured } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -24,19 +13,7 @@ export async function GET(request: NextRequest) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
-  if (isGoogleDriveConfigured()) {
-    const user = await findUserById(auth.userId)
-    if (user && !user.driveFolderId) {
-      await provisionUserDriveFolder(auth.userId)
-    }
-  }
-
-  const fresh = await findUserById(auth.userId)
-  const projects = await listUserProjects({
-    userId: auth.userId,
-    userDriveFolderId: fresh?.driveFolderId ?? null,
-  })
-
+  const projects = await listProjectsByUserId(auth.userId)
   const unread = await countUnreadForProjects(projects.map((p) => p.id))
 
   return NextResponse.json({
@@ -46,7 +23,8 @@ export async function GET(request: NextRequest) {
       isPaused: !p.isActive,
       unreadCount: unread[p.id] ?? 0,
     })),
-    driveConfigured: isGoogleDriveConfigured(),
+    storageConfigured: isS3Configured(),
+    driveConfigured: false,
   })
 }
 
@@ -68,64 +46,14 @@ export async function POST(request: NextRequest) {
 
   const { name, description, groupName } = parsed.data
 
-  let driveFolderId: string | null = null
-
-  if (isGoogleDriveConfigured()) {
-    try {
-      const userFolderId = await provisionUserDriveFolder(auth.userId)
-      if (!userFolderId) {
-        return NextResponse.json(
-          {
-            message:
-              "Could not prepare Google Drive workspace. The Drive refresh token may be expired — re-run `node scripts/google-drive-oauth.mjs`, update GOOGLE_DRIVE_REFRESH_TOKEN on the server, and restart.",
-          },
-          { status: 503 },
-        )
-      }
-
-      driveFolderId = await createDriveFolder({
-        name,
-        parentId: userFolderId,
-        reuseExisting: false,
-      })
-
-      await writeDriveTextFile({
-        name: "project-meta.json",
-        parentId: driveFolderId,
-        mimeType: "application/json",
-        content: JSON.stringify(
-          {
-            name,
-            description,
-            ownerEmail: auth.email,
-            createdAt: new Date().toISOString(),
-          },
-          null,
-          2,
-        ),
-      })
-
-      // Default IN / OUT folders on Drive (options is created by automation).
-      await Promise.all([
-        createDriveFolder({
-          name: "IN",
-          parentId: driveFolderId,
-          reuseExisting: true,
-        }),
-        createDriveFolder({
-          name: "OUT",
-          parentId: driveFolderId,
-          reuseExisting: true,
-        }),
-      ])
-    } catch (error) {
-      console.error("[projects] Drive folder create failed", error)
-      const message = formatDriveError(
-        error instanceof GoogleDriveError ? error : error,
-        "Storage is temporarily unavailable.",
-      )
-      return NextResponse.json({ message }, { status: 503 })
-    }
+  if (!isS3Configured()) {
+    return NextResponse.json(
+      {
+        message:
+          "Object storage is not configured. Set AWS_S3_BUCKET and S3 credentials.",
+      },
+      { status: 503 },
+    )
   }
 
   const project = await createProject({
@@ -133,11 +61,27 @@ export async function POST(request: NextRequest) {
     name,
     description,
     groupName,
-    driveFolderId,
   })
 
-  if (driveFolderId && !project.driveFolderId) {
-    await setProjectDriveFolderId(project.id, driveFolderId)
+  try {
+    await writeProjectMeta({
+      projectId: project.id,
+      name,
+      description: description ?? "",
+      ownerEmail: auth.email,
+      createdAt: project.createdAt.toISOString(),
+    })
+  } catch (error) {
+    console.error("[projects] failed to write project-meta.json", error)
+    return NextResponse.json(
+      {
+        message:
+          error instanceof Error
+            ? error.message
+            : "Storage is temporarily unavailable.",
+      },
+      { status: 503 },
+    )
   }
 
   return NextResponse.json(
@@ -146,7 +90,6 @@ export async function POST(request: NextRequest) {
         ...project,
         ownerId: project.userId,
         isPaused: !project.isActive,
-        driveFolderId: driveFolderId ?? project.driveFolderId,
         unreadCount: 0,
       },
     },

@@ -1,18 +1,16 @@
-import { Readable } from "node:stream"
+import { randomUUID } from "node:crypto"
+import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
+import { projectUploadObjectKey } from "@/lib/project-storage"
 import {
-  deleteDriveFile,
-  GoogleDriveError,
-  isDriveFileUnderFolder,
-  isGoogleDriveConfigured,
-  uploadDriveFile,
-} from "@/lib/google-drive"
-import {
-  createProjectMedia,
-  findProjectForUser,
-  listProjectMedia,
-} from "@/lib/repositories/projects"
+  createFile,
+  findFileById,
+  listAllProjectFiles,
+} from "@/lib/repositories/project-files"
+import { findProjectForUser } from "@/lib/repositories/projects"
+import { getS3Bucket } from "@/lib/s3-config"
+import { getS3Client, isS3Configured } from "@/lib/s3-client"
 import {
   resolveUploadContentType,
   safeBaseFileName,
@@ -44,6 +42,25 @@ function decodeFileNameHeader(value: string | null): string {
   }
 }
 
+async function resolveUploadFolderPath(
+  projectId: string,
+  folderPathParam: string | null,
+  parentId: string | null,
+): Promise<string | null> {
+  if (folderPathParam != null && folderPathParam !== "") {
+    return folderPathParam.replace(/^\/+|\/+$/g, "")
+  }
+  if (!parentId || parentId === projectId) return ""
+
+  const folder = await findFileById(parentId)
+  if (!folder || folder.projectId !== projectId || !folder.isFolder) {
+    return null
+  }
+  return folder.folderPath === ""
+    ? folder.name
+    : `${folder.folderPath}/${folder.name}`
+}
+
 export async function GET(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
@@ -54,15 +71,26 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return jsonError("Project not found.", 404)
   }
 
-  const media = await listProjectMedia(project.id)
-  return NextResponse.json({ media })
+  const files = (await listAllProjectFiles(project.id)).filter((f) => !f.isFolder)
+  return NextResponse.json({
+    media: files.map((f) => ({
+      id: f.id,
+      projectId: f.projectId,
+      fileName: f.name,
+      mimeType: f.contentType,
+      sizeBytes: f.sizeBytes,
+      driveFileId: null,
+      s3Key: f.s3Key,
+      createdAt: f.createdAt,
+    })),
+  })
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
-  if (!isGoogleDriveConfigured()) {
+  if (!isS3Configured()) {
     return jsonError(
       "Media uploads are temporarily unavailable. Please try again later.",
       503,
@@ -74,25 +102,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!project) {
     return jsonError("Project not found.", 404)
   }
-  if (!project.driveFolderId) {
-    return jsonError(
-      "This project is not ready for uploads yet. Please recreate it or contact support.",
-      409,
-    )
-  }
 
   const url = new URL(request.url)
-  const parentParam = url.searchParams.get("parentId")?.trim() || ""
-  let parentId = project.driveFolderId
-  if (parentParam && parentParam !== project.driveFolderId) {
-    const under = await isDriveFileUnderFolder(
-      parentParam,
-      project.driveFolderId,
-    )
-    if (!under) {
-      return jsonError("Invalid upload folder.", 400)
-    }
-    parentId = parentParam
+  const folderPath = await resolveUploadFolderPath(
+    project.id,
+    url.searchParams.get("folderPath"),
+    url.searchParams.get("parentId"),
+  )
+  if (folderPath == null) {
+    return jsonError("Invalid upload folder.", 400)
   }
 
   const maxBytes = getMaxBytes()
@@ -123,8 +141,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("Empty request body.", 400)
   }
 
-  // Buffer into memory with a hard cap — Drive multipart needs a known stream.
-  // For very large assets, raise PROJECT_MEDIA_UPLOAD_MAX_BYTES carefully.
   const chunks: Buffer[] = []
   let total = 0
   const reader = request.body.getReader()
@@ -148,57 +164,60 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("Empty file.", 400)
   }
 
-  let driveFileId: string
+  const objectName = `${randomUUID()}-${fileName}`
+  const s3Key = projectUploadObjectKey(project.id, folderPath, objectName)
+
   try {
-    driveFileId = await uploadDriveFile({
-      name: fileName,
-      parentId,
-      mimeType: contentType,
-      body: Readable.from(buffer),
-    })
+    await getS3Client().send(
+      new PutObjectCommand({
+        Bucket: getS3Bucket(),
+        Key: s3Key,
+        Body: buffer,
+        ContentType: contentType,
+      }),
+    )
   } catch (error) {
-    console.error("[project-media] Drive upload failed", error)
-    const message =
-      error instanceof GoogleDriveError
-        ? error.message
-        : "Failed to upload file."
-    return jsonError(message, 503)
+    console.error("[project-media] R2 upload failed", error)
+    return jsonError(
+      error instanceof Error ? error.message : "Failed to upload file.",
+      503,
+    )
   }
 
-  let media
   try {
-    media = await createProjectMedia({
+    const file = await createFile({
       projectId: project.id,
-      fileName,
-      mimeType: contentType,
+      folderPath,
+      name: fileName,
+      s3Key,
       sizeBytes: buffer.length,
-      driveFileId,
+      contentType,
     })
+    return NextResponse.json(
+      {
+        id: file.id,
+        projectId: file.projectId,
+        fileName: file.name,
+        mimeType: file.contentType,
+        sizeBytes: file.sizeBytes,
+        driveFileId: null,
+        s3Key: file.s3Key,
+        createdAt: file.createdAt,
+      },
+      { status: 201 },
+    )
   } catch (error) {
-    console.error("[project-media] DB insert failed after Drive upload", error)
-    // Compensate: remove the just-uploaded file so Drive doesn't accumulate
-    // orphans the app has no record of.
+    console.error("[project-media] DB insert failed after R2 upload", error)
     try {
-      await deleteDriveFile(driveFileId)
-    } catch (cleanupError) {
-      console.error(
-        "[project-media] cleanup of orphaned Drive file failed",
-        { driveFileId, cleanupError },
+      await getS3Client().send(
+        new DeleteObjectCommand({ Bucket: getS3Bucket(), Key: s3Key }),
       )
+    } catch (cleanupError) {
+      console.error("[project-media] cleanup of orphaned R2 object failed", {
+        s3Key,
+        cleanupError,
+      })
     }
     return jsonError("Failed to save the uploaded file.", 500)
   }
-
-  return NextResponse.json(
-    {
-      ...media,
-      sizeBytes:
-        media.sizeBytes == null
-          ? buffer.length
-          : typeof media.sizeBytes === "number"
-            ? media.sizeBytes
-            : Number(media.sizeBytes),
-    },
-    { status: 201 },
-  )
 }

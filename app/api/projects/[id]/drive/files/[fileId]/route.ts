@@ -1,98 +1,97 @@
+import { DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
+import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
 import {
-  deleteDriveFile,
-  downloadDriveFileMedia,
-  getDriveFileInfo,
-  GoogleDriveError,
-  isDriveFileUnderFolder,
-  isGoogleDriveConfigured,
-  renameDriveFile,
-} from "@/lib/google-drive"
-import { OPTIONS_FOLDER_NAME } from "@/lib/project-drive"
-import {
-  deleteProjectMediaByDriveFileId,
-  findProjectForUser,
-} from "@/lib/repositories/projects"
+  deleteFileCascade,
+  findFileById,
+  renameOrMoveFile,
+} from "@/lib/repositories/project-files"
+import { findProjectForUser } from "@/lib/repositories/projects"
+import { getS3Bucket } from "@/lib/s3-config"
+import { getS3Client, isS3Configured } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
 
-type RouteContext = { params: Promise<{ id: string; fileId: string }> }
+type RouteContext = {
+  params: Promise<{ id: string; fileId: string }>
+}
 
-async function authorizeFile(
-  request: NextRequest,
-  context: RouteContext,
-): Promise<
-  | {
-      project: NonNullable<Awaited<ReturnType<typeof findProjectForUser>>>
-      fileId: string
+async function requireOwnedFile(projectId: string, userId: string, fileId: string) {
+  const project = await findProjectForUser(projectId, userId)
+  if (!project) return { error: NextResponse.json({ message: "Project not found." }, { status: 404 }) }
+  const file = await findFileById(fileId)
+  if (!file || file.projectId !== projectId) {
+    return { error: NextResponse.json({ message: "File not found." }, { status: 404 }) }
+  }
+  if (file.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
+    return {
+      error: NextResponse.json(
+        { message: "This item is managed by automation." },
+        { status: 403 },
+      ),
     }
-  | NextResponse
-> {
+  }
+  return { project, file }
+}
+
+/** Download a project file from R2. */
+export async function GET(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
   const { id, fileId } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
-  if (!isGoogleDriveConfigured() || !project.driveFolderId) {
+  const owned = await requireOwnedFile(id, auth.userId, fileId)
+  if ("error" in owned && owned.error) return owned.error
+  const { file } = owned as { file: NonNullable<Awaited<ReturnType<typeof findFileById>>> }
+
+  if (file.isFolder || !file.s3Key) {
     return NextResponse.json(
-      { message: "Google Drive is not available for this project." },
-      { status: 409 },
+      { message: "Folders cannot be downloaded." },
+      { status: 400 },
     )
   }
-
-  const under = await isDriveFileUnderFolder(fileId, project.driveFolderId)
-  if (!under) {
-    return NextResponse.json({ message: "File not found." }, { status: 404 })
+  if (!isS3Configured()) {
+    return NextResponse.json(
+      { message: "Object storage is not available." },
+      { status: 503 },
+    )
   }
-
-  return { project, fileId }
-}
-
-/** Download a Drive file that belongs to this project. */
-export async function GET(request: NextRequest, context: RouteContext) {
-  const authz = await authorizeFile(request, context)
-  if (authz instanceof NextResponse) return authz
 
   try {
-    const info = await getDriveFileInfo(authz.fileId)
-    if (!info) {
-      return NextResponse.json({ message: "File not found." }, { status: 404 })
-    }
-    if (info.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-      return NextResponse.json({ message: "Not found." }, { status: 404 })
-    }
-
-    const media = await downloadDriveFileMedia(authz.fileId)
-    const headers = new Headers()
-    headers.set("Content-Type", media.mimeType)
-    headers.set(
-      "Content-Disposition",
-      `attachment; filename*=UTF-8''${encodeURIComponent(media.name)}`,
+    const response = await getS3Client().send(
+      new GetObjectCommand({ Bucket: getS3Bucket(), Key: file.s3Key }),
     )
-    if (media.size != null) headers.set("Content-Length", String(media.size))
-
-    return new NextResponse(media.body as unknown as BodyInit, {
-      status: 200,
-      headers,
+    const body = response.Body
+    if (!body) {
+      return NextResponse.json({ message: "Empty object." }, { status: 404 })
+    }
+    const bytes = await body.transformToByteArray()
+    return new NextResponse(Buffer.from(bytes), {
+      headers: {
+        "Content-Type":
+          file.contentType || response.ContentType || "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${encodeURIComponent(file.name)}"`,
+        "Cache-Control": "private, no-store",
+      },
     })
   } catch (error) {
-    console.error("[project-drive] download failed", error)
-    const message =
-      error instanceof GoogleDriveError
-        ? error.message
-        : "Failed to download file."
-    return NextResponse.json({ message }, { status: 503 })
+    console.error("[project-storage] download failed", error)
+    return NextResponse.json(
+      { message: "Failed to download file." },
+      { status: 503 },
+    )
   }
 }
 
-/** Rename a Drive file/folder under this project. */
+/** Rename a file or folder. */
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const authz = await authorizeFile(request, context)
-  if (authz instanceof NextResponse) return authz
+  const auth = await requireUserApi(request)
+  if (auth instanceof NextResponse) return auth
+
+  const { id, fileId } = await context.params
+  const owned = await requireOwnedFile(id, auth.userId, fileId)
+  if ("error" in owned && owned.error) return owned.error
 
   const body = await request.json().catch(() => null)
   const name =
@@ -102,65 +101,53 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
   if (name.toLowerCase() === OPTIONS_FOLDER_NAME) {
     return NextResponse.json(
-      { message: "This name is reserved." },
+      { message: "This folder name is reserved." },
       { status: 403 },
     )
   }
 
   try {
-    const info = await getDriveFileInfo(authz.fileId)
-    if (!info) {
+    const file = await renameOrMoveFile({
+      id: fileId,
+      projectId: id,
+      name,
+    })
+    if (!file) {
       return NextResponse.json({ message: "File not found." }, { status: 404 })
     }
-    if (info.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
+    return NextResponse.json({ file })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Rename failed."
+    if (msg.includes("unique") || msg.includes("duplicate")) {
       return NextResponse.json(
-        { message: "This folder cannot be renamed." },
-        { status: 403 },
+        { message: "A file or folder with that name already exists." },
+        { status: 409 },
       )
     }
-    await renameDriveFile(authz.fileId, name)
-    return NextResponse.json({ ok: true, name })
-  } catch (error) {
-    console.error("[project-drive] rename failed", error)
-    const message =
-      error instanceof GoogleDriveError
-        ? error.message
-        : "Failed to rename."
-    return NextResponse.json({ message }, { status: 503 })
+    return NextResponse.json({ message: msg }, { status: 500 })
   }
 }
 
-/**
- * Delete a file listed from the project's Drive folder (may have no local
- * media row when added outside the site UI). Allows nested files under IN/OUT.
- */
+/** Delete a file or folder (and cascade). */
 export async function DELETE(request: NextRequest, context: RouteContext) {
-  const authz = await authorizeFile(request, context)
-  if (authz instanceof NextResponse) return authz
+  const auth = await requireUserApi(request)
+  if (auth instanceof NextResponse) return auth
 
-  try {
-    const info = await getDriveFileInfo(authz.fileId)
-    if (!info) {
-      return NextResponse.json({ message: "File not found." }, { status: 404 })
-    }
-    if (info.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-      return NextResponse.json(
-        { message: "This folder cannot be deleted." },
-        { status: 403 },
-      )
-    }
+  const { id, fileId } = await context.params
+  const owned = await requireOwnedFile(id, auth.userId, fileId)
+  if ("error" in owned && owned.error) return owned.error
 
-    await deleteDriveFile(authz.fileId)
-  } catch (error) {
-    console.error("[project-drive] file delete failed", error)
-    const message =
-      error instanceof GoogleDriveError
-        ? error.message
-        : "Failed to delete file."
-    return NextResponse.json({ message }, { status: 503 })
+  const { deletedS3Keys } = await deleteFileCascade(fileId, id)
+
+  if (deletedS3Keys.length > 0 && isS3Configured()) {
+    const client = getS3Client()
+    const bucket = getS3Bucket()
+    await Promise.allSettled(
+      deletedS3Keys.map((key) =>
+        client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
+      ),
+    )
   }
-
-  await deleteProjectMediaByDriveFileId(authz.fileId, authz.project.id)
 
   return NextResponse.json({ ok: true })
 }

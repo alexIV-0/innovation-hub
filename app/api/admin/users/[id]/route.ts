@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { userUpdateSchema } from "@/lib/admin-schemas"
 import { hashPassword } from "@/lib/auth"
-import { trashDriveFile } from "@/lib/google-drive"
 import {
   countActiveAdmins,
   deleteUser,
@@ -45,8 +44,6 @@ export async function PATCH(
     )
   }
 
-  // Prevent dropping the last active admin via either role demotion or
-  // deactivation of someone other than the caller.
   if (parsed.data.role === "USER" || parsed.data.isActive === false) {
     const target = await findUserById(id)
     if (target && target.role === "ADMIN" && target.isActive) {
@@ -60,7 +57,6 @@ export async function PATCH(
     }
   }
 
-  // Email change: lowercase, ensure no other account already uses it.
   let nextEmail: string | undefined
   if (parsed.data.email !== undefined) {
     nextEmail = parsed.data.email.toLowerCase()
@@ -73,7 +69,6 @@ export async function PATCH(
     }
   }
 
-  // Password rotation: only hash when a non-empty value is provided.
   let nextPasswordHash: string | undefined
   if (parsed.data.password !== undefined && parsed.data.password.length > 0) {
     nextPasswordHash = await hashPassword(parsed.data.password)
@@ -136,22 +131,6 @@ export async function DELETE(
         { message: "At least one active admin must remain." },
         { status: 400 },
       )
-    }
-  }
-
-  // Trash (not permanently delete) the user's Drive folder so a future
-  // signup with the same email gets a fresh folder instead of inheriting
-  // this account's projects and files. Best-effort: Drive being down must
-  // not block account deletion.
-  if (target?.driveFolderId) {
-    try {
-      await trashDriveFile(target.driveFolderId)
-    } catch (error) {
-      console.error("[admin-users] failed to trash Drive folder", {
-        userId: id,
-        driveFolderId: target.driveFolderId,
-        error,
-      })
     }
   }
 

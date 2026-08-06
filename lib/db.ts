@@ -11,6 +11,11 @@ type ConnectionConfig = {
   database: string
 }
 
+function isLocalPgHost(host: string): boolean {
+  const h = host.trim().toLowerCase()
+  return h === "localhost" || h === "127.0.0.1" || h === "::1"
+}
+
 function readEnvConnectionConfig(): ConnectionConfig {
   const direct = {
     user: process.env.PGUSER,
@@ -66,20 +71,24 @@ function readCaFromEnv(): string | undefined {
 
 /**
  * SSL for `pg`:
- * - Custom CA file: PGSSLROOTCERT or ~/.cloud-certs/root.crt (e.g. Yandex Cloud local).
+ * - Custom CA file: PGSSLROOTCERT or ~/.cloud-certs/root.crt (e.g. Yandex Cloud).
+ *   Auto cloud-cert is skipped for localhost / 127.0.0.1 so local Postgres
+ *   without TLS does not fail with "server does not support SSL".
  * - Custom CA PEM on Vercel: PGSSL_CA or DATABASE_SSL_CA (paste root bundle).
  * - Encrypted without CA (self-signed chain): PGSSLMODE=require / VERCEL / sslmode=require
  *   uses TLS with rejectUnauthorized:false unless PGSSL_REJECT_UNAUTHORIZED=1 or sslmode=verify-full.
  * - Opt out: PGSSL_NO_VERIFY=1, PGSSLMODE=no-verify, or DATABASE_SSL=false.
  */
-function resolveSsl(): PoolConfig["ssl"] | undefined {
+function resolveSsl(host: string): PoolConfig["ssl"] | undefined {
+  const local = isLocalPgHost(host)
   const explicitPath = process.env.PGSSLROOTCERT
   const defaultCloudPath = join(homedir(), ".cloud-certs", "root.crt")
 
   let certPath: string | undefined
   if (explicitPath) {
     certPath = explicitPath
-  } else if (existsSync(defaultCloudPath)) {
+  } else if (!local && existsSync(defaultCloudPath)) {
+    // Do not auto-apply a cloud CA when talking to local Postgres.
     certPath = defaultCloudPath
   }
 
@@ -102,9 +111,23 @@ function resolveSsl(): PoolConfig["ssl"] | undefined {
 
   const fromUrl = sslModeFromConnectionString()
   const mode =
-    process.env.PGSSLMODE ?? fromUrl ?? (process.env.VERCEL ? "require" : undefined)
+    process.env.PGSSLMODE ??
+    fromUrl ??
+    (!local && process.env.VERCEL ? "require" : undefined)
 
   if (mode === "disable" || process.env.DATABASE_SSL === "false") {
+    return undefined
+  }
+
+  // Local Postgres typically has no TLS. Skip SSL unless explicitly requested.
+  if (
+    local &&
+    process.env.DATABASE_SSL !== "true" &&
+    mode !== "require" &&
+    mode !== "verify-ca" &&
+    mode !== "verify-full" &&
+    mode !== "no-verify"
+  ) {
     return undefined
   }
 
@@ -136,11 +159,6 @@ function resolveSsl(): PoolConfig["ssl"] | undefined {
 
 const config = readEnvConnectionConfig()
 
-function isLocalPgHost(host: string): boolean {
-  const h = host.trim().toLowerCase()
-  return h === "localhost" || h === "127.0.0.1" || h === "::1"
-}
-
 /** Remote managed Postgres (e.g. Timeweb twc1.net) often needs >8s to connect from dev machines. */
 function defaultConnectionTimeoutMs(host: string): number {
   return isLocalPgHost(host) ? 8_000 : 30_000
@@ -170,7 +188,7 @@ export const pool: Pool =
     connectionTimeoutMillis: process.env.PG_POOL_CONN_MS
       ? readPositiveInt("PG_POOL_CONN_MS", 8_000)
       : defaultConnectionTimeoutMs(config.host),
-    ssl: resolveSsl(),
+    ssl: resolveSsl(config.host),
   })
 
 globalForPg.pgPool = pool

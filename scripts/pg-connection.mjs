@@ -38,6 +38,11 @@ export function readConnectionConfig() {
   }
 }
 
+function isLocalPgHost(host) {
+  const h = String(host || "").trim().toLowerCase()
+  return h === "localhost" || h === "127.0.0.1" || h === "::1"
+}
+
 function sslModeFromConnectionString() {
   const cs = process.env.DB_CONNECTION_STRING
   if (!cs) return null
@@ -54,15 +59,29 @@ function readCaFromEnv() {
   return raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw
 }
 
-/** @returns {import('pg').ClientConfig['ssl'] | undefined} */
-export function resolvePgSsl() {
+/**
+ * @param {string} [host]
+ * @returns {import('pg').ClientConfig['ssl'] | undefined}
+ */
+export function resolvePgSsl(host) {
+  const local = isLocalPgHost(
+    host ?? process.env.PGHOST ?? (() => {
+      try {
+        return process.env.DB_CONNECTION_STRING
+          ? new URL(process.env.DB_CONNECTION_STRING).hostname
+          : ""
+      } catch {
+        return ""
+      }
+    })(),
+  )
   const explicitPath = process.env.PGSSLROOTCERT
   const defaultCloudPath = join(homedir(), ".cloud-certs", "root.crt")
 
   let certPath
   if (explicitPath) {
     certPath = explicitPath
-  } else if (existsSync(defaultCloudPath)) {
+  } else if (!local && existsSync(defaultCloudPath)) {
     certPath = defaultCloudPath
   }
 
@@ -85,9 +104,22 @@ export function resolvePgSsl() {
 
   const fromUrl = sslModeFromConnectionString()
   const mode =
-    process.env.PGSSLMODE ?? fromUrl ?? (process.env.VERCEL ? "require" : undefined)
+    process.env.PGSSLMODE ??
+    fromUrl ??
+    (!local && process.env.VERCEL ? "require" : undefined)
 
   if (mode === "disable" || process.env.DATABASE_SSL === "false") {
+    return undefined
+  }
+
+  if (
+    local &&
+    process.env.DATABASE_SSL !== "true" &&
+    mode !== "require" &&
+    mode !== "verify-ca" &&
+    mode !== "verify-full" &&
+    mode !== "no-verify"
+  ) {
     return undefined
   }
 

@@ -28,6 +28,19 @@ export async function listFilesInFolder(
   return result.rows
 }
 
+export async function listAllProjectFiles(
+  projectId: string,
+): Promise<ProjectFileRecord[]> {
+  const result = await query<ProjectFileRecord>(
+    `SELECT ${FILE_FIELDS}
+       FROM project_files
+      WHERE project_id = $1
+      ORDER BY folder_path ASC, is_folder DESC, lower(name) ASC`,
+    [projectId],
+  )
+  return result.rows
+}
+
 export async function findFileById(
   id: string,
 ): Promise<ProjectFileRecord | null> {
@@ -67,6 +80,22 @@ export async function createFolder(input: {
     [id, input.projectId, input.folderPath, input.name],
   )
   return result.rows[0]
+}
+
+/** Idempotent folder create used by migration / seed helpers. */
+export async function ensureFolder(input: {
+  projectId: string
+  folderPath: string
+  name: string
+}): Promise<ProjectFileRecord> {
+  const existing = await query<ProjectFileRecord>(
+    `SELECT ${FILE_FIELDS}
+       FROM project_files
+      WHERE project_id = $1 AND folder_path = $2 AND name = $3`,
+    [input.projectId, input.folderPath, input.name],
+  )
+  if (existing.rows[0]) return existing.rows[0]
+  return createFolder(input)
 }
 
 export async function createFile(input: {

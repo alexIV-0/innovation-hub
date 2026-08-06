@@ -1,11 +1,13 @@
+import { DeleteObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import { deleteDriveFile, GoogleDriveError } from "@/lib/google-drive"
 import {
-  deleteProjectMedia,
-  findProjectForUser,
-  findProjectMedia,
-} from "@/lib/repositories/projects"
+  deleteFileCascade,
+  findFileById,
+} from "@/lib/repositories/project-files"
+import { findProjectForUser } from "@/lib/repositories/projects"
+import { getS3Bucket } from "@/lib/s3-config"
+import { getS3Client, isS3Configured } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
 
@@ -23,20 +25,22 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
 
-  const media = await findProjectMedia(mediaId, project.id)
-  if (!media) {
+  const file = await findFileById(mediaId)
+  if (!file || file.projectId !== project.id || file.isFolder) {
     return NextResponse.json({ message: "Media not found." }, { status: 404 })
   }
 
-  try {
-    await deleteDriveFile(media.driveFileId)
-  } catch (error) {
-    console.error("[project-media] Drive delete failed", error)
-    if (!(error instanceof GoogleDriveError)) {
-      // Proceed with DB cleanup.
-    }
+  const { deletedS3Keys } = await deleteFileCascade(mediaId, project.id)
+
+  if (deletedS3Keys.length > 0 && isS3Configured()) {
+    const client = getS3Client()
+    const bucket = getS3Bucket()
+    await Promise.allSettled(
+      deletedS3Keys.map((key) =>
+        client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
+      ),
+    )
   }
 
-  await deleteProjectMedia(mediaId, project.id)
   return NextResponse.json({ ok: true })
 }

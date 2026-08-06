@@ -14,16 +14,6 @@ const signupRequestSchema = z.object({
   password: z.string().min(8).max(72),
 })
 
-function scheduleDriveProvision(userId: string) {
-  void import("@/lib/provision-drive")
-    .then(({ provisionUserDriveFolderBackground }) => {
-      provisionUserDriveFolderBackground(userId)
-    })
-    .catch((error) => {
-      console.error("[auth] drive provision unavailable", error)
-    })
-}
-
 export async function POST(request: Request) {
   try {
     const payload = await request.json().catch(() => null)
@@ -56,7 +46,6 @@ export async function POST(request: Request) {
         email,
         passwordHash,
       })
-      scheduleDriveProvision(user.id)
     } catch (error) {
       if (
         error &&

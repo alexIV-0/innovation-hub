@@ -6,11 +6,11 @@ import {
 } from "@/components/account/sections/dashboard-section"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getCurrentUser } from "@/lib/admin-auth"
-import { isGoogleDriveConfigured } from "@/lib/google-drive"
-import { listUserProjects } from "@/lib/project-drive"
-import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import { countUnreadForProjects } from "@/lib/repositories/project-chat"
-import { countMediaByUserId } from "@/lib/repositories/projects"
+import {
+  countMediaByUserId,
+  listProjectsByUserId,
+} from "@/lib/repositories/projects"
 
 export const dynamic = "force-dynamic"
 
@@ -20,13 +20,6 @@ export default async function AccountDashboardPage() {
     redirect("/login")
   }
 
-  // First visit without a Drive folder: kick provisioning off in the
-  // background instead of blocking the page on a Google Drive round-trip.
-  // Until it lands, listUserProjects falls back to the DB cache.
-  if (isGoogleDriveConfigured() && !user.driveFolderId) {
-    provisionUserDriveFolderBackground(user.id)
-  }
-
   return (
     <DashboardSection
       fullName={user.fullName}
@@ -34,31 +27,16 @@ export default async function AccountDashboardPage() {
       memberSince={user.createdAt.toISOString()}
       projectsArea={
         <Suspense fallback={<ProjectsAreaSkeleton />}>
-          <DashboardProjectsData
-            userId={user.id}
-            driveFolderId={user.driveFolderId}
-          />
+          <DashboardProjectsData userId={user.id} />
         </Suspense>
       }
     />
   )
 }
 
-/**
- * The Drive folder scan is the slowest part of this page, so it streams in
- * behind Suspense while the hero above renders immediately.
- */
-async function DashboardProjectsData({
-  userId,
-  driveFolderId,
-}: {
-  userId: string
-  driveFolderId: string | null
-}) {
-  // The list of projects comes from a live Drive folder scan (source of
-  // truth for what exists), not a plain DB query — see listUserProjects.
+async function DashboardProjectsData({ userId }: { userId: string }) {
   const [projects, mediaCount] = await Promise.all([
-    listUserProjects({ userId, userDriveFolderId: driveFolderId }),
+    listProjectsByUserId(userId),
     countMediaByUserId(userId),
   ])
   const unreadCounts = await countUnreadForProjects(projects.map((p) => p.id))
@@ -82,19 +60,12 @@ async function DashboardProjectsData({
 
 function ProjectsAreaSkeleton() {
   return (
-    <div className="space-y-10">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-32 rounded-2xl" />
-        ))}
-      </div>
-      <div className="space-y-5">
-        <Skeleton className="h-6 w-44" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-40 rounded-2xl" />
-          ))}
-        </div>
+    <div className="space-y-4">
+      <Skeleton className="h-8 w-48" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Skeleton className="h-28 rounded-xl" />
+        <Skeleton className="h-28 rounded-xl" />
+        <Skeleton className="h-28 rounded-xl" />
       </div>
     </div>
   )

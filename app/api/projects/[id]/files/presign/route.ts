@@ -105,7 +105,9 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   const key = buildS3ObjectKey(
-    `projects/${projectId}/${randomUUID()}-${safeBaseFileName(parsed.data.fileName)}`,
+    parsed.data.folderPath
+      ? `projects/${projectId}/${parsed.data.folderPath.replace(/^\/+|\/+$/g, "")}/${randomUUID()}-${safeBaseFileName(parsed.data.fileName)}`
+      : `projects/${projectId}/${randomUUID()}-${safeBaseFileName(parsed.data.fileName)}`,
   )
 
   const command = new PutObjectCommand({

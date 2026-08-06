@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { userCreateSchema } from "@/lib/admin-schemas"
 import { hashPassword } from "@/lib/auth"
-import { provisionUserDriveFolderBackground } from "@/lib/provision-drive"
 import {
   createUser,
   findUserByEmail,
@@ -49,8 +48,6 @@ export async function POST(request: NextRequest) {
       passwordHash,
       role: parsed.data.role,
     })
-
-    provisionUserDriveFolderBackground(user.id)
 
     // createUser doesn't take isActive (DB default = TRUE) — branch into a
     // follow-up UPDATE only if the caller explicitly created an inactive user.

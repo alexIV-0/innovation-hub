@@ -1,11 +1,7 @@
 import { notFound, redirect } from "next/navigation"
 import { ProjectDetailSection } from "@/components/account/sections/project-detail-section"
 import { getCurrentUser } from "@/lib/admin-auth"
-import { isGoogleDriveConfigured } from "@/lib/google-drive"
-import {
-  loadProjectDriveState,
-  type ProjectDriveState,
-} from "@/lib/project-drive"
+import { loadProjectStorageState } from "@/lib/project-storage"
 import {
   findProjectForUser,
   listProjectMedia,
@@ -16,6 +12,7 @@ import {
   listProjectChatMessages,
 } from "@/lib/repositories/project-chat"
 import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
+import { listAllProjectFiles } from "@/lib/repositories/project-files"
 
 export const dynamic = "force-dynamic"
 
@@ -35,49 +32,43 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
     notFound()
   }
 
-  // Pull fresh team replies in the background — blocking the page on a
-  // YouGile round-trip is not worth it when the chat panel already polls
-  // every ~6s and picks up whatever this sync inserts.
   void syncProjectChatFromYouGile(project)
 
-  // Files can land in the Drive folder outside of the site UI (automation),
-  // so the cabinet reads Drive directly. The local media table is only a
-  // fallback when Drive is unavailable.
-  const drivePromise: Promise<ProjectDriveState | null> =
-    isGoogleDriveConfigured() && project.driveFolderId
-      ? loadProjectDriveState(project.driveFolderId).catch((error) => {
-          console.error("[project-drive] SSR listing failed", error)
-          return null
-        })
-      : Promise.resolve(null)
+  const storagePromise = loadProjectStorageState(project.id).catch((error) => {
+    console.error("[project-storage] SSR listing failed", error)
+    return null
+  })
 
-  // Chat history and unread counts don't depend on the Drive listing, so
-  // they run in parallel with it instead of after it.
-  const [drive, chatMessages, unreadCounts] = await Promise.all([
-    drivePromise,
+  const [storage, chatMessages, unreadCounts] = await Promise.all([
+    storagePromise,
     listProjectChatMessages(project.id),
     countUnreadForProjects([project.id]),
   ])
 
-  // `folderState.json` is the SSOT for automation on/off (may have been
-  // toggled by the desktop app or another session). Re-sync the Postgres
-  // cache on every visit so list views elsewhere in the cabinet don't drift.
-  if (drive?.folderState && drive.folderState.enabled !== project.isActive) {
+  if (storage?.folderState && storage.folderState.enabled !== project.isActive) {
     const synced = await updateProject(project.id, user.id, {
-      isActive: drive.folderState.enabled,
+      isActive: storage.folderState.enabled,
     }).catch((error) => {
-      console.error("[project-drive] isActive cache hydration failed", error)
+      console.error("[project-storage] isActive cache hydration failed", error)
       return null
     })
     if (synced) project = synced
   }
 
-  const media = drive ? [] : await listProjectMedia(project.id)
+  const mediaRows = storage
+    ? (await listAllProjectFiles(project.id))
+        .filter((f) => !f.isFolder)
+        .map((f) => ({
+          id: f.id,
+          fileName: f.name,
+          mimeType: f.contentType,
+          sizeBytes: f.sizeBytes,
+          driveFileId: "",
+          createdAt: f.createdAt,
+        }))
+    : await listProjectMedia(project.id)
 
-  // Before automation has picked the project up (no options/options.json
-  // yet) the page only shows the chat — gate on Drive's live signal rather
-  // than any DB flag so it tracks the actual folder state.
-  const automationStarted = drive?.optionsFileExists ?? false
+  const automationStarted = storage?.optionsFileExists ?? false
 
   return (
     <ProjectDetailSection
@@ -90,15 +81,26 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
         createdAt: project.createdAt.toISOString(),
         updatedAt: project.updatedAt.toISOString(),
       }}
-      media={media.map((m) => ({
+      media={mediaRows.map((m) => ({
         id: m.id,
         fileName: m.fileName,
         mimeType: m.mimeType,
         sizeBytes: m.sizeBytes,
-        driveFileId: m.driveFileId,
-        createdAt: m.createdAt.toISOString(),
+        driveFileId: "driveFileId" in m ? m.driveFileId : "",
+        createdAt:
+          typeof m.createdAt === "string"
+            ? m.createdAt
+            : m.createdAt.toISOString(),
       }))}
-      drive={drive}
+      drive={
+        storage
+          ? {
+              files: storage.files,
+              folderState: storage.folderState,
+              options: storage.options,
+            }
+          : null
+      }
       automationStarted={automationStarted}
       unreadChatCount={unreadCounts[project.id] ?? 0}
       chatMessages={chatMessages.map((m) => ({

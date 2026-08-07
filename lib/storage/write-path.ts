@@ -234,12 +234,25 @@ export async function writeNotifyUpload(input: {
   fileName: string
   sizeBytes?: number
   contentType?: string
+  /** Unix seconds; preferred over R2 object metadata when provided. */
+  originMtime?: number | null
+  /** Content hash (e.g. sha256 hex); preferred over R2 metadata when provided. */
+  contentHash?: string | null
   eventId?: string
 }): Promise<ProjectFileRecord> {
   const head = await headObject(input.s3Key)
   if (!head) {
     throw new StorageWriteError("Object not found in storage.")
   }
+
+  const contentHash =
+    input.contentHash !== undefined && input.contentHash !== null
+      ? input.contentHash
+      : head.contentHash
+  const originMtime =
+    input.originMtime !== undefined && input.originMtime !== null
+      ? input.originMtime
+      : head.originMtime
 
   const existing = await withTransaction(async (client) => {
     const found = await client.query<ProjectFileRecord>(
@@ -257,7 +270,7 @@ export async function writeNotifyUpload(input: {
         op: "put",
         size: head.size,
         etag: head.etag,
-        contentHash: head.contentHash,
+        contentHash,
         eventId: input.eventId ?? null,
         payload: {
           fileId: existing.id,
@@ -268,8 +281,8 @@ export async function writeNotifyUpload(input: {
       })
       await touchFileRow(client, existing.id, seq, {
         etag: head.etag,
-        contentHash: head.contentHash,
-        originMtime: head.originMtime,
+        contentHash,
+        originMtime,
         sizeBytes: head.size,
       })
       const updated = await client.query<ProjectFileRecord>(
@@ -288,8 +301,8 @@ export async function writeNotifyUpload(input: {
     sizeBytes: input.sizeBytes ?? head.size,
     contentType: input.contentType ?? "application/octet-stream",
     etag: head.etag,
-    contentHash: head.contentHash,
-    originMtime: head.originMtime,
+    contentHash,
+    originMtime,
     eventId: input.eventId,
   })
 }

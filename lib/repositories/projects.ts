@@ -16,6 +16,7 @@ const PROJECT_FIELDS = `
   COALESCE(is_paused, FALSE) AS "isPaused",
   drive_folder_id AS "driveFolderId",
   COALESCE(is_active, TRUE) AS "isActive",
+  client_id AS "clientId",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   yougile_chat_id AS "yougileChatId"
@@ -72,6 +73,16 @@ export async function listProjectsByUserId(
       WHERE user_id = $1
       ORDER BY created_at DESC`,
     [userId],
+  )
+  return result.rows
+}
+
+/** All projects (admin / storage listing). */
+export async function listAllProjects(): Promise<ProjectRecord[]> {
+  const result = await query<ProjectRecord>(
+    `SELECT ${PROJECT_FIELDS}
+       FROM projects
+      ORDER BY created_at DESC`,
   )
   return result.rows
 }

@@ -2,6 +2,8 @@
 
 R2 is the source of truth for object bytes. Postgres (`project_files` + `storage_changes`) is a derived cache and change journal. The website and the processing app are clients of the same HTTP API.
 
+**Full request/response reference:** [STORAGE_API.md](./STORAGE_API.md).
+
 ## Auth
 
 - **Web UI:** session cookie (`inhub_session`), same as other account APIs.
@@ -24,11 +26,14 @@ Revoke: `DELETE /api/account/machine-tokens` with `{ "id": "…" }`.
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/projects` | Clients + projects catalog (machine-token friendly) |
+| `GET` | `/capabilities` | Feature flags (`rename`, `copy`, `multipart`, …) |
 | `GET` | `/tree?projectId=&prefix=` | Bootstrap tree from Postgres + current `cursor` |
 | `GET` | `/delta?projectId=&since=` | Changes after cursor: `{ changes, cursor, truncated }` |
 | `POST` | `/presign` | Signed PUT/GET URL (bytes go direct to R2) |
 | `POST` | `/notify` | After PUT: HEAD object, upsert cache, append journal |
 | `POST` | `/mkdir` | Create folder row + journal |
+| `POST` | `/rename` | Rename/move file or folder (no R2 key change) |
 | `DELETE` | `/object` | Delete file/folder (+ R2) + journal |
 | `POST` | `/reindex?projectId=` | Full LIST vs cache; synthetic changes |
 | `GET`/`PUT` | `/sidecars` | `folderState.json` / `options.json` |
@@ -64,7 +69,7 @@ Revoke: `DELETE /api/account/machine-tokens` with `{ "id": "…" }`.
 
 1. `POST /presign` `{ projectId, method: "PUT", folderPath, fileName, contentType }`
 2. HTTP PUT body to `url` (R2)
-3. `POST /notify` `{ projectId, s3Key, folderPath, fileName, sizeBytes, contentType }`
+3. `POST /notify` `{ projectId, s3Key, folderPath, fileName, sizeBytes, contentType, originMtime?, contentHash? }`
 
 ### Sync loop (app / web)
 
@@ -89,6 +94,7 @@ Apply:
 
 ```text
 db/migrations/2026-08-06-storage-sync-contract.sql
+db/migrations/2026-08-07-storage-clients.sql
 ```
 
 Google Drive is not used at runtime. Migration scripts under `scripts/migrate-drive-to-r2.mjs` remain for one-time historical copy only.

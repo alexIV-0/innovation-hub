@@ -27,10 +27,19 @@ export type ProjectRecord = {
   isPaused: boolean
   driveFolderId: string | null
   isActive: boolean
+  /** Optional client grouping (UI hierarchy; not part of R2 keys). */
+  clientId: string | null
   createdAt: Date
   updatedAt: Date
   /** YouGile group chat id, created lazily on the first chat message. */
   yougileChatId: string | null
+}
+
+export type ClientRecord = {
+  id: string
+  userId: string
+  displayName: string
+  createdAt: Date
 }
 
 export type ProjectFileRecord = {

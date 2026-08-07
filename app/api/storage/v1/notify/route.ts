@@ -20,6 +20,10 @@ const schema = z.object({
   fileName: z.string().min(1),
   sizeBytes: z.number().nonnegative().optional(),
   contentType: z.string().optional(),
+  /** Unix seconds — when the file was last modified on the source machine. */
+  originMtime: z.number().int().nonnegative().optional(),
+  /** e.g. sha256 hex; preferred over multipart-unreliable etag for freshness. */
+  contentHash: z.string().min(1).max(128).optional(),
   eventId: z.string().optional(),
 })
 
@@ -60,6 +64,8 @@ export async function POST(request: NextRequest) {
       fileName: safeBaseFileName(data.fileName),
       sizeBytes: data.sizeBytes,
       contentType: data.contentType,
+      originMtime: data.originMtime,
+      contentHash: data.contentHash,
       eventId: data.eventId,
     })
     return NextResponse.json({ file }, { status: 201 })

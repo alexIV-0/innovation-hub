@@ -26,19 +26,29 @@ function readSecretAccessKey(): string {
   )
 }
 
-function assertNotLegacyTimewebEndpoint(endpoint: string | undefined): void {
-  if (!endpoint) return
+function assertR2Endpoint(endpoint: string | undefined): asserts endpoint is string {
+  if (!endpoint) {
+    throw new Error(
+      "AWS_ENDPOINT_URL is required. Project storage must use Cloudflare R2 (https://<accountid>.r2.cloudflarestorage.com).",
+    )
+  }
   if (/twcstorage\.ru/i.test(endpoint)) {
     throw new Error(
       "AWS_ENDPOINT_URL still points at Timeweb (twcstorage.ru). Project storage must use Cloudflare R2 — set AWS_ENDPOINT_URL to https://<accountid>.r2.cloudflarestorage.com and matching S3_KEY_ID / S3_SECRET_KEY.",
     )
   }
+  if (!/r2\.cloudflarestorage\.com/i.test(endpoint)) {
+    throw new Error(
+      `AWS_ENDPOINT_URL must be a Cloudflare R2 endpoint, got: ${endpoint}`,
+    )
+  }
 }
 
-/** True when bucket + credentials are present (R2 / S3-compatible). */
+/** True when R2 bucket + credentials are present (Timeweb / non-R2 endpoints rejected). */
 export function isS3Configured(): boolean {
   const endpoint = process.env.AWS_ENDPOINT_URL?.trim()
-  if (endpoint && /twcstorage\.ru/i.test(endpoint)) return false
+  if (!endpoint || /twcstorage\.ru/i.test(endpoint)) return false
+  if (!/r2\.cloudflarestorage\.com/i.test(endpoint)) return false
   return Boolean(process.env.AWS_S3_BUCKET?.trim() && readAccessKeyId() && readSecretAccessKey())
 }
 
@@ -54,10 +64,10 @@ export function getS3Client(): S3Client {
     )
   }
 
-  // Cloudflare R2 uses region "auto"; set AWS_REGION explicitly for AWS S3.
+  // Cloudflare R2 uses region "auto".
   const region = process.env.AWS_REGION?.trim() || "auto"
   const endpoint = process.env.AWS_ENDPOINT_URL?.trim()
-  assertNotLegacyTimewebEndpoint(endpoint)
+  assertR2Endpoint(endpoint)
   const forcePathStyle = envFlag(
     "AWS_S3_FORCE_PATH_STYLE",
     Boolean(endpoint),

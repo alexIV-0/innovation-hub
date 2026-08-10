@@ -3,7 +3,11 @@ import { requireUserApi } from "@/lib/admin-auth"
 import { createProjectSchema } from "@/lib/project-schemas"
 import { writeProjectMeta } from "@/lib/project-storage"
 import { countUnreadForProjects } from "@/lib/repositories/project-chat"
-import { createProject, listProjectsByUserId } from "@/lib/repositories/projects"
+import {
+  createProject,
+  deleteProject,
+  listProjectsByUserId,
+} from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
@@ -50,7 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         message:
-          "Object storage is not configured. Set AWS_S3_BUCKET and S3 credentials.",
+          "Cloudflare R2 is not configured. Set AWS_ENDPOINT_URL to your r2.cloudflarestorage.com endpoint plus AWS_S3_BUCKET / S3_KEY_ID / S3_SECRET_KEY.",
       },
       { status: 503 },
     )
@@ -72,13 +76,16 @@ export async function POST(request: NextRequest) {
       createdAt: project.createdAt.toISOString(),
     })
   } catch (error) {
-    console.error("[projects] failed to write project-meta.json", error)
+    console.error("[projects] failed to write project-meta.json to R2", error)
+    await deleteProject(project.id, auth.userId).catch((cleanupError) => {
+      console.error("[projects] rollback after R2 failure failed", cleanupError)
+    })
     return NextResponse.json(
       {
         message:
           error instanceof Error
             ? error.message
-            : "Storage is temporarily unavailable.",
+            : "Cloudflare R2 is temporarily unavailable.",
       },
       { status: 503 },
     )

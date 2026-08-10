@@ -14,8 +14,17 @@ const nextConfig = {
       { pathname: "/**", search: "" },
     ],
     // Thumbnails are referenced via same-origin /api/media/... paths, but
-    // allow the configured storage host too in case absolute URLs are ever stored.
+    // allow the configured CDN / R2 host too in case absolute URLs are ever stored.
     remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "cdn.ffworks.pro",
+      },
+      {
+        protocol: "https",
+        hostname: "*.r2.cloudflarestorage.com",
+      },
+      // Legacy Timeweb URLs may still exist in older DB rows.
       {
         protocol: "https",
         hostname: "s3.twcstorage.ru",

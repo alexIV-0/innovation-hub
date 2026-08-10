@@ -66,13 +66,21 @@ if (!accessKeyId || !secretAccessKey) {
   process.exit(1)
 }
 
-const region = process.env.AWS_REGION ?? "us-east-1"
+const region = process.env.AWS_REGION?.trim() || "auto"
 const endpoint = process.env.AWS_ENDPOINT_URL?.trim()
+if (endpoint && /twcstorage\.ru/i.test(endpoint)) {
+  console.error(
+    "AWS_ENDPOINT_URL points at Timeweb. Use the Cloudflare R2 endpoint instead.",
+  )
+  process.exit(1)
+}
 const client = new S3Client({
   region,
   endpoint: endpoint || undefined,
   credentials: { accessKeyId, secretAccessKey },
   forcePathStyle: envBool("AWS_S3_FORCE_PATH_STYLE", Boolean(endpoint)),
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 })
 
 const origins = parseOrigins()

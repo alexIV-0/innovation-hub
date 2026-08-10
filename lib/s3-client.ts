@@ -26,8 +26,19 @@ function readSecretAccessKey(): string {
   )
 }
 
+function assertNotLegacyTimewebEndpoint(endpoint: string | undefined): void {
+  if (!endpoint) return
+  if (/twcstorage\.ru/i.test(endpoint)) {
+    throw new Error(
+      "AWS_ENDPOINT_URL still points at Timeweb (twcstorage.ru). Project storage must use Cloudflare R2 — set AWS_ENDPOINT_URL to https://<accountid>.r2.cloudflarestorage.com and matching S3_KEY_ID / S3_SECRET_KEY.",
+    )
+  }
+}
+
 /** True when bucket + credentials are present (R2 / S3-compatible). */
 export function isS3Configured(): boolean {
+  const endpoint = process.env.AWS_ENDPOINT_URL?.trim()
+  if (endpoint && /twcstorage\.ru/i.test(endpoint)) return false
   return Boolean(process.env.AWS_S3_BUCKET?.trim() && readAccessKeyId() && readSecretAccessKey())
 }
 
@@ -43,8 +54,10 @@ export function getS3Client(): S3Client {
     )
   }
 
-  const region = process.env.AWS_REGION ?? "us-east-1"
+  // Cloudflare R2 uses region "auto"; set AWS_REGION explicitly for AWS S3.
+  const region = process.env.AWS_REGION?.trim() || "auto"
   const endpoint = process.env.AWS_ENDPOINT_URL?.trim()
+  assertNotLegacyTimewebEndpoint(endpoint)
   const forcePathStyle = envFlag(
     "AWS_S3_FORCE_PATH_STYLE",
     Boolean(endpoint),

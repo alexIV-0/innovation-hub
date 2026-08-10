@@ -1,6 +1,7 @@
 "use client"
 
 import { LogOut } from "lucide-react"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 
@@ -18,6 +19,7 @@ function avatarLetter(value: string) {
 }
 
 export function AdminSidebarUser({ email, fullName, onSignOut }: Props) {
+  const t = useAdminI18n()
   const display = fullName.trim() || email
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border/70 bg-white/[0.03] p-2.5">
@@ -35,10 +37,10 @@ export function AdminSidebarUser({ email, fullName, onSignOut }: Props) {
         size="icon"
         className="h-8 w-8 text-muted-foreground hover:text-foreground"
         onClick={onSignOut}
-        title="Sign out"
+        title={t.signOut}
       >
         <LogOut className="h-4 w-4" />
-        <span className="sr-only">Sign out</span>
+        <span className="sr-only">{t.signOut}</span>
       </Button>
     </div>
   )

@@ -7,11 +7,12 @@ import { isItemActive, type AdminNavItem } from "./nav-config"
 
 type Props = {
   item: AdminNavItem
+  label: string
   badge?: number
   onNavigate?: () => void
 }
 
-export function AdminSidebarLink({ item, badge, onNavigate }: Props) {
+export function AdminSidebarLink({ item, label, badge, onNavigate }: Props) {
   const pathname = usePathname()
   const active = isItemActive(item, pathname ?? "")
   const Icon = item.icon
@@ -44,7 +45,7 @@ export function AdminSidebarLink({ item, badge, onNavigate }: Props) {
       >
         <Icon className="h-4 w-4" />
       </span>
-      <span className="flex-1 truncate">{item.label}</span>
+      <span className="flex-1 truncate">{label}</span>
       {typeof badge === "number" ? (
         <span
           className={cn(

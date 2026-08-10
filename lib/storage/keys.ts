@@ -1,35 +1,39 @@
-import { buildS3ObjectKey } from "@/lib/s3-config"
+import { buildProjectObjectKey, projectObjectPrefix } from "@/lib/s3-config"
 
 const PROJECT_KEY_RE =
-  /^(?:[^/]+\/)?projects\/([^/]+)\/(?:options\/(.+)|([^/]+)\/(.+)|([^/]+))$/
+  /^projects\/([^/]+)\/([^/]+)\/(?:options\/(.+)|([^/]+)\/(.+)|([^/]+))$/
 
-export function projectPrefix(projectId: string): string {
-  return buildS3ObjectKey(`projects/${projectId}/`)
+export function projectPrefix(userId: string, projectId: string): string {
+  return projectObjectPrefix(userId, projectId)
 }
 
 export function parseProjectIdFromKey(key: string): string | null {
-  const match = key.match(/\/projects\/([^/]+)\//)
-  return match?.[1] ?? null
+  const segments = key.split("/")
+  return segments.length >= 4 && segments[0] === "projects"
+    ? (segments[2] ?? null)
+    : null
 }
 
 export function logicalKeyForFile(input: {
+  userId: string
   projectId: string
   folderPath: string
   name: string
 }): string {
   const folder = input.folderPath.replace(/^\/+|\/+$/g, "")
   const relative = folder
-    ? `projects/${input.projectId}/${folder}/${input.name}`
-    : `projects/${input.projectId}/${input.name}`
-  return buildS3ObjectKey(relative)
+    ? `${folder}/${input.name}`
+    : input.name
+  return buildProjectObjectKey(input.userId, input.projectId, relative)
 }
 
 export function folderPathFromKey(
+  userId: string,
   projectId: string,
   key: string,
   fileName: string,
 ): string {
-  const prefix = projectPrefix(projectId)
+  const prefix = projectPrefix(userId, projectId)
   if (!key.startsWith(prefix)) return ""
   const rest = key.slice(prefix.length)
   if (!rest || rest === fileName) return ""
@@ -41,8 +45,12 @@ export function folderPathFromKey(
   return withoutName
 }
 
-export function isOptionsKey(key: string, projectId: string): boolean {
-  return key.includes(`/projects/${projectId}/options/`)
+export function isOptionsKey(
+  key: string,
+  userId: string,
+  projectId: string,
+): boolean {
+  return key.startsWith(`${projectPrefix(userId, projectId)}options/`)
 }
 
 export { PROJECT_KEY_RE }

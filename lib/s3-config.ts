@@ -1,45 +1,64 @@
-const DEFAULT_PREFIX = "innohub"
-
-function normalizePrefix(raw: string | undefined): string {
-  const trimmed = (raw ?? DEFAULT_PREFIX).replace(/^\/+|\/+$/g, "")
-  return trimmed || DEFAULT_PREFIX
-}
-
 export function getS3Bucket(): string {
   const bucket = process.env.AWS_S3_BUCKET
   if (!bucket) throw new Error("AWS_S3_BUCKET is not set")
   return bucket
 }
 
-/** Logical "folder" inside the bucket (S3 key prefix, no leading/trailing slashes). */
-export function getS3Prefix(): string {
-  return normalizePrefix(process.env.AWS_S3_PREFIX)
+function safeSegment(value: string, label: string): string {
+  const segment = value.trim()
+  if (!segment || segment.includes("/") || segment.includes("\\") || segment === "." || segment === "..") {
+    throw new Error(`${label} must be a single non-empty key segment.`)
+  }
+  return segment
+}
+
+/** Stable per-user project root: `projects/{userId}/{projectId}/`. */
+export function projectObjectPrefix(userId: string, projectId: string): string {
+  return `projects/${safeSegment(userId, "User ID")}/${safeSegment(projectId, "Project ID")}/`
+}
+
+export function buildProjectObjectKey(
+  userId: string,
+  projectId: string,
+  relativePath: string,
+): string {
+  const relative = relativePath.replace(/^\/+/, "").replace(/\.\./g, "_")
+  return `${projectObjectPrefix(userId, projectId)}${relative}`
 }
 
 /**
- * Prefixes that may appear in /api/media keys. Always includes the configured
- * AWS_S3_PREFIX plus legacy names used before the bucket rename, so a wrong
- * env value (e.g. prefix accidentally set to the bucket name) does not 404
- * every historical thumbnail.
- */
-export function getAllowedMediaPrefixes(): string[] {
-  const configured = getS3Prefix()
-  const legacy = ["innohub", "ffworks"]
-  return Array.from(new Set([configured, ...legacy]))
-}
-
-export function isAllowedMediaObjectKey(key: string): boolean {
-  return getAllowedMediaPrefixes().some((prefix) => key.startsWith(`${prefix}/`))
-}
-
-/**
- * Builds a full object key as `{prefix}/{relativePath}`.
- * `relativePath` should be a single segment or safe path under the prefix.
+ * Builds a non-project object key at the bucket root. Project objects must use
+ * `buildProjectObjectKey`, so they are always isolated by user and project.
  */
 export function buildS3ObjectKey(relativePath: string): string {
-  const rel = relativePath.replace(/^\/+/, "").replace(/\.\./g, "_")
-  const prefix = getS3Prefix()
-  return `${prefix}/${rel}`
+  return relativePath.replace(/^\/+/, "").replace(/\.\./g, "_")
+}
+
+/**
+ * Supports the new `projects/{userId}/{projectId}/…` layout plus legacy app-owned keys
+ * while R2 migration is in progress. Access to project keys is authorized
+ * separately by the media route.
+ */
+export function isAllowedMediaObjectKey(key: string): boolean {
+  const segments = key.split("/")
+  if (
+    segments.length >= 4 &&
+    segments[0] === "projects" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      segments[1] ?? "",
+    ) &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      segments[2] ?? "",
+    )
+  ) {
+    return true
+  }
+  return (
+    key.startsWith("admin/") ||
+    key.startsWith("feature-suggestions/") ||
+    key.startsWith("innohub/") ||
+    key.startsWith("ffworks/")
+  )
 }
 
 function joinUrlBase(base: string, key: string): string {
@@ -111,10 +130,6 @@ export function normalizeMediaDisplayUrl(rawUrl: string): string {
   const value = rawUrl.trim()
   if (!value) return value
   if (value.startsWith("/api/media/")) {
-    // Mistaken uploads when AWS_S3_PREFIX was set to the bucket name.
-    if (value.startsWith("/api/media/ffworks/")) {
-      return value.replace("/api/media/ffworks/", "/api/media/innohub/")
-    }
     return value
   }
 

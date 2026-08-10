@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner"
 import { AdminConfirmDialog } from "@/components/admin/admin-confirm-dialog"
 import { AdminContentDialog } from "@/components/admin/admin-content-dialog"
+import { tf, useAdminI18n } from "@/components/admin/admin-dict"
 import {
   AdminUserDialog,
   type UserDraft,
@@ -96,6 +97,7 @@ type ProviderProps = {
 }
 
 export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
+  const t = useAdminI18n()
   const [videos, setVideos] = useState<AdminVideo[]>([])
   const [ideas, setIdeas] = useState<AdminIdea[]>([])
   const [users, setUsers] = useState<AdminUser[]>([])
@@ -128,11 +130,11 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
       setIdeas(iData)
       setUsers(uData)
     } catch {
-      toast.error("Could not load admin data. Please refresh.")
+      toast.error(t.loadAdminError)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void refresh()
@@ -170,7 +172,7 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
           }),
         })
         if (!createRes.ok) {
-          toast.error("Could not switch type. Original is unchanged.")
+          toast.error(t.switchTypeError)
           return false
         }
 
@@ -178,15 +180,13 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
           method: "DELETE",
         })
         if (!deleteRes.ok) {
-          toast.error(
-            "New record created, but couldn't remove the old one. Delete it manually.",
-          )
+          toast.error(t.convertPartialError)
           await refresh()
           return true
         }
 
         toast.success(
-          `Converted to ${draft.kind === "video" ? "video" : "idea"}.`,
+          draft.kind === "video" ? t.convertedToVideo : t.convertedToIdea,
         )
         await refresh()
         return true
@@ -207,21 +207,27 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
       if (!response.ok) {
         toast.error(
           isEdit
-            ? "Could not save changes."
-            : `Could not add ${draft.kind}.`,
+            ? t.saveError
+            : tf(t.addError, {
+                kind: draft.kind === "video" ? t.kindVideo : t.kindIdea,
+              }),
         )
         return false
       }
 
       toast.success(
         isEdit
-          ? `${draft.kind === "video" ? "Video" : "Idea"} updated.`
-          : `${draft.kind === "video" ? "Video" : "Idea"} added.`,
+          ? draft.kind === "video"
+            ? t.videoUpdated
+            : t.ideaUpdated
+          : draft.kind === "video"
+            ? t.videoAdded
+            : t.ideaAdded,
       )
       await refresh()
       return true
     },
-    [refresh],
+    [refresh, t],
   )
 
   const patchVideo = useCallback(
@@ -232,13 +238,13 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
-        toast.error("Could not update the video.")
+        toast.error(t.videoUpdateError)
         return false
       }
       await refresh()
       return true
     },
-    [refresh],
+    [refresh, t],
   )
 
   const patchIdea = useCallback(
@@ -249,13 +255,13 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
-        toast.error("Could not update the idea.")
+        toast.error(t.ideaUpdateError)
         return false
       }
       await refresh()
       return true
     },
-    [refresh],
+    [refresh, t],
   )
 
   const reorder = useCallback(
@@ -266,12 +272,12 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         body: JSON.stringify({ id, direction }),
       })
       if (!response.ok) {
-        toast.error("Could not change the order.")
+        toast.error(t.reorderError)
         return
       }
       await refresh()
     },
-    [refresh],
+    [refresh, t],
   )
 
   const deleteEntity = useCallback(
@@ -280,13 +286,13 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         method: "DELETE",
       })
       if (!response.ok) {
-        toast.error("Could not delete.")
+        toast.error(t.deleteError)
         return
       }
-      toast.success(type === "videos" ? "Video deleted." : "Idea deleted.")
+      toast.success(type === "videos" ? t.videoDeleted : t.ideaDeleted)
       await refresh()
     },
-    [refresh],
+    [refresh, t],
   )
 
   const submitUser = useCallback(
@@ -302,7 +308,7 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
       if (draft.password.length > 0) {
         payload.password = draft.password
       } else if (!isEdit) {
-        toast.error("Password is required.")
+        toast.error(t.passwordRequired)
         return false
       }
 
@@ -317,8 +323,8 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
 
       if (!response.ok) {
         let message = isEdit
-          ? "Could not save the user."
-          : "Could not create the user."
+          ? t.userSaveError
+          : t.userCreateError
         try {
           const data = await response.json()
           if (data?.message) message = data.message
@@ -327,11 +333,11 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         return false
       }
 
-      toast.success(isEdit ? "User updated." : "User created.")
+      toast.success(isEdit ? t.userUpdated : t.userCreated)
       await refresh()
       return true
     },
-    [refresh],
+    [refresh, t],
   )
 
   const patchUser = useCallback(
@@ -342,12 +348,12 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
-        toast.error("Could not update the user.")
+        toast.error(t.userUpdateError)
         return
       }
       await refresh()
     },
-    [refresh],
+    [refresh, t],
   )
 
   const deleteUser = useCallback(
@@ -356,13 +362,13 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
         method: "DELETE",
       })
       if (!response.ok) {
-        toast.error("Could not delete the user.")
+        toast.error(t.userDeleteError)
         return
       }
-      toast.success("User deleted.")
+      toast.success(t.userDeleted)
       await refresh()
     },
-    [refresh],
+    [refresh, t],
   )
 
   const askConfirm = useCallback((state: Omit<ConfirmState, "open">) => {
@@ -401,25 +407,27 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
       patchUser,
       confirmDeleteVideo: (video) =>
         askConfirm({
-          title: "Delete this video?",
-          description: `“${video.title}” will be removed permanently.`,
-          confirmLabel: "Delete video",
+          title: t.deleteVideoTitle,
+          description: tf(t.deleteVideoDesc, { title: video.title }),
+          confirmLabel: t.deleteVideoConfirm,
           destructive: true,
           action: () => deleteEntity("videos", video.id),
         }),
       confirmDeleteIdea: (idea) =>
         askConfirm({
-          title: "Delete this idea?",
-          description: `“${idea.title}” will be removed permanently.`,
-          confirmLabel: "Delete idea",
+          title: t.deleteIdeaTitle,
+          description: tf(t.deleteIdeaDesc, { title: idea.title }),
+          confirmLabel: t.deleteIdeaConfirm,
           destructive: true,
           action: () => deleteEntity("ideas", idea.id),
         }),
       confirmDeleteUser: (user) =>
         askConfirm({
-          title: "Delete this account?",
-          description: `${user.fullName || user.email} will lose access immediately.`,
-          confirmLabel: "Delete account",
+          title: t.deleteUserTitle,
+          description: tf(t.deleteUserDesc, {
+            name: user.fullName || user.email,
+          }),
+          confirmLabel: t.deleteUserConfirm,
           destructive: true,
           action: () => deleteUser(user.id),
         }),
@@ -439,6 +447,7 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
       askConfirm,
       deleteEntity,
       deleteUser,
+      t,
     ],
   )
 

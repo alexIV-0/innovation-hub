@@ -10,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -28,12 +29,13 @@ export function AdminConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   destructive = false,
   onConfirm,
   onOpenChange,
 }: ConfirmDialogProps) {
+  const t = useAdminI18n()
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -44,7 +46,7 @@ export function AdminConfirmDialog({
           ) : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel>{cancelLabel ?? t.cancel}</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => void onConfirm()}
             className={cn(
@@ -53,7 +55,7 @@ export function AdminConfirmDialog({
                 : undefined,
             )}
           >
-            {confirmLabel}
+            {confirmLabel ?? t.confirm}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

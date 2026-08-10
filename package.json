@@ -19,6 +19,7 @@
     "s3:ensure-prefix": "node scripts/s3-ensure-prefix.mjs",
     "s3:set-cors": "node scripts/s3-set-cors.mjs",
     "s3:test-upload": "node scripts/s3-test-presigned-upload.mjs",
+    "storage:migrate-to-r2": "node scripts/migrate-object-storage-to-r2.mjs",
     "yougile:list-users": "node scripts/yougile-list-users.mjs",
     "yougile:setup-webhook": "node scripts/yougile-setup-webhook.mjs",
     "deploy": "git pull && npm ci && npm run db:migrate && npm run build && pm2 reload all"

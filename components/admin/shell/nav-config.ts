@@ -2,43 +2,45 @@ import {
   Activity,
   LayoutDashboard,
   LayoutGrid,
+  Monitor,
   Users,
   type LucideIcon,
 } from "lucide-react"
+import type { DictKey } from "@/components/account/i18n"
 
 export type AdminNavItem = {
-  label: string
+  labelKey: DictKey
   href: string
   icon: LucideIcon
-  description: string
   exact?: boolean
 }
 
 export const adminNavItems: AdminNavItem[] = [
   {
-    label: "Overview",
+    labelKey: "adminOverview",
     href: "/admin",
     icon: LayoutDashboard,
-    description: "Pulse of your studio",
     exact: true,
   },
   {
-    label: "Content",
+    labelKey: "adminContent",
     href: "/admin/content",
     icon: LayoutGrid,
-    description: "Videos & ideas in one place",
   },
   {
-    label: "People",
+    labelKey: "adminPeople",
     href: "/admin/users",
     icon: Users,
-    description: "Team & accounts",
   },
   {
-    label: "Visitors",
+    labelKey: "adminVisitors",
     href: "/admin/visitors",
     icon: Activity,
-    description: "Live page-view tracker",
+  },
+  {
+    labelKey: "adminRemoteAccess",
+    href: "/admin/remote-access",
+    icon: Monitor,
   },
 ]
 

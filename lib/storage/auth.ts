@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { findUserById } from "@/lib/repositories/users"
+import {
+  findActiveRemoteComputerByTokenHash,
+} from "@/lib/repositories/remote-computers"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
 import { query } from "@/lib/db"
-import { findProjectForUser, findOwnedProject } from "@/lib/repositories/projects"
+import {
+  findOwnedProject,
+  findProjectById,
+  findProjectForUser,
+} from "@/lib/repositories/projects"
 import { hashMachineToken } from "@/lib/storage/write-path"
 import type { UserRole } from "@/lib/domain-types"
 
@@ -12,15 +19,43 @@ export type StorageApiAuth = {
   email: string
   role: UserRole
   machineTokenId: string | null
+  computerId: string | null
   scopedProjectId: string | null
+}
+
+export type StorageProjectAccess = {
+  projectId: string
+  ownerId: string
+}
+
+export type RemoteComputerApiAuth = {
+  computerId: string
+  name: string
+  userId: string
+  email: string
 }
 
 function unauthorized(message = "Unauthorized.") {
   return NextResponse.json({ message }, { status: 401 })
 }
 
-function forbidden(message = "Forbidden.") {
-  return NextResponse.json({ message }, { status: 403 })
+async function authFromRemoteComputerToken(
+  token: string,
+): Promise<(StorageApiAuth & { computerName: string }) | null> {
+  if (!token.startsWith("rc_")) return null
+  const tokenHash = hashMachineToken(token)
+  const row = await findActiveRemoteComputerByTokenHash(tokenHash)
+  if (!row || !row.isActive) return null
+
+  return {
+    userId: row.createdBy,
+    email: row.email,
+    role: "ADMIN",
+    machineTokenId: null,
+    computerId: row.id,
+    scopedProjectId: null,
+    computerName: row.name,
+  }
 }
 
 async function authFromMachineToken(
@@ -59,6 +94,7 @@ async function authFromMachineToken(
     email: row.email,
     role: row.role,
     machineTokenId: row.id,
+    computerId: null,
     scopedProjectId: row.projectId,
   }
 }
@@ -77,17 +113,23 @@ async function authFromSession(
     email: user.email,
     role: user.role,
     machineTokenId: null,
+    computerId: null,
     scopedProjectId: null,
   }
 }
 
-/** Session cookie or `Authorization: Bearer mch_…` machine token. */
+/** Session cookie, `Authorization: Bearer mch_…`, or `Bearer rc_…`. */
 export async function requireStorageApi(
   request: NextRequest,
 ): Promise<StorageApiAuth | NextResponse> {
   const authHeader = request.headers.get("authorization")
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7).trim()
+    if (token.startsWith("rc_")) {
+      const computer = await authFromRemoteComputerToken(token)
+      if (!computer) return unauthorized("Invalid computer token.")
+      return computer
+    }
     const machine = await authFromMachineToken(token)
     if (!machine) return unauthorized("Invalid machine token.")
     return machine
@@ -98,10 +140,31 @@ export async function requireStorageApi(
   return session
 }
 
+/** Only `Authorization: Bearer rc_…` remote computer tokens. */
+export async function requireRemoteComputerApi(
+  request: NextRequest,
+): Promise<RemoteComputerApiAuth | NextResponse> {
+  const authHeader = request.headers.get("authorization")
+  if (!authHeader?.startsWith("Bearer ")) {
+    return unauthorized("Computer token required.")
+  }
+  const token = authHeader.slice(7).trim()
+  const computer = await authFromRemoteComputerToken(token)
+  if (!computer || !computer.computerId) {
+    return unauthorized("Invalid computer token.")
+  }
+  return {
+    computerId: computer.computerId,
+    name: computer.computerName,
+    userId: computer.userId,
+    email: computer.email,
+  }
+}
+
 export async function requireProjectAccess(
   auth: StorageApiAuth,
   projectId: string,
-): Promise<NextResponse | { projectId: string }> {
+): Promise<NextResponse | StorageProjectAccess> {
   if (
     auth.scopedProjectId != null &&
     auth.scopedProjectId !== projectId
@@ -111,20 +174,20 @@ export async function requireProjectAccess(
       { status: 403 },
     )
   }
-  if (auth.role === "ADMIN") {
-    return { projectId }
-  }
-  const project = await findProjectForUser(projectId, auth.userId)
+  const project =
+    auth.role === "ADMIN"
+      ? await findProjectById(projectId)
+      : await findProjectForUser(projectId, auth.userId)
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
-  return { projectId: project.id }
+  return { projectId: project.id, ownerId: project.ownerId }
 }
 
 export async function requireOwnedProjectAccess(
   auth: StorageApiAuth,
   projectId: string,
-): Promise<NextResponse | { projectId: string }> {
+): Promise<NextResponse | StorageProjectAccess> {
   if (
     auth.scopedProjectId != null &&
     auth.scopedProjectId !== projectId
@@ -134,14 +197,14 @@ export async function requireOwnedProjectAccess(
       { status: 403 },
     )
   }
-  if (auth.role === "ADMIN") {
-    return { projectId }
-  }
-  const project = await findOwnedProject(projectId, auth.userId)
+  const project =
+    auth.role === "ADMIN"
+      ? await findProjectById(projectId)
+      : await findOwnedProject(projectId, auth.userId)
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
-  return { projectId: project.id }
+  return { projectId: project.id, ownerId: project.ownerId }
 }
 
 export async function createMachineToken(input: {

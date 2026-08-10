@@ -43,6 +43,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const folderState = await setProjectAutomationEnabled({
+      userId: project.ownerId,
       projectId: project.id,
       enabled: parsed.data.enabled,
       updatedBy: siteUpdatedBy(auth.email),
@@ -50,7 +51,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     await journalStorageEvent({
       projectId: project.id,
-      key: projectFolderStateKey(project.id),
+      key: projectFolderStateKey(project.ownerId, project.id),
       op: "put",
       payload: { name: "folderState.json", folderPath: "options" },
     })

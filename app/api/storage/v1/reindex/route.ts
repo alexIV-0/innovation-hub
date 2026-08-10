@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   if (access instanceof NextResponse) return access
 
   try {
-    const stats = await reindexProject(access.projectId)
+    const stats = await reindexProject(access.ownerId, access.projectId)
     return NextResponse.json({ ok: true, ...stats })
   } catch (error) {
     if (error instanceof StorageWriteError) {

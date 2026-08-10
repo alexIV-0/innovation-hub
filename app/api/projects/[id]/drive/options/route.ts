@@ -45,12 +45,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const options = await updateProjectExposedOptions({
+      userId: project.ownerId,
       projectId: project.id,
       changes: parsed.data.changes,
     })
     await journalStorageEvent({
       projectId: project.id,
-      key: projectOptionsKey(project.id),
+      key: projectOptionsKey(project.ownerId, project.id),
       op: "put",
       payload: { name: "options.json", folderPath: "options" },
     })

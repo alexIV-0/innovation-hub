@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { LayoutGrid } from "lucide-react"
+import { useI18n } from "@/components/account/i18n"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { EmptyState } from "@/components/admin/shared/empty-state"
@@ -25,6 +27,8 @@ function isPublished(item: ContentItem) {
 
 export function ContentContent() {
   const { videos, ideas, loading } = useAdminData()
+  const { t: page } = useI18n()
+  const t = useAdminI18n()
   const searchParams = useSearchParams()
   const initialKind = parseKindParam(searchParams?.get("type"))
 
@@ -111,9 +115,9 @@ export function ContentContent() {
   return (
     <div className="space-y-7">
       <AdminPageHeader
-        eyebrow="Library"
-        title="Content"
-        description="Videos and ideas in one curated stream. Filter by type, status or category."
+        eyebrow={page.adminContentEyebrow}
+        title={page.adminContentTitle}
+        description={page.adminContentDesc}
         actions={<ContentNewButton />}
       />
 
@@ -122,25 +126,25 @@ export function ContentContent() {
           <SearchInput
             value={query}
             onChange={setQuery}
-            placeholder="Search across videos and ideas…"
+            placeholder={t.searchContent}
           />
           <div className="flex flex-wrap items-center gap-2">
             <ContentFilterPills<ContentKindFilter>
               value={kind}
               onChange={setKind}
               items={[
-                { id: "all", label: "All", count: kindCounts.all },
-                { id: "videos", label: "Videos", count: kindCounts.videos },
-                { id: "ideas", label: "Ideas", count: kindCounts.ideas },
+                { id: "all", label: t.all, count: kindCounts.all },
+                { id: "videos", label: t.videos, count: kindCounts.videos },
+                { id: "ideas", label: t.ideas, count: kindCounts.ideas },
               ]}
             />
             <ContentFilterPills<ContentStatusFilter>
               value={status}
               onChange={setStatus}
               items={[
-                { id: "all", label: "All", count: statusCounts.all },
-                { id: "live", label: "Live", count: statusCounts.live },
-                { id: "drafts", label: "Drafts", count: statusCounts.drafts },
+                { id: "all", label: t.all, count: statusCounts.all },
+                { id: "live", label: t.live, count: statusCounts.live },
+                { id: "drafts", label: t.drafts, count: statusCounts.drafts },
               ]}
             />
           </div>
@@ -159,11 +163,9 @@ export function ContentContent() {
       ) : filteredItems.length === 0 ? (
         <EmptyState
           icon={<LayoutGrid className="h-5 w-5" />}
-          title={allItems.length === 0 ? "Nothing here yet" : "Nothing matches"}
+          title={allItems.length === 0 ? t.nothingHereYet : t.nothingMatches}
           description={
-            allItems.length === 0
-              ? "Add your first video or idea to fill the library."
-              : "Try a different search or relax the filters."
+            allItems.length === 0 ? t.contentEmptyDesc : t.contentNoMatchDesc
           }
         />
       ) : (

@@ -1,7 +1,7 @@
 # Storage API reference
 
 Base path: `/api/storage/v1`  
-Auth tokens: `/api/account/machine-tokens`
+Auth tokens: `/api/account/machine-tokens` (user) · admin computers via [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md)
 
 Architecture and sync rules: [STORAGE_SYNC_CONTRACT.md](./STORAGE_SYNC_CONTRACT.md).
 
@@ -14,7 +14,8 @@ All `/api/storage/v1/*` endpoints accept either:
 | Client | How |
 |---|---|
 | Web UI | Session cookie `inhub_session` |
-| Processing app | `Authorization: Bearer mch_…` |
+| Processing app (per-user) | `Authorization: Bearer mch_…` |
+| Remote computer (fleet) | `Authorization: Bearer rc_…` |
 
 Errors:
 
@@ -24,7 +25,9 @@ Errors:
 | `403` | Inactive account, or machine token scoped to another project |
 | `404` | Project not found / no access |
 
-Admin role can access any project. Machine tokens with `projectId` set may only touch that project.
+Admin role and remote computer tokens (`rc_…`) can access any project. Machine tokens with `projectId` set may only touch that project.
+
+Remote computer presence / heartbeat: [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md).
 
 ---
 
@@ -39,7 +42,7 @@ Admin role can access any project. Machine tokens with `projectId` set may only 
   "folderPath": "IN",
   "name": "clip.mov",
   "isFolder": false,
-  "s3Key": "innohub/projects/{projectId}/IN/{uuid}-clip.mov",
+  "s3Key": "projects/{userId}/{projectId}/IN/{uuid}-clip.mov",
   "sizeBytes": 1234567,
   "contentType": "video/quicktime",
   "createdAt": "2026-08-06T10:00:00.000Z"
@@ -59,7 +62,7 @@ Extends file metadata from the cache:
   "folderPath": "IN",
   "name": "clip.mov",
   "isFolder": false,
-  "s3Key": "innohub/projects/{projectId}/IN/{uuid}-clip.mov",
+  "s3Key": "projects/{userId}/{projectId}/IN/{uuid}-clip.mov",
   "sizeBytes": 1234567,
   "contentType": "video/quicktime",
   "etag": "abc123",
@@ -77,7 +80,7 @@ Extends file metadata from the cache:
 {
   "seq": 1842,
   "op": "put",
-  "key": "innohub/projects/{projectId}/IN/{uuid}-clip.mov",
+  "key": "projects/{userId}/{projectId}/IN/{uuid}-clip.mov",
   "projectId": "uuid",
   "name": "clip.mov",
   "folderPath": "IN",
@@ -156,7 +159,8 @@ Store `token` securely. It is not shown again.
 
 ## `GET /api/storage/v1/capabilities`
 
-Feature flags for storage clients. Authenticated via session or machine token.
+Feature flags for storage clients. Authenticated via session, machine token, or remote computer token.
+
 
 **Response `200`**
 
@@ -204,7 +208,7 @@ List clients and projects visible to the caller. Prefer this over `GET /api/proj
 }
 ```
 
-`clientId` may be `null`. Client grouping is a DB relation only — R2 keys stay `innohub/projects/{projectId}/…`.
+`clientId` may be `null`. Client grouping is a DB relation only — R2 keys use `projects/{userId}/{projectId}/…`.
 
 ---
 
@@ -283,7 +287,7 @@ Issue a short-lived signed URL. **Bytes go directly to/from R2**, not through th
 {
   "url": "https://…",
   "method": "PUT",
-  "s3Key": "innohub/projects/{projectId}/IN/{uuid}-clip.mov",
+  "s3Key": "projects/{userId}/{projectId}/IN/{uuid}-clip.mov",
   "fileName": "clip.mov",
   "folderPath": "IN",
   "contentType": "video/quicktime",
@@ -389,7 +393,7 @@ Delete a file or folder (cascade children). Removes R2 objects for files and jou
 ```json
 {
   "ok": true,
-  "deletedS3Keys": ["innohub/projects/…/…"]
+  "deletedS3Keys": ["projects/{userId}/{projectId}/…"]
 }
 ```
 
@@ -523,13 +527,13 @@ Or use existing media proxy / legacy download routes for browser session users.
 ## Object key layout
 
 ```
-{AWS_S3_PREFIX}/projects/{projectId}/project-meta.json
-{AWS_S3_PREFIX}/projects/{projectId}/options/folderState.json
-{AWS_S3_PREFIX}/projects/{projectId}/options/options.json
-{AWS_S3_PREFIX}/projects/{projectId}/{folderPath}/{uuid}-{safeName}
+projects/{userId}/{projectId}/project-meta.json
+projects/{userId}/{projectId}/options/folderState.json
+projects/{userId}/{projectId}/options/options.json
+projects/{userId}/{projectId}/{folderPath}/{uuid}-{safeName}
 ```
 
-Default prefix: `innohub`. Logical folders live in Postgres; only files (and sidecar JSON) are R2 objects.
+`userId` and `projectId` are stable UUIDs. Logical folders live in Postgres; only files (and sidecar JSON) are R2 objects.
 
 ---
 

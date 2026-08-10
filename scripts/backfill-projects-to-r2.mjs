@@ -23,10 +23,6 @@ function requireEnv(name) {
   return v
 }
 
-function getPrefix() {
-  return (process.env.AWS_S3_PREFIX || "innohub").replace(/^\/+|\/+$/g, "")
-}
-
 function createS3() {
   const bucket = requireEnv("AWS_S3_BUCKET")
   const endpoint = process.env.AWS_ENDPOINT_URL?.trim()
@@ -86,13 +82,13 @@ console.log({
   force: FORCE,
   endpoint,
   bucket,
-  prefix: getPrefix(),
   db: `${dbCfg.host}/${dbCfg.database}`,
 })
 
 const { rows } = await pool.query(`
   SELECT
     p.id,
+    p.user_id AS "userId",
     p.name,
     COALESCE(p.description, '') AS description,
     p.created_at AS "createdAt",
@@ -109,7 +105,7 @@ let skipped = 0
 let failed = 0
 
 for (const row of rows) {
-  const key = `${getPrefix()}/projects/${row.id}/project-meta.json`
+  const key = `projects/${row.userId}/${row.id}/project-meta.json`
   const exists = FORCE ? false : await objectExists(client, bucket, key)
   if (exists) {
     skipped += 1

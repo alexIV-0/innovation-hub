@@ -5,11 +5,13 @@ import { ArrowRight, Lightbulb, Sparkles } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { contentItemFromIdea } from "@/components/admin/admin-types"
 import { EmptyState } from "@/components/admin/shared/empty-state"
 
 export function OverviewRecentIdeas() {
   const { ideas, openCreate, openEdit } = useAdminData()
+  const t = useAdminI18n()
   const recent = [...ideas]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .slice(0, 4)
@@ -19,10 +21,10 @@ export function OverviewRecentIdeas() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Inspiration
+            {t.inspiration}
           </p>
           <h2 className="mt-1 font-display text-lg font-semibold text-foreground">
-            Latest ideas
+            {t.latestIdeas}
           </h2>
         </div>
         <Button
@@ -32,7 +34,7 @@ export function OverviewRecentIdeas() {
           className="rounded-full text-muted-foreground hover:text-foreground"
         >
           <Link href="/admin/content?type=ideas">
-            View all
+            {t.viewAll}
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </Button>
@@ -42,8 +44,8 @@ export function OverviewRecentIdeas() {
         <div className="mt-4">
           <EmptyState
             icon={<Lightbulb className="h-5 w-5" />}
-            title="No ideas yet"
-            description="Capture sparks of inspiration so they don't get lost."
+            title={t.noIdeasYet}
+            description={t.noIdeasYetDesc}
             action={
               <Button
                 onClick={() => openCreate("idea")}
@@ -51,7 +53,7 @@ export function OverviewRecentIdeas() {
                 className="gap-2"
               >
                 <Sparkles className="h-3.5 w-3.5" />
-                Add an idea
+                {t.addIdea}
               </Button>
             }
           />
@@ -70,7 +72,7 @@ export function OverviewRecentIdeas() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">
-                    {idea.title || "Untitled"}
+                    {idea.title || t.untitled}
                   </p>
                   <p className="line-clamp-1 text-xs text-muted-foreground">
                     {idea.description || idea.category || "—"}
@@ -78,10 +80,10 @@ export function OverviewRecentIdeas() {
                 </div>
                 {idea.isPublished ? (
                   <Badge className="border-transparent bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/15">
-                    Live
+                    {t.live}
                   </Badge>
                 ) : (
-                  <Badge variant="secondary">Draft</Badge>
+                  <Badge variant="secondary">{t.draft}</Badge>
                 )}
               </button>
             </li>

@@ -9,6 +9,7 @@ import {
   UserCheck,
   UserX,
 } from "lucide-react"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -57,6 +58,8 @@ export function AdminUserRow({
   onToggleActive,
   onDelete,
 }: Props) {
+  const t = useAdminI18n()
+
   return (
     <div
       role="button"
@@ -87,7 +90,7 @@ export function AdminUserRow({
           </p>
           {isCurrent ? (
             <Badge variant="outline" className="text-[10px]">
-              You
+              {t.you}
             </Badge>
           ) : null}
         </div>
@@ -98,26 +101,27 @@ export function AdminUserRow({
         {user.role === "ADMIN" ? (
           <Badge className="gap-1 border-transparent bg-primary/15 text-primary hover:bg-primary/15">
             <ShieldCheck className="h-3 w-3" />
-            Admin
+            {t.admin}
           </Badge>
         ) : (
           <Badge variant="secondary" className="gap-1">
-            Member
+            {t.member}
           </Badge>
         )}
         {user.isActive ? (
           <Badge className="gap-1 border-transparent bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/15">
-            Active
+            {t.active}
           </Badge>
         ) : (
           <Badge variant="outline" className="gap-1 text-muted-foreground">
-            Suspended
+            {t.suspended}
           </Badge>
         )}
       </div>
 
       <p className="hidden text-xs text-muted-foreground md:block">
-        Joined {formatDate(user.createdAt)}
+        {t.joinedPrefix}
+        {formatDate(user.createdAt)}
       </p>
 
       <DropdownMenu>
@@ -129,13 +133,13 @@ export function AdminUserRow({
             className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
           >
             <MoreHorizontal className="h-4 w-4" />
-            <span className="sr-only">Actions</span>
+            <span className="sr-only">{t.actions}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onClick={onEdit}>
             <Pencil className="h-4 w-4" />
-            Edit profile
+            {t.editProfile}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -145,12 +149,12 @@ export function AdminUserRow({
             {user.role === "ADMIN" ? (
               <>
                 <ShieldOff className="h-4 w-4" />
-                Remove admin
+                {t.removeAdmin}
               </>
             ) : (
               <>
                 <ShieldCheck className="h-4 w-4" />
-                Make admin
+                {t.makeAdmin}
               </>
             )}
           </DropdownMenuItem>
@@ -158,12 +162,12 @@ export function AdminUserRow({
             {user.isActive ? (
               <>
                 <UserX className="h-4 w-4" />
-                Suspend
+                {t.suspend}
               </>
             ) : (
               <>
                 <UserCheck className="h-4 w-4" />
-                Reactivate
+                {t.reactivate}
               </>
             )}
           </DropdownMenuItem>
@@ -174,7 +178,7 @@ export function AdminUserRow({
             className="text-destructive focus:text-destructive"
           >
             <Trash2 className="h-4 w-4" />
-            Delete account
+            {t.deleteAccount}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -3,6 +3,8 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ArrowLeft, ArrowUpRight, ChevronRight } from "lucide-react"
+import { useI18n } from "@/components/account/i18n"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
 import { adminNavItems, isItemActive } from "./nav-config"
 import { AdminMobileSidebar } from "./admin-mobile-sidebar"
@@ -14,6 +16,8 @@ type Props = {
 
 export function AdminTopbar({ email, fullName }: Props) {
   const pathname = usePathname() ?? ""
+  const { t } = useI18n()
+  const adminT = useAdminI18n()
   const current = adminNavItems.find((item) => isItemActive(item, pathname))
 
   return (
@@ -21,13 +25,13 @@ export function AdminTopbar({ email, fullName }: Props) {
       <AdminMobileSidebar email={email} fullName={fullName} />
 
       <nav
-        aria-label="Breadcrumb"
+        aria-label={adminT.breadcrumb}
         className="flex min-w-0 items-center gap-1.5 text-sm"
       >
-        <span className="text-muted-foreground">Admin</span>
+        <span className="text-muted-foreground">{t.adminPanel}</span>
         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
         <span className="truncate font-medium text-foreground">
-          {current?.label ?? "Section"}
+          {current ? t[current.labelKey] : t.adminPanel}
         </span>
       </nav>
 
@@ -40,7 +44,7 @@ export function AdminTopbar({ email, fullName }: Props) {
         >
           <Link href="/account">
             <ArrowLeft className="h-3.5 w-3.5" />
-            Dashboard
+            {t.dashboard}
           </Link>
         </Button>
         <Button
@@ -50,7 +54,7 @@ export function AdminTopbar({ email, fullName }: Props) {
           className="hidden gap-1.5 rounded-full text-muted-foreground hover:text-foreground sm:inline-flex"
         >
           <Link href="/" target="_blank">
-            View site
+            {t.viewSite}
             <ArrowUpRight className="h-3.5 w-3.5" />
           </Link>
         </Button>

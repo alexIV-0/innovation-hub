@@ -1,6 +1,7 @@
 "use client"
 
 import { Tag } from "lucide-react"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { CONTENT_CATEGORY_ALL } from "./content-types"
 import { cn } from "@/lib/utils"
 
@@ -19,6 +20,7 @@ export function ContentCategoryRail({
   onChange,
   totalCount,
 }: Props) {
+  const t = useAdminI18n()
   if (categories.length === 0) return null
 
   return (
@@ -34,10 +36,10 @@ export function ContentCategoryRail({
       <div className="scrollbar-elegant flex items-center gap-2 overflow-x-auto pb-2">
         <span className="flex shrink-0 items-center gap-1.5 pl-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           <Tag className="h-3.5 w-3.5" />
-          Categories
+          {t.categories}
         </span>
         <CategoryPill
-          label="All"
+          label={t.all}
           count={totalCount}
           active={value === CONTENT_CATEGORY_ALL}
           onClick={() => onChange(CONTENT_CATEGORY_ALL)}

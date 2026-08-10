@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react"
 import { Plus, Users } from "lucide-react"
+import { useI18n } from "@/components/account/i18n"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
 import { AdminUserRow } from "@/components/admin/admin-user-row"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
@@ -22,6 +24,8 @@ export function UsersContent() {
     patchUser,
     confirmDeleteUser,
   } = useAdminData()
+  const { t: page } = useI18n()
+  const t = useAdminI18n()
 
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
@@ -50,13 +54,13 @@ export function UsersContent() {
   return (
     <div className="space-y-8">
       <AdminPageHeader
-        eyebrow="Access"
-        title="People"
-        description="Provision accounts, promote admins, suspend abusers."
+        eyebrow={page.adminPeopleEyebrow}
+        title={page.adminPeopleTitle}
+        description={page.adminPeopleDesc}
         actions={
           <Button onClick={openCreateUser} className="gap-2 rounded-full">
             <Plus className="h-4 w-4" />
-            New person
+            {page.adminPeopleNew}
           </Button>
         }
       />
@@ -65,7 +69,7 @@ export function UsersContent() {
         <SearchInput
           value={query}
           onChange={setQuery}
-          placeholder="Search by name or email…"
+          placeholder={t.searchPeople}
         />
         <FilterPills value={filter} onChange={setFilter} counts={counts} />
       </div>
@@ -75,11 +79,9 @@ export function UsersContent() {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Users className="h-5 w-5" />}
-          title={users.length === 0 ? "No people yet" : "Nothing matches"}
+          title={users.length === 0 ? t.noPeopleYet : t.nothingMatches}
           description={
-            users.length === 0
-              ? "Once people sign up they will appear here."
-              : "Try a different search term or filter."
+            users.length === 0 ? t.peopleEmptyDesc : t.peopleNoMatchDesc
           }
         />
       ) : (
@@ -114,11 +116,12 @@ type FilterPillsProps = {
 }
 
 function FilterPills({ value, onChange, counts }: FilterPillsProps) {
+  const t = useAdminI18n()
   const items: { id: Filter; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "admins", label: "Admins" },
-    { id: "members", label: "Members" },
-    { id: "suspended", label: "Suspended" },
+    { id: "all", label: t.all },
+    { id: "admins", label: t.filterAdmins },
+    { id: "members", label: t.filterMembers },
+    { id: "suspended", label: t.filterSuspended },
   ]
   return (
     <div className="flex flex-wrap items-center gap-1 rounded-full border border-border/70 bg-card/40 p-1">

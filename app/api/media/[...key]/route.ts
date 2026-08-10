@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
 import { findFileByS3Key } from "@/lib/repositories/project-files"
 import { findUserById } from "@/lib/repositories/users"
-import { getS3Bucket, getS3Prefix, isAllowedMediaObjectKey } from "@/lib/s3-config"
+import { getS3Bucket, isAllowedMediaObjectKey } from "@/lib/s3-config"
 import { getS3Client } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
@@ -38,8 +38,15 @@ async function authorizeProjectKey(
   request: NextRequest,
   key: string,
 ): Promise<NextResponse | null> {
-  const prefix = `${getS3Prefix()}/projects/`
-  if (!key.startsWith(prefix)) return null // not a project key — public OK
+  const [namespace, keyUserId, keyProjectId] = key.split("/")
+  const isCurrentProjectKey =
+    namespace === "projects" &&
+    Boolean(keyUserId && keyProjectId) &&
+    /^[0-9a-f-]{36}$/i.test(keyUserId) &&
+    /^[0-9a-f-]{36}$/i.test(keyProjectId)
+  const isLegacyProjectKey =
+    key.startsWith("innohub/projects/") || key.startsWith("ffworks/projects/")
+  if (!isCurrentProjectKey && !isLegacyProjectKey) return null
 
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value
   if (!token) {
@@ -58,6 +65,9 @@ async function authorizeProjectKey(
   // Admins can open any project media.
   if (user.role === "ADMIN") return null
 
+  if (isCurrentProjectKey && keyUserId === user.id) return null
+
+  // During migration, legacy object keys still need a DB ownership check.
   const file = await findFileByS3Key(key)
   if (!file || file.ownerId !== user.id) {
     return NextResponse.json({ message: "Not found." }, { status: 404 })

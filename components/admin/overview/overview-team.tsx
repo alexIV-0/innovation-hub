@@ -5,7 +5,9 @@ import { ArrowRight, ShieldCheck, Users } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useI18n } from "@/components/account/i18n"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { EmptyState } from "@/components/admin/shared/empty-state"
 
 function avatarLetter(value: string) {
@@ -15,9 +17,9 @@ function avatarLetter(value: string) {
   return (match ? match[0] : trimmed[0]).toLocaleUpperCase()
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, locale: string) {
   try {
-    return new Date(value).toLocaleDateString("en-US", {
+    return new Date(value).toLocaleDateString(locale, {
       month: "short",
       day: "numeric",
     })
@@ -28,6 +30,8 @@ function formatDate(value: string) {
 
 export function OverviewTeam() {
   const { users } = useAdminData()
+  const t = useAdminI18n()
+  const { lang } = useI18n()
   const recent = [...users]
     .sort(
       (a, b) =>
@@ -40,10 +44,10 @@ export function OverviewTeam() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            People
+            {t.people}
           </p>
           <h2 className="mt-1 font-display text-lg font-semibold text-foreground">
-            Newest accounts
+            {t.newestAccounts}
           </h2>
         </div>
         <Button
@@ -53,7 +57,7 @@ export function OverviewTeam() {
           className="rounded-full text-muted-foreground hover:text-foreground"
         >
           <Link href="/admin/users">
-            Manage
+            {t.manage}
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </Button>
@@ -63,8 +67,8 @@ export function OverviewTeam() {
         <div className="mt-4">
           <EmptyState
             icon={<Users className="h-5 w-5" />}
-            title="No people yet"
-            description="Once people sign up they'll appear here."
+            title={t.noPeopleYet}
+            description={t.noPeopleYetDesc}
           />
         </div>
       ) : (
@@ -91,13 +95,13 @@ export function OverviewTeam() {
                 {user.role === "ADMIN" ? (
                   <Badge className="gap-1 border-transparent bg-primary/15 text-primary hover:bg-primary/15">
                     <ShieldCheck className="h-3 w-3" />
-                    Admin
+                    {t.admin}
                   </Badge>
                 ) : (
-                  <Badge variant="secondary">Member</Badge>
+                  <Badge variant="secondary">{t.member}</Badge>
                 )}
                 <span className="hidden text-xs text-muted-foreground sm:inline">
-                  {formatDate(user.createdAt)}
+                  {formatDate(user.createdAt, lang === "ru" ? "ru-RU" : "en-US")}
                 </span>
               </div>
             </li>

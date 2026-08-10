@@ -122,6 +122,7 @@ async function touchFileRow(
 }
 
 export async function writeFolderCreate(input: {
+  userId: string
   projectId: string
   folderPath: string
   name: string
@@ -130,6 +131,7 @@ export async function writeFolderCreate(input: {
   return withTransaction(async (client) => {
     const id = randomUUID()
     const key = logicalKeyForFile({
+      userId: input.userId,
       projectId: input.projectId,
       folderPath: input.folderPath,
       name: input.name,
@@ -308,6 +310,7 @@ export async function writeNotifyUpload(input: {
 }
 
 export async function writeFileDelete(input: {
+  userId: string
   projectId: string
   fileId: string
   deleteFromR2?: boolean
@@ -381,6 +384,7 @@ export async function writeFileDelete(input: {
       )
 
       const folderKey = logicalKeyForFile({
+        userId: input.userId,
         projectId: input.projectId,
         folderPath: existing.folderPath,
         name: existing.name,
@@ -437,6 +441,7 @@ export async function writeFileDelete(input: {
 }
 
 export async function writeRename(input: {
+  userId: string
   projectId: string
   fileId: string
   name?: string
@@ -488,12 +493,14 @@ export async function writeRename(input: {
 
     const oldKey = existing.s3Key
       ?? logicalKeyForFile({
+        userId: input.userId,
         projectId: input.projectId,
         folderPath: existing.folderPath,
         name: existing.name,
       })
     const newKey = file.s3Key
       ?? logicalKeyForFile({
+        userId: input.userId,
         projectId: input.projectId,
         folderPath: file.folderPath,
         name: file.name,
@@ -624,7 +631,7 @@ export async function writeR2PutFromBuffer(input: {
   })
 }
 
-export async function reindexProject(projectId: string): Promise<{
+export async function reindexProject(userId: string, projectId: string): Promise<{
   scanned: number
   inserted: number
   updated: number
@@ -634,7 +641,7 @@ export async function reindexProject(projectId: string): Promise<{
     throw new StorageWriteError("Object storage is not configured.")
   }
 
-  const prefix = projectPrefix(projectId)
+  const prefix = projectPrefix(userId, projectId)
   const client = getS3Client()
   const bucket = getS3Bucket()
   const remoteKeys = new Map<string, ObjectHead>()
@@ -679,7 +686,7 @@ export async function reindexProject(projectId: string): Promise<{
 
     for (const [key, head] of remoteKeys) {
       const name = key.slice(key.lastIndexOf("/") + 1)
-      const folderPath = folderPathFromKey(projectId, key, name)
+      const folderPath = folderPathFromKey(userId, projectId, key, name)
       const row = localByKey.get(key)
       if (!row) {
         const fileId = randomUUID()

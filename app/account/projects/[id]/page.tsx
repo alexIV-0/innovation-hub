@@ -34,7 +34,10 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
 
   void syncProjectChatFromYouGile(project)
 
-  const storagePromise = loadProjectStorageState(project.id).catch((error) => {
+  const storagePromise = loadProjectStorageState(
+    project.ownerId,
+    project.id,
+  ).catch((error) => {
     console.error("[project-storage] SSR listing failed", error)
     return null
   })

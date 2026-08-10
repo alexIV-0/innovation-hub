@@ -7,9 +7,10 @@ R2 is the source of truth for object bytes. Postgres (`project_files` + `storage
 ## Auth
 
 - **Web UI:** session cookie (`inhub_session`), same as other account APIs.
-- **Processing app:** `Authorization: Bearer mch_…` machine token.
+- **Processing app (per-user):** `Authorization: Bearer mch_…` machine token.
+- **Remote computer (fleet):** `Authorization: Bearer rc_…` — see [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md).
 
-Create a token (session required):
+Create a user machine token (session required):
 
 ```http
 POST /api/account/machine-tokens
@@ -44,7 +45,7 @@ Revoke: `DELETE /api/account/machine-tokens` with `{ "id": "…" }`.
 {
   "seq": 1842,
   "op": "put",
-  "key": "innohub/projects/{projectId}/IN/uuid-name.mov",
+  "key": "projects/{userId}/{projectId}/IN/uuid-name.mov",
   "projectId": "...",
   "etag": "...",
   "size": 123,
@@ -82,10 +83,10 @@ Legacy cabinet routes under `/api/projects/[id]/drive/*` remain as thin wrappers
 ## Key layout
 
 ```
-{AWS_S3_PREFIX}/projects/{projectId}/project-meta.json
-{AWS_S3_PREFIX}/projects/{projectId}/options/folderState.json
-{AWS_S3_PREFIX}/projects/{projectId}/options/options.json
-{AWS_S3_PREFIX}/projects/{projectId}/{folderPath}/{uuid}-{name}
+projects/{userId}/{projectId}/project-meta.json
+projects/{userId}/{projectId}/options/folderState.json
+projects/{userId}/{projectId}/options/options.json
+projects/{userId}/{projectId}/{folderPath}/{uuid}-{name}
 ```
 
 ## Migration
@@ -98,3 +99,13 @@ db/migrations/2026-08-07-storage-clients.sql
 ```
 
 Google Drive is not used at runtime. Migration scripts under `scripts/migrate-drive-to-r2.mjs` remain for one-time historical copy only.
+
+To copy legacy Timeweb objects into the current R2 layout, first run:
+
+```text
+npm run storage:migrate-to-r2
+```
+
+Then review the dry-run output and execute `npm run storage:migrate-to-r2 -- --apply`.
+The script copies and verifies objects before updating DB keys; it never deletes
+the Timeweb source.

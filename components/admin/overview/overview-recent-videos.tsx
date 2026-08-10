@@ -5,11 +5,13 @@ import { ArrowRight, Film, Play } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { contentItemFromVideo } from "@/components/admin/admin-types"
 import { EmptyState } from "@/components/admin/shared/empty-state"
 
 export function OverviewRecentVideos() {
   const { videos, openCreate, openEdit } = useAdminData()
+  const t = useAdminI18n()
   const recent = [...videos]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .slice(0, 4)
@@ -19,10 +21,10 @@ export function OverviewRecentVideos() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Showcase
+            {t.showcase}
           </p>
           <h2 className="mt-1 font-display text-lg font-semibold text-foreground">
-            Recent videos
+            {t.recentVideos}
           </h2>
         </div>
         <Button
@@ -32,7 +34,7 @@ export function OverviewRecentVideos() {
           className="rounded-full text-muted-foreground hover:text-foreground"
         >
           <Link href="/admin/content?type=videos">
-            View all
+            {t.viewAll}
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </Button>
@@ -42,8 +44,8 @@ export function OverviewRecentVideos() {
         <div className="mt-4">
           <EmptyState
             icon={<Film className="h-5 w-5" />}
-            title="No videos yet"
-            description="Add your first video so the homepage has something to show."
+            title={t.noVideosYet}
+            description={t.noVideosYetDesc}
             action={
               <Button
                 onClick={() => openCreate("video")}
@@ -51,7 +53,7 @@ export function OverviewRecentVideos() {
                 className="gap-2"
               >
                 <Play className="h-3.5 w-3.5" />
-                Add a video
+                {t.addVideo}
               </Button>
             }
           />
@@ -85,19 +87,19 @@ export function OverviewRecentVideos() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">
-                    {video.title || "Untitled"}
+                    {video.title || t.untitled}
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {video.category || "Uncategorized"}
+                    {video.category || t.uncategorized}
                     {video.duration ? ` · ${video.duration}` : ""}
                   </p>
                 </div>
                 {video.isPublished ? (
                   <Badge className="border-transparent bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/15">
-                    Live
+                    {t.live}
                   </Badge>
                 ) : (
-                  <Badge variant="secondary">Draft</Badge>
+                  <Badge variant="secondary">{t.draft}</Badge>
                 )}
               </button>
             </li>

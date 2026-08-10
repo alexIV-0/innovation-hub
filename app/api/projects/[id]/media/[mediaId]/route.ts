@@ -26,6 +26,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   }
 
   await writeFileDelete({
+    userId: project.ownerId,
     projectId: project.id,
     fileId: mediaId,
   })

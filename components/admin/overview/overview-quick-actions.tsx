@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowRight, Film, Lightbulb, UserCog } from "lucide-react"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { cn } from "@/lib/utils"
 
 type Action = {
@@ -28,25 +29,26 @@ const iconStyles: Record<Action["accent"], string> = {
 
 export function OverviewQuickActions() {
   const { openCreate } = useAdminData()
+  const t = useAdminI18n()
 
   const actions: Action[] = [
     {
-      title: "Add a new video",
-      description: "Upload media and publish in seconds",
+      title: t.qaAddVideo,
+      description: t.qaAddVideoDesc,
       onClick: () => openCreate("video"),
       icon: Film,
       accent: "primary",
     },
     {
-      title: "Capture an idea",
-      description: "Park a concept before it disappears",
+      title: t.qaCaptureIdea,
+      description: t.qaCaptureIdeaDesc,
       onClick: () => openCreate("idea"),
       icon: Lightbulb,
       accent: "amber",
     },
     {
-      title: "Manage people",
-      description: "Promote admins & control access",
+      title: t.qaManagePeople,
+      description: t.qaManagePeopleDesc,
       href: "/admin/users",
       icon: UserCog,
       accent: "emerald",

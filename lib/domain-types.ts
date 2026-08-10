@@ -137,3 +137,22 @@ export type TagSuggestionRecord = {
   createdAt: Date
   updatedAt: Date
 }
+
+export type RemoteComputerStatus = "idle" | "busy" | "error"
+
+export type RemoteComputerRecord = {
+  id: string
+  name: string
+  description: string
+  status: RemoteComputerStatus
+  currentProjectId: string | null
+  currentTask: string | null
+  lastHeartbeatAt: Date | null
+  meta: Record<string, unknown>
+  createdBy: string
+  createdAt: Date
+  revokedAt: Date | null
+}
+
+/** Heartbeat window: computer is online if last_heartbeat_at is within this many ms. */
+export const REMOTE_COMPUTER_ONLINE_MS = 90_000

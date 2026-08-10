@@ -52,6 +52,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const result = await writeFileDelete({
+    userId: access.ownerId,
     projectId: access.projectId,
     fileId: data.fileId,
     eventId: data.eventId,

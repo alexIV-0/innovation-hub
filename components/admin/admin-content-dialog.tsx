@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { TagCombobox } from "@/components/ui/tag-combobox"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { AdminMediaDropzone } from "./admin-media-dropzone"
 import {
   emptyContentDraft,
@@ -53,6 +54,7 @@ export function AdminContentDialog({
   onOpenChange,
   onSubmit,
 }: Props) {
+  const t = useAdminI18n()
   const [draft, setDraft] = useState<ContentDraft>(emptyContentDraft)
   const [submitting, setSubmitting] = useState(false)
 
@@ -79,13 +81,17 @@ export function AdminContentDialog({
   }, [open, mode, initialItem, initialKind])
 
   const titleText =
-    mode === "create" ? "New content" : `Edit ${draft.kind}`
+    mode === "create"
+      ? t.newContent
+      : draft.kind === "video"
+        ? t.editVideo
+        : t.editIdea
   const submitText =
     mode === "create"
       ? draft.kind === "video"
-        ? "Publish video"
-        : "Publish idea"
-      : "Save changes"
+        ? t.publishVideo
+        : t.publishIdea
+      : t.saveChanges
 
   const setKind = (kind: ContentKind) => {
     setDraft((prev) => ({ ...prev, kind }))
@@ -93,24 +99,24 @@ export function AdminContentDialog({
 
   const handleSubmit = async () => {
     if (!draft.title.trim()) {
-      toast.error("Please add a title.")
+      toast.error(t.errTitle)
       return
     }
     if (draft.tags.length === 0) {
-      toast.error("Please add at least one tag.")
+      toast.error(t.errTags)
       return
     }
     if (draft.kind === "video") {
       if (!draft.thumbnail) {
-        toast.error("Please upload a thumbnail image.")
+        toast.error(t.errThumbnail)
         return
       }
       if (!draft.videoUrl) {
-        toast.error("Please upload the video file.")
+        toast.error(t.errVideoFile)
         return
       }
     } else if (!draft.description.trim()) {
-      toast.error("Please add a description.")
+      toast.error(t.errDescription)
       return
     }
 
@@ -134,10 +140,7 @@ export function AdminContentDialog({
       >
         <DialogHeader>
           <DialogTitle>{titleText}</DialogTitle>
-          <DialogDescription>
-            Configure media, copy and metadata. Everything updates the live
-            site.
-          </DialogDescription>
+          <DialogDescription>{t.contentDialogDesc}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1.5">
@@ -146,7 +149,7 @@ export function AdminContentDialog({
               htmlFor="content-kind"
               className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:w-16"
             >
-              Type
+              {t.type}
             </Label>
             <Select
               value={draft.kind}
@@ -162,13 +165,13 @@ export function AdminContentDialog({
                 <SelectItem value="video">
                   <span className="inline-flex items-center gap-2">
                     <Film className="h-3.5 w-3.5" />
-                    Video
+                    {t.video}
                   </span>
                 </SelectItem>
                 <SelectItem value="idea">
                   <span className="inline-flex items-center gap-2">
                     <Lightbulb className="h-3.5 w-3.5" />
-                    Idea
+                    {t.idea}
                   </span>
                 </SelectItem>
               </SelectContent>
@@ -176,8 +179,7 @@ export function AdminContentDialog({
           </div>
           {mode === "edit" && initialItem && initialItem.kind !== draft.kind ? (
             <p className="pl-0 text-[11px] text-amber-300/90 sm:pl-[4.75rem]">
-              Switching type will recreate this content under the new kind —
-              the record will get a new id.
+              {t.switchTypeWarn}
             </p>
           ) : null}
         </div>
@@ -187,13 +189,13 @@ export function AdminContentDialog({
             kind="image"
             label={
               draft.kind === "video"
-                ? "Thumbnail"
-                : "Thumbnail (optional)"
+                ? t.thumbnail
+                : t.thumbnailOptional
             }
             helperText={
               draft.kind === "video"
-                ? "Shown in the video grid"
-                : "Helps cards stand out"
+                ? t.thumbnailHintVideo
+                : t.thumbnailHintIdea
             }
             value={draft.thumbnail}
             onChange={(url) =>
@@ -203,12 +205,12 @@ export function AdminContentDialog({
           <AdminMediaDropzone
             kind="video"
             label={
-              draft.kind === "video" ? "Video file" : "Video file (optional)"
+              draft.kind === "video" ? t.videoFile : t.videoFileOptional
             }
             helperText={
               draft.kind === "video"
-                ? "Plays on the detail page"
-                : "Attach a clip if you have one"
+                ? t.videoFileHint
+                : t.videoFileHintIdea
             }
             value={draft.videoUrl}
             onChange={(url) =>
@@ -222,10 +224,10 @@ export function AdminContentDialog({
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1.5 md:col-span-2">
-            <Label htmlFor="content-title">Title</Label>
+            <Label htmlFor="content-title">{t.title}</Label>
             <Input
               id="content-title"
-              placeholder="A short, descriptive title"
+              placeholder={t.titlePlaceholder}
               value={draft.title}
               onChange={(event) =>
                 setDraft((prev) => ({ ...prev, title: event.target.value }))
@@ -233,21 +235,21 @@ export function AdminContentDialog({
             />
           </div>
           <div className="space-y-1.5 md:col-span-2">
-            <Label htmlFor="content-tags">Tags</Label>
+            <Label htmlFor="content-tags">{t.tags}</Label>
             <TagCombobox
               scope={draft.kind === "video" ? "videos.tags" : "ideas.tags"}
               value={draft.tags}
               onChange={(tags) => setDraft((prev) => ({ ...prev, tags }))}
-              placeholder="Select or type tags…"
+              placeholder={t.tagsPlaceholder}
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="content-duration">
-              Duration{draft.kind === "idea" ? " (optional)" : ""}
+              {draft.kind === "idea" ? t.durationOptional : t.duration}
             </Label>
             <Input
               id="content-duration"
-              placeholder="Auto from video file (editable)"
+              placeholder={t.durationHint}
               value={draft.duration}
               onChange={(event) =>
                 setDraft((prev) => ({ ...prev, duration: event.target.value }))
@@ -255,10 +257,10 @@ export function AdminContentDialog({
             />
           </div>
           <div className="space-y-1.5 md:col-span-2">
-            <Label htmlFor="content-description">Description</Label>
+            <Label htmlFor="content-description">{t.description}</Label>
             <Textarea
               id="content-description"
-              placeholder="What is this about?"
+              placeholder={t.descriptionPlaceholder}
               rows={4}
               value={draft.description}
               onChange={(event) =>
@@ -277,7 +279,7 @@ export function AdminContentDialog({
             disabled={submitting}
             onClick={() => onOpenChange(false)}
           >
-            Cancel
+            {t.cancel}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
             {submitting ? (

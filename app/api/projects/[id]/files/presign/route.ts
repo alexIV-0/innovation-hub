@@ -9,9 +9,10 @@ import { findOwnedProject } from "@/lib/repositories/projects"
 import { safeBaseFileName } from "@/lib/s3-upload-policy"
 import {
   appMediaProxyPathForKey,
-  buildS3ObjectKey,
   getS3Bucket,
 } from "@/lib/s3-config"
+import { projectPrefix } from "@/lib/storage/keys"
+import { projectUploadObjectKey } from "@/lib/project-storage"
 import { getS3Client } from "@/lib/s3-client"
 import { writeNotifyUpload } from "@/lib/storage/write-path"
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       )
     }
 
-    const expectedPrefix = buildS3ObjectKey(`projects/${projectId}/`)
+    const expectedPrefix = projectPrefix(project.ownerId, projectId)
     if (!parsed.data.s3Key.startsWith(expectedPrefix)) {
       return NextResponse.json({ message: "Invalid key." }, { status: 400 })
     }
@@ -101,10 +102,11 @@ export async function POST(request: NextRequest, { params }: Params) {
     )
   }
 
-  const key = buildS3ObjectKey(
-    parsed.data.folderPath
-      ? `projects/${projectId}/${parsed.data.folderPath.replace(/^\/+|\/+$/g, "")}/${randomUUID()}-${safeBaseFileName(parsed.data.fileName)}`
-      : `projects/${projectId}/${randomUUID()}-${safeBaseFileName(parsed.data.fileName)}`,
+  const key = projectUploadObjectKey(
+    project.ownerId,
+    projectId,
+    parsed.data.folderPath,
+    `${randomUUID()}-${safeBaseFileName(parsed.data.fileName)}`,
   )
 
   const command = new PutObjectCommand({

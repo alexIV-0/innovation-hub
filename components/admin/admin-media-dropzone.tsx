@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ImageIcon, Loader2, RotateCcw, UploadCloud, Video, X } from "lucide-react"
 import { toast } from "sonner"
+import { tf, useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -50,7 +51,14 @@ type PresignResponse = {
   key: string
 }
 
-async function requestPresign(file: File, contentType: string) {
+async function requestPresign(
+  file: File,
+  contentType: string,
+  messages: {
+    prepareError: string
+    noPublicUrl: string
+  },
+) {
   const response = await fetch("/api/admin/upload/presign", {
     method: "POST",
     credentials: "same-origin",
@@ -67,14 +75,12 @@ async function requestPresign(file: File, contentType: string) {
     const msg =
       payload && typeof payload.message === "string"
         ? payload.message
-        : `Could not prepare upload (HTTP ${response.status}).`
+        : tf(messages.prepareError, { status: response.status })
     throw new Error(msg)
   }
 
   if (!payload.publicUrl) {
-    throw new Error(
-      "Server did not return a public URL for the uploaded object.",
-    )
+    throw new Error(messages.noPublicUrl)
   }
 
   return payload as PresignResponse & { publicUrl: string }
@@ -90,12 +96,16 @@ function putToS3({
   contentType,
   onProgress,
   signal,
+  storageRejectedTemplate,
+  uploadFailed,
 }: {
   file: File
   uploadUrl: string
   contentType: string
   onProgress: (loaded: number, total: number) => void
   signal: AbortSignal
+  storageRejectedTemplate: string
+  uploadFailed: string
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
@@ -134,9 +144,9 @@ function putToS3({
       const detail = extractS3Error(xhr.responseText ?? "")
       reject(
         new Error(
-          `Storage rejected the upload (HTTP ${xhr.status})${
+          `${tf(storageRejectedTemplate, { status: xhr.status })}${
             detail ? ` — ${detail}` : ""
-          }.`,
+          }`,
         ),
       )
     }
@@ -147,13 +157,11 @@ function putToS3({
       const detail = extractS3Error(xhr.responseText ?? "")
       reject(
         new Error(
-          detail
-            ? `Storage rejected the upload — ${detail}.`
-            : "Network/CORS error while uploading to storage. Check the browser devtools network tab for the failing PUT request and confirm bucket CORS allows this origin.",
+          detail ? `${uploadFailed} — ${detail}` : uploadFailed,
         ),
       )
     }
-    xhr.ontimeout = () => reject(new Error("Upload to storage timed out."))
+    xhr.ontimeout = () => reject(new Error(uploadFailed))
     xhr.onabort = () => reject(new DOMException("Aborted", "AbortError"))
 
     const onAbort = () => {
@@ -235,6 +243,7 @@ export function AdminMediaDropzone({
   onVideoDurationDetected,
   className,
 }: Props) {
+  const t = useAdminI18n()
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -270,8 +279,8 @@ export function AdminMediaDropzone({
       if (!mime) {
         toast.error(
           kind === "image"
-            ? "Please pick a JPG, PNG, WEBP or GIF image."
-            : "Please pick an MP4, WEBM or MOV video.",
+            ? t.errImageType
+            : t.errVideoType,
         )
         return
       }
@@ -293,7 +302,7 @@ export function AdminMediaDropzone({
       setProgress({ loaded: 0, total: file.size })
 
       const toastId = toast.loading(
-        kind === "image" ? "Uploading image…" : "Uploading video…",
+        kind === "image" ? t.uploadingImage : t.uploadingVideo,
         { description: `${file.name} · ${formatBytes(file.size)}` },
       )
 
@@ -303,7 +312,10 @@ export function AdminMediaDropzone({
       const timer = window.setTimeout(() => abort.abort(), 30 * 60_000)
 
       try {
-        const presign = await requestPresign(file, mime)
+        const presign = await requestPresign(file, mime, {
+          prepareError: t.uploadPrepareError,
+          noPublicUrl: t.uploadNoPublicUrl,
+        })
         if (abort.signal.aborted) {
           throw new DOMException("Aborted", "AbortError")
         }
@@ -313,11 +325,13 @@ export function AdminMediaDropzone({
           uploadUrl: presign.uploadUrl,
           contentType: mime,
           signal: abort.signal,
+          storageRejectedTemplate: t.uploadStorageRejected,
+          uploadFailed: t.uploadFailed,
           onProgress: (loaded, total) => {
             setProgress({ loaded, total })
             const percent = total > 0 ? Math.floor((loaded / total) * 100) : 0
             toast.loading(
-              kind === "image" ? "Uploading image…" : "Uploading video…",
+              kind === "image" ? t.uploadingImage : t.uploadingVideo,
               {
                 id: toastId,
                 description: `${file.name} · ${percent}% (${formatBytes(loaded)} / ${formatBytes(total)})`,
@@ -327,7 +341,7 @@ export function AdminMediaDropzone({
         })
 
         onChange(presign.publicUrl)
-        toast.success("Upload complete", {
+        toast.success(t.uploadComplete, {
           id: toastId,
           description: file.name,
         })
@@ -335,10 +349,10 @@ export function AdminMediaDropzone({
         const aborted = err instanceof DOMException && err.name === "AbortError"
         toast.error(
           aborted
-            ? "Upload was cancelled."
+            ? t.uploadCancelled
             : err instanceof Error
               ? err.message
-              : "Upload failed. Please try again.",
+              : t.uploadFailed,
           { id: toastId },
         )
         setLocalPreview((prev) => {
@@ -354,7 +368,7 @@ export function AdminMediaDropzone({
         setProgress(null)
       }
     },
-    [kind, onChange, onVideoDurationDetected],
+    [kind, onChange, onVideoDurationDetected, t],
   )
 
   const handlePick = useCallback(() => {
@@ -418,7 +432,7 @@ export function AdminMediaDropzone({
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={previewSrc as string}
-                alt="Preview"
+                alt={t.preview}
                 className="absolute inset-0 h-full w-full object-cover"
               />
             ) : (
@@ -444,7 +458,7 @@ export function AdminMediaDropzone({
                 className="gap-1.5 backdrop-blur"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                Replace
+                {t.replace}
               </Button>
               <Button
                 type="button"
@@ -454,7 +468,7 @@ export function AdminMediaDropzone({
                 className="gap-1.5"
               >
                 <X className="h-3.5 w-3.5" />
-                {isUploading ? "Cancel" : "Remove"}
+                {isUploading ? t.cancel : t.remove}
               </Button>
             </div>
 
@@ -462,7 +476,9 @@ export function AdminMediaDropzone({
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 backdrop-blur-sm">
                 <div className="flex items-center gap-2 rounded-full bg-card/80 px-4 py-2 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  {percent !== null ? `Uploading ${percent}%` : "Uploading…"}
+                  {percent !== null
+                    ? tf(t.uploadingPercent, { percent })
+                    : t.uploadingEllipsis}
                 </div>
                 {progress ? (
                   <div className="w-3/4 max-w-xs">
@@ -501,15 +517,15 @@ export function AdminMediaDropzone({
               <p className="text-sm font-medium text-foreground">
                 {isUploading
                   ? percent !== null
-                    ? `Uploading ${percent}%`
-                    : "Uploading…"
+                    ? tf(t.uploadingPercent, { percent })
+                    : t.uploadingEllipsis
                   : kind === "image"
-                    ? "Drag an image here, or click to browse"
-                    : "Drag a video here, or click to browse"}
+                    ? t.dragImage
+                    : t.dragVideo}
               </p>
               <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                 <UploadCloud className="h-3.5 w-3.5" />
-                {kind === "image" ? "JPG, PNG, WEBP, GIF" : "MP4, WEBM, MOV"}
+                {kind === "image" ? t.imageFormats : t.videoFormats}
               </p>
             </div>
           </button>

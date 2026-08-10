@@ -5,16 +5,16 @@ import {
 } from "@aws-sdk/client-s3"
 import type { ProjectFileRecord } from "@/lib/domain-types"
 import { listAllProjectFiles } from "@/lib/repositories/project-files"
-import { buildS3ObjectKey, getS3Bucket } from "@/lib/s3-config"
+import { buildProjectObjectKey, getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
 
 /**
  * R2/S3 layout for a project (replaces the Google Drive tree):
  *
- *   {prefix}/projects/{projectId}/project-meta.json
- *   {prefix}/projects/{projectId}/options/folderState.json
- *   {prefix}/projects/{projectId}/options/options.json
- *   {prefix}/projects/{projectId}/{folderPath}/{uuid}-{name}   — user files
+ *   projects/{userId}/{projectId}/project-meta.json
+ *   projects/{userId}/{projectId}/options/folderState.json
+ *   projects/{userId}/{projectId}/options/options.json
+ *   projects/{userId}/{projectId}/{folderPath}/{uuid}-{name}   — user files
  *
  * Folder structure for the cabinet lives in Postgres `project_files`.
  * The `options` service folder is never listed in the UI.
@@ -78,24 +78,29 @@ export function siteUpdatedBy(email: string): string {
   return `site:${email.toLowerCase()}`
 }
 
-export function projectMetaKey(projectId: string): string {
-  return buildS3ObjectKey(`projects/${projectId}/${PROJECT_META_FILE_NAME}`)
+export function projectMetaKey(userId: string, projectId: string): string {
+  return buildProjectObjectKey(userId, projectId, PROJECT_META_FILE_NAME)
 }
 
-export function projectFolderStateKey(projectId: string): string {
-  return buildS3ObjectKey(
-    `projects/${projectId}/${OPTIONS_FOLDER_NAME}/${FOLDER_STATE_FILE_NAME}`,
+export function projectFolderStateKey(userId: string, projectId: string): string {
+  return buildProjectObjectKey(
+    userId,
+    projectId,
+    `${OPTIONS_FOLDER_NAME}/${FOLDER_STATE_FILE_NAME}`,
   )
 }
 
-export function projectOptionsKey(projectId: string): string {
-  return buildS3ObjectKey(
-    `projects/${projectId}/${OPTIONS_FOLDER_NAME}/${OPTIONS_FILE_NAME}`,
+export function projectOptionsKey(userId: string, projectId: string): string {
+  return buildProjectObjectKey(
+    userId,
+    projectId,
+    `${OPTIONS_FOLDER_NAME}/${OPTIONS_FILE_NAME}`,
   )
 }
 
 /** Object key for a user upload under a logical folder path. */
 export function projectUploadObjectKey(
+  userId: string,
   projectId: string,
   folderPath: string,
   fileName: string,
@@ -103,9 +108,9 @@ export function projectUploadObjectKey(
   const safe = fileName.replace(/^\/+/, "").replace(/\.\./g, "_")
   const folder = folderPath.replace(/^\/+|\/+$/g, "")
   const relative = folder
-    ? `projects/${projectId}/${folder}/${safe}`
-    : `projects/${projectId}/${safe}`
-  return buildS3ObjectKey(relative)
+    ? `${folder}/${safe}`
+    : safe
+  return buildProjectObjectKey(userId, projectId, relative)
 }
 
 function parseJson(raw: string): unknown {
@@ -243,6 +248,7 @@ export async function objectExists(key: string): Promise<boolean> {
 }
 
 export async function writeProjectMeta(input: {
+  userId: string
   projectId: string
   name: string
   description: string
@@ -256,7 +262,7 @@ export async function writeProjectMeta(input: {
     createdAt: input.createdAt ?? new Date().toISOString(),
   }
   await putObjectText(
-    projectMetaKey(input.projectId),
+    projectMetaKey(input.userId, input.projectId),
     JSON.stringify(payload, null, 2),
   )
 }
@@ -317,6 +323,7 @@ function buildTree(rows: ProjectFileRecord[]): ProjectStorageFile[] {
  * Cabinet view: nested file tree from Postgres + automation JSON from R2.
  */
 export async function loadProjectStorageState(
+  userId: string,
   projectId: string,
 ): Promise<ProjectStorageState> {
   const available = isS3Configured()
@@ -334,8 +341,8 @@ export async function loadProjectStorageState(
   }
 
   const [stateRaw, optionsRaw] = await Promise.all([
-    getObjectText(projectFolderStateKey(projectId)),
-    getObjectText(projectOptionsKey(projectId)),
+    getObjectText(projectFolderStateKey(userId, projectId)),
+    getObjectText(projectOptionsKey(userId, projectId)),
   ])
 
   const folderState = stateRaw
@@ -356,11 +363,12 @@ export async function loadProjectStorageState(
 }
 
 export async function setProjectAutomationEnabled(input: {
+  userId: string
   projectId: string
   enabled: boolean
   updatedBy: string
 }): Promise<ProjectFolderState> {
-  const key = projectFolderStateKey(input.projectId)
+  const key = projectFolderStateKey(input.userId, input.projectId)
   const raw = await getObjectText(key)
   if (raw == null) {
     throw new ProjectStorageError(
@@ -395,10 +403,11 @@ export async function setProjectAutomationEnabled(input: {
 }
 
 export async function updateProjectExposedOptions(input: {
+  userId: string
   projectId: string
   changes: { path: string[]; value: ExposedOptionValue }[]
 }): Promise<ExposedOption[]> {
-  const key = projectOptionsKey(input.projectId)
+  const key = projectOptionsKey(input.userId, input.projectId)
   const raw = await getObjectText(key)
   if (raw == null) {
     throw new ProjectStorageError(

@@ -8,9 +8,9 @@
  *   node scripts/migrate-drive-to-r2.mjs
  *
  * Layout written to R2:
- *   {prefix}/projects/{projectId}/project-meta.json
- *   {prefix}/projects/{projectId}/options/...
- *   {prefix}/projects/{projectId}/{folderPath}/{uuid}-{safeName}
+ *   projects/{userId}/{projectId}/project-meta.json
+ *   projects/{userId}/{projectId}/options/...
+ *   projects/{userId}/{projectId}/{folderPath}/{uuid}-{safeName}
  */
 import "dotenv/config"
 import { createWriteStream } from "node:fs"
@@ -35,13 +35,9 @@ function requireEnv(name) {
   return v
 }
 
-function getPrefix() {
-  return (process.env.AWS_S3_PREFIX || "innohub").replace(/^\/+|\/+$/g, "")
-}
-
-function buildKey(relative) {
+function buildKey(userId, projectId, relative) {
   const rel = relative.replace(/^\/+/, "").replace(/\.\./g, "_")
-  return `${getPrefix()}/${rel}`
+  return `projects/${userId}/${projectId}/${rel}`
 }
 
 function safeBaseFileName(name) {
@@ -228,19 +224,19 @@ async function ensureDbFile(db, input) {
   return { id, s3Key: input.s3Key }
 }
 
-async function migrateFolder(ctx, projectId, driveFolderId, folderPath) {
+async function migrateFolder(ctx, userId, projectId, driveFolderId, folderPath) {
   const children = await listChildren(ctx.drive, driveFolderId)
   for (const child of children) {
     const isFolder = child.mimeType === FOLDER_MIME
     const name = child.name
 
     if (folderPath === "" && name.toLowerCase() === OPTIONS_FOLDER) {
-      await migrateOptions(ctx, projectId, child.id)
+      await migrateOptions(ctx, userId, projectId, child.id)
       continue
     }
     if (folderPath === "" && name.toLowerCase() === META_FILE.toLowerCase()) {
       const buf = await downloadDriveMedia(ctx.drive, child.id)
-      const key = buildKey(`projects/${projectId}/${META_FILE}`)
+      const key = buildKey(userId, projectId, META_FILE)
       const result = await putBuffer(
         ctx.s3,
         key,
@@ -257,7 +253,7 @@ async function migrateFolder(ctx, projectId, driveFolderId, folderPath) {
       await ensureDbFolder(ctx.db, projectId, folderPath, name)
       ctx.stats.folders += 1
       const nextPath = folderPath ? `${folderPath}/${name}` : name
-      await migrateFolder(ctx, projectId, child.id, nextPath)
+      await migrateFolder(ctx, userId, projectId, child.id, nextPath)
       continue
     }
 
@@ -275,10 +271,8 @@ async function migrateFolder(ctx, projectId, driveFolderId, folderPath) {
 
     const sizeBytes = child.size ? Number.parseInt(String(child.size), 10) : 0
     const safeName = `${randomUUID()}-${safeBaseFileName(name)}`
-    const relative = folderPath
-      ? `projects/${projectId}/${folderPath}/${safeName}`
-      : `projects/${projectId}/${safeName}`
-    const key = buildKey(relative)
+    const relative = folderPath ? `${folderPath}/${safeName}` : safeName
+    const key = buildKey(userId, projectId, relative)
 
     // Idempotent by logical name: reuse existing s3_key when present
     const existing = await ctx.db.query(
@@ -327,7 +321,7 @@ async function migrateFolder(ctx, projectId, driveFolderId, folderPath) {
   }
 }
 
-async function migrateOptions(ctx, projectId, optionsFolderId) {
+async function migrateOptions(ctx, userId, projectId, optionsFolderId) {
   const children = await listChildren(ctx.drive, optionsFolderId)
   for (const child of children) {
     if (child.mimeType === FOLDER_MIME) continue
@@ -336,7 +330,9 @@ async function migrateOptions(ctx, projectId, optionsFolderId) {
     }
     const buf = await downloadDriveMedia(ctx.drive, child.id)
     const key = buildKey(
-      `projects/${projectId}/${OPTIONS_FOLDER}/${safeBaseFileName(child.name)}`,
+      userId,
+      projectId,
+      `${OPTIONS_FOLDER}/${safeBaseFileName(child.name)}`,
     )
     const result = await putBuffer(
       ctx.s3,
@@ -457,7 +453,7 @@ async function main() {
         await ensureDbFolder(db, project.id, "", "IN")
         await ensureDbFolder(db, project.id, "", "OUT")
 
-        await migrateFolder(ctx, project.id, projectFolder.id, "")
+        await migrateFolder(ctx, user.id, project.id, projectFolder.id, "")
       }
     }
 

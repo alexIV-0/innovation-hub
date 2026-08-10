@@ -11,7 +11,7 @@
  *   1. Builds an S3Client with the SAME config the app uses
  *      (requestChecksumCalculation: WHEN_REQUIRED).
  *   2. Generates a presigned PUT URL for a unique object in the configured
- *      prefix, WITHOUT signing Content-Type (mirroring the API route).
+ *      system test path, WITHOUT signing Content-Type (mirroring the API route).
  *   3. Logs the signed query parameters so you can verify SignedHeaders.
  *   4. PUTs random bytes of the requested size with `fetch`, sending the
  *      same Content-Type the browser would send.
@@ -80,7 +80,6 @@ function envBool(name, defaultWhenUnset) {
 
 const sizeMb = Number.parseFloat(arg("size", "12"))
 const contentType = arg("content-type", "video/mp4")
-const prefixDefault = "innohub"
 
 const bucket = process.env.AWS_S3_BUCKET
 if (!bucket) {
@@ -106,8 +105,6 @@ if (!accessKeyId || !secretAccessKey) {
 
 const region = process.env.AWS_REGION ?? "us-east-1"
 const endpoint = process.env.AWS_ENDPOINT_URL?.trim()
-const prefix = (process.env.AWS_S3_PREFIX ?? prefixDefault)
-  .replace(/^\/+|\/+$/g, "")
 
 const client = new S3Client({
   region,
@@ -118,7 +115,7 @@ const client = new S3Client({
   responseChecksumValidation: "WHEN_REQUIRED",
 })
 
-const key = `${prefix}/${randomUUID()}-presign-test.bin`
+const key = `system/${randomUUID()}-presign-test.bin`
 
 console.log("Config:")
 console.log("  endpoint:    ", endpoint ?? "(default AWS)")

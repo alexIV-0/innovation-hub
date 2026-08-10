@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const state = await loadProjectStorageState(project.id)
+    const state = await loadProjectStorageState(project.ownerId, project.id)
     return NextResponse.json({
       ...state,
       storageAvailable: state.available,
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   try {
     const folder = await writeFolderCreate({
+      userId: project.ownerId,
       projectId: project.id,
       folderPath: parentFolderPath,
       name,

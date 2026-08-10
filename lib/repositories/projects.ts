@@ -164,10 +164,10 @@ export async function createProject(input: {
   const project = result.rows[0]
 
   const { writeFolderCreate } = await import("@/lib/storage/write-path")
-  await writeFolderCreate({ projectId: id, folderPath: "", name: "IN" }).catch(
+  await writeFolderCreate({ userId: ownerId, projectId: id, folderPath: "", name: "IN" }).catch(
     () => undefined,
   )
-  await writeFolderCreate({ projectId: id, folderPath: "", name: "OUT" }).catch(
+  await writeFolderCreate({ userId: ownerId, projectId: id, folderPath: "", name: "OUT" }).catch(
     () => undefined,
   )
 

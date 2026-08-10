@@ -81,7 +81,9 @@ async function runUpload(request: NextRequest): Promise<Response> {
   let key: string
   try {
     bucket = getS3Bucket()
-    key = buildS3ObjectKey(`${randomUUID()}-${safeBaseFileName(fileName)}`)
+    key = buildS3ObjectKey(
+      `admin/${randomUUID()}-${safeBaseFileName(fileName)}`,
+    )
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Storage configuration error."
     return jsonError(msg, 500)

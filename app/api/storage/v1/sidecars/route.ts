@@ -67,9 +67,9 @@ export async function GET(request: NextRequest) {
 
   const key =
     name === "folder-state"
-      ? projectFolderStateKey(access.projectId)
+      ? projectFolderStateKey(access.ownerId, access.projectId)
       : name === "options"
-        ? projectOptionsKey(access.projectId)
+        ? projectOptionsKey(access.ownerId, access.projectId)
         : null
   if (!key) {
     return NextResponse.json({ message: "Unknown sidecar." }, { status: 400 })
@@ -109,11 +109,12 @@ export async function PUT(request: NextRequest) {
   try {
     if (data.kind === "folder-state") {
       const folderState = await setProjectAutomationEnabled({
+        userId: access.ownerId,
         projectId: access.projectId,
         enabled: data.enabled,
         updatedBy: siteUpdatedBy(auth.email),
       })
-      const key = projectFolderStateKey(access.projectId)
+      const key = projectFolderStateKey(access.ownerId, access.projectId)
       await journalStorageEvent({
         projectId: access.projectId,
         key,
@@ -128,12 +129,13 @@ export async function PUT(request: NextRequest) {
 
     if (data.kind === "options") {
       const result = await updateProjectExposedOptions({
+        userId: access.ownerId,
         projectId: access.projectId,
         changes: data.changes,
       })
       await journalStorageEvent({
         projectId: access.projectId,
-        key: projectOptionsKey(access.projectId),
+        key: projectOptionsKey(access.ownerId, access.projectId),
         op: "put",
         payload: { name: "options.json", folderPath: "options" },
       })
@@ -142,8 +144,8 @@ export async function PUT(request: NextRequest) {
 
     const key =
       data.sidecar === "folder-state"
-        ? projectFolderStateKey(access.projectId)
-        : projectOptionsKey(access.projectId)
+        ? projectFolderStateKey(access.ownerId, access.projectId)
+        : projectOptionsKey(access.ownerId, access.projectId)
     const { etag } = await writeSidecarPut({
       projectId: access.projectId,
       key,

@@ -105,6 +105,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const file = await writeRename({
+      userId: owned.project.ownerId,
       fileId,
       projectId: id,
       name,
@@ -135,6 +136,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   if ("error" in owned && owned.error) return owned.error
 
   await writeFileDelete({
+    userId: owned.project.ownerId,
     projectId: id,
     fileId,
   })

@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import type { AdminVideo } from "./admin-types"
 
 type Props = {
@@ -37,6 +38,7 @@ export function AdminVideoCard({
   onMove,
   onDelete,
 }: Props) {
+  const t = useAdminI18n()
   const videoRef = useRef<HTMLVideoElement>(null)
   const [hovered, setHovered] = useState(false)
 
@@ -91,7 +93,7 @@ export function AdminVideoCard({
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/50 text-xs text-muted-foreground">
-            No thumbnail
+            {t.noThumbnail}
           </div>
         )}
 
@@ -114,11 +116,11 @@ export function AdminVideoCard({
         <div className="absolute right-3 top-3 flex items-center gap-1.5">
           {video.isPublished ? (
             <Badge className="border-transparent bg-emerald-500/90 text-white backdrop-blur-sm hover:bg-emerald-500/90">
-              Live
+              {t.live}
             </Badge>
           ) : (
             <Badge variant="secondary" className="backdrop-blur-sm">
-              Draft
+              {t.draft}
             </Badge>
           )}
         </div>
@@ -166,35 +168,35 @@ export function AdminVideoCard({
               className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
             >
               <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">{t.actions}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={onEdit}>
               <Pencil className="h-4 w-4" />
-              Edit
+              {t.edit}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onTogglePublish}>
               {video.isPublished ? (
                 <>
                   <EyeOff className="h-4 w-4" />
-                  Unpublish
+                  {t.unpublish}
                 </>
               ) : (
                 <>
                   <Eye className="h-4 w-4" />
-                  Publish
+                  {t.publish}
                 </>
               )}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onMove("up")}>
               <ArrowUp className="h-4 w-4" />
-              Move up
+              {t.moveUp}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onMove("down")}>
               <ArrowDown className="h-4 w-4" />
-              Move down
+              {t.moveDown}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -202,7 +204,7 @@ export function AdminVideoCard({
               className="text-destructive focus:text-destructive"
             >
               <Trash2 className="h-4 w-4" />
-              Delete
+              {t.delete}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

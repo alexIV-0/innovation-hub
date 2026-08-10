@@ -2,6 +2,7 @@
 
 import { Activity, Film, Lightbulb, Users } from "lucide-react"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
+import { tf, useAdminI18n } from "@/components/admin/admin-dict"
 import { StatCard } from "@/components/admin/shared/stat-card"
 
 function buildSpark(seed: number, length = 8) {
@@ -16,6 +17,7 @@ function buildSpark(seed: number, length = 8) {
 
 export function OverviewStats() {
   const { videos, ideas, users } = useAdminData()
+  const t = useAdminI18n()
   const publishedVideos = videos.filter((v) => v.isPublished).length
   const publishedIdeas = ideas.filter((i) => i.isPublished).length
   const activeUsers = users.filter((u) => u.isActive).length
@@ -24,35 +26,44 @@ export function OverviewStats() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard
-        label="Videos"
+        label={t.videos}
         value={videos.length}
         icon={Film}
         accent="primary"
-        hint={`${publishedVideos} live · ${videos.length - publishedVideos} drafts`}
+        hint={tf(t.liveDraftsHint, {
+          live: publishedVideos,
+          drafts: videos.length - publishedVideos,
+        })}
         spark={buildSpark(videos.length + 7)}
       />
       <StatCard
-        label="Ideas"
+        label={t.ideas}
         value={ideas.length}
         icon={Lightbulb}
         accent="amber"
-        hint={`${publishedIdeas} live · ${ideas.length - publishedIdeas} drafts`}
+        hint={tf(t.liveDraftsHint, {
+          live: publishedIdeas,
+          drafts: ideas.length - publishedIdeas,
+        })}
         spark={buildSpark(ideas.length + 11)}
       />
       <StatCard
-        label="People"
+        label={t.people}
         value={users.length}
         icon={Users}
         accent="emerald"
-        hint={`${activeUsers} active · ${users.length - activeUsers} suspended`}
+        hint={tf(t.activeSuspendedHint, {
+          active: activeUsers,
+          suspended: users.length - activeUsers,
+        })}
         spark={buildSpark(users.length + 5)}
       />
       <StatCard
-        label="Admins"
+        label={t.admins}
         value={admins}
         icon={Activity}
         accent="violet"
-        hint="Privileged accounts"
+        hint={t.privilegedAccounts}
         spark={buildSpark(admins + 3, 6)}
       />
     </div>

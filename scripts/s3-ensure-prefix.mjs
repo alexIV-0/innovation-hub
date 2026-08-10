@@ -1,21 +1,13 @@
 import "dotenv/config"
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
 
-const DEFAULT_PREFIX = "innohub"
-
-function normalizePrefix(raw) {
-  const trimmed = (raw ?? DEFAULT_PREFIX).replace(/^\/+|\/+$/g, "")
-  return trimmed || DEFAULT_PREFIX
-}
-
 function envBool(name, defaultWhenUnset) {
   const v = process.env[name]
   if (v === undefined || v === "") return defaultWhenUnset
   return v === "1" || v.toLowerCase() === "true"
 }
 
-const prefix = normalizePrefix(process.env.AWS_S3_PREFIX)
-const markerKey = `${prefix}/.keep`
+const markerKey = "system/.keep"
 const bucket = process.env.AWS_S3_BUCKET
 
 if (!bucket) {

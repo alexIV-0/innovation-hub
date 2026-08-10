@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
+import { useI18n } from "@/components/account/i18n"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminSidebarLink } from "./admin-sidebar-link"
 import { AdminSidebarUser } from "./admin-sidebar-user"
@@ -14,6 +15,7 @@ type Props = {
 }
 
 export function AdminSidebar({ email, fullName, onNavigate }: Props) {
+  const { t } = useI18n()
   const { videos, ideas, users, signOut } = useAdminData()
 
   const counts: Record<string, number> = {
@@ -42,12 +44,13 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
 
       <nav className="scrollbar-elegant flex-1 space-y-1 overflow-y-auto px-3">
         <p className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
-          Workspace
+          {t.workspaceSection}
         </p>
         {adminNavItems.map((item) => (
           <AdminSidebarLink
             key={item.href}
             item={item}
+            label={t[item.labelKey]}
             badge={counts[item.href]}
             onNavigate={onNavigate}
           />
@@ -61,7 +64,7 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
           className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-white/[0.03] px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4 shrink-0" />
-          Back to dashboard
+          {t.dashboard}
         </Link>
         <div className="h-px bg-border/60" />
         <AdminSidebarUser

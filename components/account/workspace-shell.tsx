@@ -2,8 +2,9 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
+  ChevronDown,
   ChevronLeft,
   FolderOpen,
   LayoutDashboard,
@@ -21,6 +22,10 @@ import {
   formatBalance,
   useI18n,
 } from "@/components/account/i18n"
+import {
+  adminNavItems,
+  isItemActive,
+} from "@/components/admin/shell/nav-config"
 
 export type WorkspaceUser = {
   email: string
@@ -39,12 +44,14 @@ function NavItem({
   icon,
   label,
   collapsed,
+  nested,
 }: {
   href: string
   active: boolean
   icon: React.ReactNode
   label: string
   collapsed: boolean
+  nested?: boolean
 }) {
   return (
     <Link
@@ -52,6 +59,7 @@ function NavItem({
       className={cn(
         "relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-medium transition-colors",
         collapsed && "justify-center px-2",
+        nested && !collapsed && "py-2 text-[13px]",
         active
           ? "bg-[rgba(45,131,206,0.16)] text-[#eef1f6]"
           : "text-[#c3c8d2] hover:bg-white/5 hover:text-[#eef1f6]",
@@ -87,6 +95,12 @@ function SidebarContent({
   const isDash = pathname === "/account"
   const isProjects = pathname.startsWith("/account/projects")
   const isProfile = pathname.startsWith("/account/profile")
+  const isAdmin = pathname.startsWith("/admin")
+  const [adminOpen, setAdminOpen] = useState(isAdmin)
+
+  useEffect(() => {
+    if (isAdmin) setAdminOpen(true)
+  }, [isAdmin])
 
   const signOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" })
@@ -168,7 +182,7 @@ function SidebarContent({
         </div>
       </div>
 
-      <nav className="flex shrink-0 flex-col gap-1 px-3 py-2">
+      <nav className="flex shrink-0 flex-col gap-1 overflow-y-auto px-3 py-2">
         {!collapsed && (
           <div className="px-2.5 pb-1.5 pt-3.5 text-[11px] font-semibold tracking-[1.4px] text-[#5a606e]">
             {t.workspaceSection}
@@ -193,14 +207,68 @@ function SidebarContent({
           />
         </div>
         {user.role === "ADMIN" && (
-          <div onClick={onNavigate}>
-            <NavItem
-              href="/admin"
-              active={false}
-              collapsed={collapsed}
-              icon={<Shield className="h-5 w-5" />}
-              label={t.adminPanel}
-            />
+          <div className="flex flex-col gap-0.5">
+            {collapsed ? (
+              <div onClick={onNavigate}>
+                <NavItem
+                  href="/admin"
+                  active={isAdmin}
+                  collapsed
+                  icon={<Shield className="h-5 w-5" />}
+                  label={t.adminPanel}
+                />
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setAdminOpen((v) => !v)}
+                  className={cn(
+                    "relative flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-medium transition-colors",
+                    isAdmin
+                      ? "bg-[rgba(45,131,206,0.16)] text-[#eef1f6]"
+                      : "text-[#c3c8d2] hover:bg-white/5 hover:text-[#eef1f6]",
+                  )}
+                >
+                  {isAdmin && (
+                    <span className="absolute bottom-[9px] left-0 top-[9px] w-[3px] rounded-[3px] bg-[#2f80ed]" />
+                  )}
+                  <span
+                    className={cn(isAdmin ? "text-[#6aa5e8]" : "text-[#8b909c]")}
+                  >
+                    <Shield className="h-5 w-5" />
+                  </span>
+                  <span className="flex-1 whitespace-nowrap text-left">
+                    {t.adminPanel}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-[#8b909c] transition-transform",
+                      adminOpen && "rotate-180",
+                    )}
+                  />
+                </button>
+                {adminOpen && (
+                  <div className="ml-4 flex flex-col gap-0.5 border-l border-white/10 pl-2">
+                    {adminNavItems.map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <div key={item.href} onClick={onNavigate}>
+                          <NavItem
+                            href={item.href}
+                            active={isItemActive(item, pathname)}
+                            collapsed={false}
+                            nested
+                            icon={<Icon className="h-4 w-4" />}
+                            label={t[item.labelKey]}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </nav>
@@ -302,7 +370,9 @@ function WorkspaceShellInner({
         ? t.projects
         : pathname.startsWith("/account/profile")
           ? t.profileTitle
-          : "FF Works"
+          : pathname.startsWith("/admin")
+            ? t.adminPanel
+            : "FF Works"
 
   return (
     <div

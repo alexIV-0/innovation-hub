@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const file = await writeFolderCreate({
+      userId: access.ownerId,
       projectId: access.projectId,
       folderPath: data.folderPath,
       name: data.name,

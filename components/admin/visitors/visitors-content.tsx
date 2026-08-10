@@ -16,6 +16,8 @@ import {
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useI18n } from "@/components/account/i18n"
+import { tf, useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { EmptyState } from "@/components/admin/shared/empty-state"
@@ -75,25 +77,9 @@ type Audience = "all" | "authenticated" | "anonymous"
 type Since = "24h" | "7d" | "30d" | "all"
 type View = "groups" | "events"
 
-const audienceOptions: { id: Audience; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "authenticated", label: "Signed in" },
-  { id: "anonymous", label: "Anonymous" },
-]
-
-const sinceOptions: { id: Since; label: string }[] = [
-  { id: "24h", label: "24h" },
-  { id: "7d", label: "7d" },
-  { id: "30d", label: "30d" },
-  { id: "all", label: "All time" },
-]
-
-const viewOptions: { id: View; label: string; icon: typeof Users }[] = [
-  { id: "groups", label: "Visitors", icon: Users },
-  { id: "events", label: "Events", icon: Activity },
-]
-
 export function VisitorsContent() {
+  const { t: accountT, lang } = useI18n()
+  const t = useAdminI18n()
   const [data, setData] = useState<ApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -101,6 +87,21 @@ export function VisitorsContent() {
   const [audience, setAudience] = useState<Audience>("all")
   const [since, setSince] = useState<Since>("24h")
   const [query, setQuery] = useState("")
+  const audienceOptions: { id: Audience; label: string }[] = [
+    { id: "all", label: t.audienceAll },
+    { id: "authenticated", label: t.audienceSignedIn },
+    { id: "anonymous", label: t.audienceAnonymous },
+  ]
+  const sinceOptions: { id: Since; label: string }[] = [
+    { id: "24h", label: t.window24h },
+    { id: "7d", label: t.window7d },
+    { id: "30d", label: t.window30d },
+    { id: "all", label: t.windowAll },
+  ]
+  const viewOptions: { id: View; label: string; icon: typeof Users }[] = [
+    { id: "groups", label: t.viewVisitors, icon: Users },
+    { id: "events", label: t.viewEvents, icon: Activity },
+  ]
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -123,13 +124,13 @@ export function VisitorsContent() {
         const json = (await response.json()) as ApiResponse
         setData(json)
       } catch {
-        toast.error("Could not load visitors data.")
+        toast.error(t.visitorsLoadError)
       } finally {
         setLoading(false)
         setRefreshing(false)
       }
     },
-    [audience, since, query],
+    [audience, since, query, t.visitorsLoadError],
   )
 
   useEffect(() => {
@@ -143,9 +144,9 @@ export function VisitorsContent() {
   return (
     <div className="space-y-8">
       <AdminPageHeader
-        eyebrow="Insights"
-        title="Visitors"
-        description="Who walked through the door, where they went, and how often."
+        eyebrow={accountT.adminVisitorsEyebrow}
+        title={accountT.adminVisitorsTitle}
+        description={accountT.adminVisitorsDesc}
         actions={
           <Button
             variant="outline"
@@ -156,38 +157,38 @@ export function VisitorsContent() {
             <RefreshCcw
               className={cn("h-4 w-4", refreshing && "animate-spin")}
             />
-            Refresh
+            {t.refresh}
           </Button>
         }
       />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Visits • 24h"
+          label={t.visits24h}
           value={stats?.totalLast24h ?? 0}
           icon={Eye}
           accent="primary"
         />
         <StatCard
-          label="Unique • 24h"
+          label={t.unique24h}
           value={stats?.uniqueLast24h ?? 0}
           icon={Fingerprint}
           accent="violet"
-          hint="Distinct fingerprints"
+          hint={t.uniqueHint}
         />
         <StatCard
-          label="Signed in • 24h"
+          label={t.signedIn24h}
           value={stats?.authedLast24h ?? 0}
           icon={ShieldCheck}
           accent="emerald"
-          hint="Distinct user accounts"
+          hint={t.signedInHint}
         />
         <StatCard
-          label="Visits • 7d"
+          label={t.visits7d}
           value={stats?.total7d ?? 0}
           icon={CalendarClock}
           accent="amber"
-          hint={`${stats?.unique7d ?? 0} unique`}
+          hint={tf(t.uniqueCount, { n: stats?.unique7d ?? 0 })}
         />
       </div>
 
@@ -197,7 +198,7 @@ export function VisitorsContent() {
             <SearchInput
               value={query}
               onChange={setQuery}
-              placeholder="Search by email, name, path or fingerprint…"
+              placeholder={t.searchVisitors}
             />
             <div className="flex flex-wrap items-center gap-2">
               <Pills value={view} onChange={setView} options={viewOptions} />
@@ -206,13 +207,13 @@ export function VisitorsContent() {
 
           <div className="flex flex-wrap items-center gap-2">
             <FilterChips
-              label="Audience"
+              label={t.audience}
               value={audience}
               onChange={setAudience}
               options={audienceOptions}
             />
             <FilterChips
-              label="Window"
+              label={t.window}
               value={since}
               onChange={setSince}
               options={sinceOptions}
@@ -225,32 +226,32 @@ export function VisitorsContent() {
             groups.length === 0 ? (
               <EmptyState
                 icon={<Users className="h-5 w-5" />}
-                title="No visitors in this window"
-                description="Try widening the time range or clearing filters."
+                title={t.noVisitorsWindow}
+                description={t.noVisitorsWindowDesc}
               />
             ) : (
               <div className="space-y-2">
                 {groups.map((group) => (
-                  <VisitorGroupRow key={group.key} group={group} />
+                  <VisitorGroupRow key={group.key} group={group} t={t} />
                 ))}
               </div>
             )
           ) : events.length === 0 ? (
             <EmptyState
               icon={<Activity className="h-5 w-5" />}
-              title="No events in this window"
-              description="Once people open a public page they'll show up here."
+              title={t.noEventsWindow}
+              description={t.noEventsWindowDesc}
             />
           ) : (
             <div className="space-y-1.5">
               {events.map((event) => (
-                <VisitorEventRow key={event.id} event={event} />
+                <VisitorEventRow key={event.id} event={event} t={t} lang={lang} />
               ))}
             </div>
           )}
         </div>
 
-        <TopPathsCard paths={stats?.topPaths ?? []} loading={loading} />
+        <TopPathsCard paths={stats?.topPaths ?? []} loading={loading} t={t} />
       </div>
     </div>
   )
@@ -331,8 +332,17 @@ function FilterChips<T extends string>({
   )
 }
 
-function VisitorGroupRow({ group }: { group: VisitorGroup }) {
-  const ua = useMemo(() => parseUserAgent(group.userAgent), [group.userAgent])
+function VisitorGroupRow({
+  group,
+  t,
+}: {
+  group: VisitorGroup
+  t: ReturnType<typeof useAdminI18n>
+}) {
+  const ua = useMemo(
+    () => parseUserAgent(group.userAgent, t.unknown),
+    [group.userAgent, t.unknown],
+  )
   const isAuthed = Boolean(group.userId)
   const initials = isAuthed
     ? makeInitials(group.userFullName ?? group.userEmail ?? "?")
@@ -356,8 +366,8 @@ function VisitorGroupRow({ group }: { group: VisitorGroup }) {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="truncate font-medium text-foreground">
               {isAuthed
-                ? group.userFullName || group.userEmail || "Signed-in user"
-                : "Anonymous"}
+                ? group.userFullName || group.userEmail || t.signedInUser
+                : t.anonymous}
             </p>
             <span
               className={cn(
@@ -369,7 +379,7 @@ function VisitorGroupRow({ group }: { group: VisitorGroup }) {
             >
               {isAuthed ? (
                 <>
-                  <ShieldCheck className="h-3 w-3" /> Signed in
+                  <ShieldCheck className="h-3 w-3" /> {t.signedIn}
                 </>
               ) : (
                 <>
@@ -406,17 +416,17 @@ function VisitorGroupRow({ group }: { group: VisitorGroup }) {
       </div>
 
       <div className="grid grid-cols-3 gap-3 text-xs md:w-[320px] md:grid-cols-3 md:gap-4 md:text-right">
-        <Metric label="Visits" value={group.visits} />
-        <Metric label="Pages" value={group.uniquePaths} />
-        <Metric label="Last seen" value={timeAgo(group.lastSeen)} mono={false} />
+        <Metric label={t.visits} value={group.visits} />
+        <Metric label={t.pages} value={group.uniquePaths} />
+        <Metric label={t.lastSeen} value={timeAgo(group.lastSeen, t)} mono={false} />
       </div>
 
       <div className="text-xs text-muted-foreground md:hidden">
-        Last on{" "}
+        {t.lastOn}
         <span className="font-mono text-foreground/80">{group.lastPath || "—"}</span>
       </div>
       <div className="hidden text-right text-[11px] text-muted-foreground md:block md:basis-full">
-        Last on{" "}
+        {t.lastOn}
         <span className="font-mono text-foreground/80">{group.lastPath || "—"}</span>
       </div>
     </div>
@@ -449,7 +459,15 @@ function Metric({
   )
 }
 
-function VisitorEventRow({ event }: { event: VisitorEvent }) {
+function VisitorEventRow({
+  event,
+  t,
+  lang,
+}: {
+  event: VisitorEvent
+  t: ReturnType<typeof useAdminI18n>
+  lang: string
+}) {
   const isAuthed = Boolean(event.userId)
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/40 px-3 py-2 text-sm">
@@ -476,11 +494,11 @@ function VisitorEventRow({ event }: { event: VisitorEvent }) {
       </span>
       <span className="hidden truncate text-xs text-muted-foreground md:block md:max-w-[180px]">
         {isAuthed
-          ? event.userEmail || event.userFullName || "Signed in"
+          ? event.userEmail || event.userFullName || t.signedIn
           : event.fingerprint}
       </span>
       <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-        {formatDateTime(event.createdAt)}
+        {formatDateTime(event.createdAt, lang)}
       </span>
     </div>
   )
@@ -489,26 +507,28 @@ function VisitorEventRow({ event }: { event: VisitorEvent }) {
 function TopPathsCard({
   paths,
   loading,
+  t,
 }: {
   paths: { path: string; visits: number }[]
   loading: boolean
+  t: ReturnType<typeof useAdminI18n>
 }) {
   const max = Math.max(1, ...paths.map((p) => p.visits))
   return (
     <aside className="space-y-3 rounded-2xl border border-border/70 bg-card/60 p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">Top pages • 7d</h2>
+        <h2 className="text-sm font-semibold text-foreground">{t.topPages7d}</h2>
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Visits
+          {t.visits}
         </span>
       </div>
       {loading ? (
         <div className="py-6">
-          <LoadingBlock label="Counting…" />
+          <LoadingBlock label={t.counting} />
         </div>
       ) : paths.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted-foreground">
-          No pages tracked yet.
+          {t.noPagesTracked}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -560,12 +580,15 @@ function primaryLanguage(value: string) {
 }
 
 /** Lightweight UA sniff — we just need a readable label for the dashboard. */
-function parseUserAgent(ua: string): { browser: string; os: string } {
-  if (!ua) return { browser: "Unknown", os: "Unknown" }
+function parseUserAgent(
+  ua: string,
+  unknown: string,
+): { browser: string; os: string } {
+  if (!ua) return { browser: unknown, os: unknown }
 
   const lower = ua.toLowerCase()
 
-  let browser = "Unknown"
+  let browser = unknown
   if (lower.includes("edg/")) browser = "Edge"
   else if (lower.includes("opr/") || lower.includes("opera"))
     browser = "Opera"
@@ -574,7 +597,7 @@ function parseUserAgent(ua: string): { browser: string; os: string } {
   else if (lower.includes("firefox")) browser = "Firefox"
   else if (lower.includes("safari")) browser = "Safari"
 
-  let os = "Unknown"
+  let os = unknown
   if (lower.includes("windows")) os = "Windows"
   else if (lower.includes("android")) os = "Android"
   else if (lower.includes("iphone") || lower.includes("ipad")) os = "iOS"
@@ -585,25 +608,25 @@ function parseUserAgent(ua: string): { browser: string; os: string } {
   return { browser, os }
 }
 
-function timeAgo(iso: string) {
+function timeAgo(iso: string, t: ReturnType<typeof useAdminI18n>) {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return "—"
   const diff = Date.now() - then
   const sec = Math.round(diff / 1000)
-  if (sec < 60) return `${sec}s ago`
+  if (sec < 60) return tf(t.timeAgoS, { n: sec })
   const min = Math.round(sec / 60)
-  if (min < 60) return `${min}m ago`
+  if (min < 60) return tf(t.timeAgoM, { n: min })
   const hr = Math.round(min / 60)
-  if (hr < 24) return `${hr}h ago`
+  if (hr < 24) return tf(t.timeAgoH, { n: hr })
   const day = Math.round(hr / 24)
-  if (day < 7) return `${day}d ago`
+  if (day < 7) return tf(t.timeAgoD, { n: day })
   return new Date(iso).toLocaleDateString()
 }
 
-function formatDateTime(iso: string) {
+function formatDateTime(iso: string, lang: string) {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return "—"
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString(lang, {
     month: "short",
     day: "2-digit",
     hour: "2-digit",

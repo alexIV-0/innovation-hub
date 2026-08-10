@@ -70,7 +70,9 @@ export async function POST(request: NextRequest) {
   }
 
   const bucket = getS3Bucket()
-  const key = buildS3ObjectKey(`${randomUUID()}-${safeBaseFileName(fileName)}`)
+  const key = buildS3ObjectKey(
+    `admin/${randomUUID()}-${safeBaseFileName(fileName)}`,
+  )
 
   /**
    * Intentionally do NOT pass ContentType here — see file header comment.

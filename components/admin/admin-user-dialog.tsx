@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -59,6 +60,7 @@ export function AdminUserDialog({
   onOpenChange,
   onSubmit,
 }: Props) {
+  const t = useAdminI18n()
   const [draft, setDraft] = useState<UserDraft>(emptyDraft)
   const [submitting, setSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -79,24 +81,24 @@ export function AdminUserDialog({
     }
   }, [open, mode, initialUser])
 
-  const titleText = mode === "create" ? "New person" : "Edit person"
-  const submitText = mode === "create" ? "Create account" : "Save changes"
+  const titleText = mode === "create" ? t.newPerson : t.editPerson
+  const submitText = mode === "create" ? t.createAccount : t.saveChanges
 
   const handleSubmit = async () => {
     if (draft.fullName.trim().length < 2) {
-      toast.error("Please enter a full name (at least 2 characters).")
+      toast.error(t.errFullName)
       return
     }
     if (!draft.email.includes("@")) {
-      toast.error("Please enter a valid email address.")
+      toast.error(t.errEmail)
       return
     }
     if (mode === "create" && draft.password.length < 8) {
-      toast.error("Password must be at least 8 characters.")
+      toast.error(t.errPassword)
       return
     }
     if (mode === "edit" && draft.password.length > 0 && draft.password.length < 8) {
-      toast.error("New password must be at least 8 characters.")
+      toast.error(t.errNewPassword)
       return
     }
 
@@ -121,19 +123,17 @@ export function AdminUserDialog({
         <DialogHeader>
           <DialogTitle>{titleText}</DialogTitle>
           <DialogDescription>
-            {mode === "create"
-              ? "Provision an account so this person can sign in immediately."
-              : "Update the profile, rotate the password or change permissions."}
+            {mode === "create" ? t.provisionDesc : t.editUserDesc}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="space-y-1.5">
-            <Label htmlFor="user-name">Full name</Label>
+            <Label htmlFor="user-name">{t.fullName}</Label>
             <Input
               id="user-name"
               autoComplete="name"
-              placeholder="Anna Petrova"
+              placeholder={t.namePlaceholder}
               value={draft.fullName}
               onChange={(event) =>
                 setDraft((prev) => ({ ...prev, fullName: event.target.value }))
@@ -142,12 +142,12 @@ export function AdminUserDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="user-email">Email</Label>
+            <Label htmlFor="user-email">{t.email}</Label>
             <Input
               id="user-email"
               type="email"
               autoComplete="email"
-              placeholder="anna@example.com"
+              placeholder={t.emailPlaceholder}
               value={draft.email}
               onChange={(event) =>
                 setDraft((prev) => ({ ...prev, email: event.target.value }))
@@ -157,9 +157,7 @@ export function AdminUserDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="user-password">
-              {mode === "create"
-                ? "Password"
-                : "New password (leave blank to keep)"}
+              {mode === "create" ? t.password : t.newPasswordKeep}
             </Label>
             <div className="relative">
               <Input
@@ -168,7 +166,7 @@ export function AdminUserDialog({
                 autoComplete={
                   mode === "create" ? "new-password" : "off"
                 }
-                placeholder={mode === "create" ? "At least 8 characters" : "••••••••"}
+                placeholder={mode === "create" ? t.passwordMin : "••••••••"}
                 value={draft.password}
                 onChange={(event) =>
                   setDraft((prev) => ({
@@ -182,7 +180,7 @@ export function AdminUserDialog({
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
-                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-label={showPassword ? t.hidePassword : t.showPassword}
                 tabIndex={-1}
               >
                 {showPassword ? (
@@ -196,7 +194,7 @@ export function AdminUserDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="user-role">Role</Label>
+              <Label htmlFor="user-role">{t.role}</Label>
               <Select
                 value={draft.role}
                 onValueChange={(value) =>
@@ -214,19 +212,19 @@ export function AdminUserDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="USER">Member</SelectItem>
-                  <SelectItem value="ADMIN">Admin</SelectItem>
+                  <SelectItem value="USER">{t.member}</SelectItem>
+                  <SelectItem value="ADMIN">{t.admin}</SelectItem>
                 </SelectContent>
               </Select>
               {isSelf ? (
                 <p className="text-[11px] text-muted-foreground">
-                  You can&apos;t demote yourself.
+                  {t.cantDemoteSelf}
                 </p>
               ) : null}
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="user-active">Status</Label>
+              <Label htmlFor="user-active">{t.status}</Label>
               <div className="flex h-10 items-center gap-3 rounded-xl border border-border/70 bg-card/40 px-3">
                 <Switch
                   id="user-active"
@@ -237,12 +235,12 @@ export function AdminUserDialog({
                   disabled={isSelf}
                 />
                 <span className="text-sm text-foreground">
-                  {draft.isActive ? "Active" : "Suspended"}
+                  {draft.isActive ? t.active : t.suspended}
                 </span>
               </div>
               {isSelf ? (
                 <p className="text-[11px] text-muted-foreground">
-                  You can&apos;t suspend yourself.
+                  {t.cantSuspendSelf}
                 </p>
               ) : null}
             </div>
@@ -255,7 +253,7 @@ export function AdminUserDialog({
             disabled={submitting}
             onClick={() => onOpenChange(false)}
           >
-            Cancel
+            {t.cancel}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting}>
             {submitting ? (

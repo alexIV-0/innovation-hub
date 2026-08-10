@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
   const access = await requireOwnedProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
-  const expectedPrefix = projectPrefix(access.projectId)
+  const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
   if (!data.s3Key.startsWith(expectedPrefix)) {
     return NextResponse.json({ message: "Invalid key." }, { status: 400 })
   }

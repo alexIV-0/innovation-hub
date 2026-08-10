@@ -1,6 +1,7 @@
 "use client"
 
 import { Search } from "lucide-react"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
@@ -14,16 +15,17 @@ type Props = {
 export function SearchInput({
   value,
   onChange,
-  placeholder = "Search…",
+  placeholder,
   className,
 }: Props) {
+  const t = useAdminI18n()
   return (
     <div className={cn("relative w-full sm:max-w-sm", className)}>
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t.search}
         className="h-10 rounded-xl border-border/70 bg-card/40 pl-9 text-sm placeholder:text-muted-foreground/70 focus-visible:bg-card"
       />
     </div>

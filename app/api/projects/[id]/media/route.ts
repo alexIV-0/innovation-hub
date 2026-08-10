@@ -163,7 +163,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   const objectName = `${randomUUID()}-${fileName}`
-  const s3Key = projectUploadObjectKey(project.id, folderPath, objectName)
+  const s3Key = projectUploadObjectKey(
+    project.ownerId,
+    project.id,
+    folderPath,
+    objectName,
+  )
 
   try {
     const file = await writeR2PutFromBuffer({

@@ -1192,33 +1192,35 @@ export function WorkspacePageClient() {
           </ResizablePanel>
           <ResizableHandle withHandle className="bg-white/10" />
           <ResizablePanel defaultSize={42} minSize={20}>
-            <div className="relative mx-2.5 mb-3 flex h-full min-h-0 flex-col overflow-hidden rounded-[14px] border border-white/10 bg-[hsl(226_26%_9.5%)] md:mx-6">
-              <div className="flex shrink-0 flex-wrap gap-1.5 px-6 pt-3">
-                {(
-                  [
-                    ["desc", FileText, t.tabDesc],
-                    ["settings", Settings2, t.tabSettings],
-                    ["chat", MessageCircle, t.tabChat],
-                  ] as const
-                ).map(([tab, Icon, label]) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setBottomTab(tab)}
-                    className={cn(
-                      "flex items-center gap-2 rounded-t-[9px] px-4 py-2 text-[13.5px]",
-                      bottomTab === tab
-                        ? "bg-[#10151f] text-[#eef1f6]"
-                        : "text-[#8b909c] hover:text-[#eef1f6]",
-                    )}
-                  >
-                    <Icon className="h-[18px] w-[18px]" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/[0.07] px-6 py-5">
-                <BottomPanel tab={bottomTab} {...bottomPanelProps} />
+            <div className="flex h-full min-h-0 flex-col px-2.5 pb-3 pt-2 md:px-6">
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-white/10 bg-[hsl(226_26%_9.5%)]">
+                <div className="flex shrink-0 flex-wrap gap-1 px-2.5 pt-3">
+                  {(
+                    [
+                      ["desc", FileText, t.tabDesc],
+                      ["settings", Settings2, t.tabSettings],
+                      ["chat", MessageCircle, t.tabChat],
+                    ] as const
+                  ).map(([tab, Icon, label]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setBottomTab(tab)}
+                      className={cn(
+                        "flex items-center gap-2 rounded-t-[9px] px-3 py-2 text-[13.5px]",
+                        bottomTab === tab
+                          ? "bg-[#10151f] text-[#eef1f6]"
+                          : "text-[#8b909c] hover:text-[#eef1f6]",
+                      )}
+                    >
+                      <Icon className="h-[18px] w-[18px]" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/[0.07] px-3 py-4">
+                  <BottomPanel tab={bottomTab} {...bottomPanelProps} />
+                </div>
               </div>
             </div>
           </ResizablePanel>

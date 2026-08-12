@@ -202,6 +202,8 @@ List clients and projects visible to the caller. Prefer this over `GET /api/proj
       "groupName": "personal",
       "isActive": true,
       "isPaused": false,
+      "isArchived": false,
+      "archivedAt": null,
       "updatedAt": "2026-08-07T12:00:00.000Z"
     }
   ]
@@ -209,6 +211,16 @@ List clients and projects visible to the caller. Prefer this over `GET /api/proj
 ```
 
 `clientId` may be `null`. Client grouping is a DB relation only — R2 keys use `projects/{userId}/{projectId}/…`.
+
+**Processing flags.** Three independent booleans, do not conflate them:
+
+| Field | Meaning | What a worker should do |
+|---|---|---|
+| `isPaused` | User paused the project | Skip until resumed |
+| `isActive` | Mirror of `!isPaused` (legacy) | Same as above |
+| `isArchived` | Project moved to the Archive tab | **Skip — never start processing.** `archivedAt` holds the timestamp |
+
+Archiving no longer sets `groupName` to `"archive"`: the group only drives UI layout, the status lives in `isArchived`.
 
 ---
 

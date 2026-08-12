@@ -1,12 +1,18 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import {
+  Archive,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   FolderOpen,
+  Trash2,
+  Users,
+  Wrench,
+  type LucideIcon,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -16,6 +22,10 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@/lib/domain-types"
+import { ResizeGrip } from "@/components/account/resize-grip"
+import { useDragSize } from "@/components/account/use-drag-size"
+import { useProjectCounts } from "@/components/account/use-project-counts"
+import type { ProjectTab } from "@/components/account/workspace/workspace-context"
 import {
   I18nProvider,
   avatarInitials,
@@ -26,6 +36,29 @@ import {
   adminNavItems,
   isItemActive,
 } from "@/components/admin/shell/nav-config"
+
+/** Ширины боковой панели: свёрнутая, развёрнутая по умолчанию и минимум развёрнутой. */
+const SIDEBAR_COLLAPSED = 72
+const SIDEBAR_EXPANDED = 248
+const SIDEBAR_MIN_EXPANDED = 200
+/** Ниже этой ширины панель показывается свёрнутой. */
+const SIDEBAR_SNAP = 150
+
+/**
+ * Разделы списка проектов — плоские кнопки бокового меню.
+ * Все ведут на одну страницу, отличается только `?tab=`.
+ */
+const PROJECT_SECTIONS: {
+  tab: ProjectTab
+  labelKey: "projects" | "sharedTab" | "toolsTab" | "archiveTab" | "trashTab"
+  icon: LucideIcon
+}[] = [
+  { tab: "projects", labelKey: "projects", icon: FolderOpen },
+  { tab: "shared", labelKey: "sharedTab", icon: Users },
+  { tab: "tools", labelKey: "toolsTab", icon: Wrench },
+  { tab: "archive", labelKey: "archiveTab", icon: Archive },
+  { tab: "trash", labelKey: "trashTab", icon: Trash2 },
+]
 
 export type WorkspaceUser = {
   email: string
@@ -45,6 +78,7 @@ function NavItem({
   label,
   collapsed,
   nested,
+  count,
 }: {
   href: string
   active: boolean
@@ -52,7 +86,11 @@ function NavItem({
   label: string
   collapsed: boolean
   nested?: boolean
+  /** Число справа. Пустой раздел показывается приглушённым, но остаётся кликабельным. */
+  count?: number
 }) {
+  const dimmed = count === 0 && !active
+
   return (
     <Link
       href={href}
@@ -63,6 +101,7 @@ function NavItem({
         active
           ? "bg-[rgba(45,131,206,0.16)] text-[#eef1f6]"
           : "text-[#c3c8d2] hover:bg-white/5 hover:text-[#eef1f6]",
+        dimmed && "opacity-45",
       )}
     >
       {active && (
@@ -71,7 +110,16 @@ function NavItem({
       <span className={cn(active ? "text-[#6aa5e8]" : "text-[#8b909c]")}>
         {icon}
       </span>
-      {!collapsed && <span className="flex-1 whitespace-nowrap">{label}</span>}
+      {!collapsed && (
+        <>
+          <span className="flex-1 whitespace-nowrap">{label}</span>
+          {typeof count === "number" && count > 0 ? (
+            <span className="shrink-0 text-[12.5px] tabular-nums text-[#7c8290]">
+              {count}
+            </span>
+          ) : null}
+        </>
+      )}
     </Link>
   )
 }
@@ -88,12 +136,18 @@ function SidebarContent({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const { t, lang, setLang } = useI18n()
   const initials = avatarInitials(user.fullName, user.email)
 
+  const counts = useProjectCounts()
+
   const isDash = pathname === "/account"
-  const isProjects = pathname.startsWith("/account/projects")
+  const inProjects = pathname.startsWith("/account/projects")
+  // Все разделы — одна страница проектов, отличается только ?tab=…
+  const tab = searchParams.get("tab") ?? "projects"
+  const isTab = (name: ProjectTab) => inProjects && tab === name
   const isProfile = pathname.startsWith("/account/profile")
   const isAdmin = pathname.startsWith("/admin")
   const [adminOpen, setAdminOpen] = useState(isAdmin)
@@ -113,17 +167,31 @@ function SidebarContent({
       <div
         className={cn(
           "flex h-16 shrink-0 items-center gap-2.5 px-3.5",
-          collapsed && "justify-center",
+          collapsed && "flex-col justify-center gap-1.5 px-2",
         )}
       >
         <button
           type="button"
           onClick={onToggle}
+          title={collapsed ? t.sidebarExpand : t.sidebarCollapse}
+          aria-label={collapsed ? t.sidebarExpand : t.sidebarCollapse}
           className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border border-[rgba(91,155,224,0.4)] bg-gradient-to-br from-[#1f3a63] to-[#16273f] text-[12px] font-bold tracking-wide text-[#7fb0f0]"
         >
           FF
         </button>
-        {!collapsed && (
+        {collapsed ? (
+          onToggle ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              title={t.sidebarExpand}
+              aria-label={t.sidebarExpand}
+              className="flex h-[22px] w-[34px] shrink-0 items-center justify-center rounded-md text-[#9aa0ac] hover:bg-white/5 hover:text-[#eef1f6]"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          ) : null
+        ) : (
           <>
             <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-[#eef1f6]">
               FF Works
@@ -132,6 +200,8 @@ function SidebarContent({
               <button
                 type="button"
                 onClick={onToggle}
+                title={t.sidebarCollapse}
+                aria-label={t.sidebarCollapse}
                 className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-[#9aa0ac] hover:bg-white/5 hover:text-[#eef1f6]"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -197,15 +267,30 @@ function SidebarContent({
             label={t.dashboard}
           />
         </div>
-        <div onClick={onNavigate}>
-          <NavItem
-            href="/account/projects"
-            active={isProjects}
-            collapsed={collapsed}
-            icon={<FolderOpen className="h-5 w-5" />}
-            label={t.projects}
-          />
-        </div>
+        {PROJECT_SECTIONS.map((section) => {
+          const Icon = section.icon
+          return (
+            <div key={section.tab} onClick={onNavigate}>
+              <NavItem
+                href={
+                  section.tab === "projects"
+                    ? "/account/projects"
+                    : `/account/projects?tab=${section.tab}`
+                }
+                active={isTab(section.tab)}
+                collapsed={collapsed}
+                icon={<Icon className="h-5 w-5" />}
+                label={t[section.labelKey]}
+                count={counts[section.tab]}
+              />
+            </div>
+          )
+        })}
+      </nav>
+
+      <div className="flex-1" />
+
+      <nav className="flex shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-2">
         {user.role === "ADMIN" && (
           <div className="flex flex-col gap-0.5">
             {collapsed ? (
@@ -272,8 +357,6 @@ function SidebarContent({
           </div>
         )}
       </nav>
-
-      <div className="flex-1" />
 
       <div className={cn("shrink-0 px-3 pt-2.5", collapsed && "px-2")}>
         <div
@@ -357,17 +440,40 @@ function WorkspaceShellInner({
   balanceCents,
   children,
 }: ShellProps) {
-  const [collapsed, setCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const user: WorkspaceUser = { email, fullName, role, balanceCents }
   const { t } = useI18n()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  /**
+   * Свёрнутость — это не отдельный флаг, а просто узкая ширина.
+   * Тогда край панели тянется в обе стороны: утащили влево — свернулась,
+   * потянули вправо — раскрылась, отдельная кнопка не нужна.
+   */
+  const sidebar = useDragSize({
+    initial: SIDEBAR_EXPANDED,
+    min: SIDEBAR_COLLAPSED,
+    max: 420,
+    axis: "x",
+    storageKey: "ffworks-sidebar-width",
+  })
+
+  const collapsed = sidebar.size < SIDEBAR_SNAP
+  const sidebarWidth = collapsed
+    ? SIDEBAR_COLLAPSED
+    : Math.max(SIDEBAR_MIN_EXPANDED, sidebar.size)
+
+  const toggleCollapsed = () =>
+    sidebar.setSize(collapsed ? SIDEBAR_EXPANDED : SIDEBAR_COLLAPSED)
 
   const title =
     pathname === "/account"
       ? t.dashboard
       : pathname.startsWith("/account/projects")
-        ? t.projects
+        ? searchParams.get("tab") === "archive"
+          ? t.archiveTab
+          : t.projects
         : pathname.startsWith("/account/profile")
           ? t.profileTitle
           : pathname.startsWith("/admin")
@@ -381,15 +487,21 @@ function WorkspaceShellInner({
     >
       {/* Desktop sidebar */}
       <aside
-        className={cn(
-          "relative hidden shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-[hsl(226_28%_9%)] lg:flex",
-          collapsed ? "w-[72px]" : "w-[248px]",
-        )}
+        style={{ width: sidebarWidth }}
+        className="relative hidden shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-[hsl(226_28%_9%)] lg:flex"
       >
         <SidebarContent
           user={user}
           collapsed={collapsed}
-          onToggle={() => setCollapsed((v) => !v)}
+          onToggle={toggleCollapsed}
+        />
+        <ResizeGrip
+          orientation="vertical"
+          side="right"
+          label={collapsed ? t.sidebarExpand : t.sidebarCollapse}
+          dragging={sidebar.dragging}
+          onPointerDown={sidebar.onPointerDown}
+          onKeyDown={sidebar.onKeyDown}
         />
       </aside>
 

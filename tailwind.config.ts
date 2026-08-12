@@ -64,6 +64,23 @@ const config: Config = {
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))',
         },
+        ws: {
+          well: 'hsl(var(--ws-well))',
+          panel: 'hsl(var(--ws-panel))',
+          control: 'hsl(var(--ws-control))',
+          raised: 'hsl(var(--ws-raised))',
+          hover: 'hsl(var(--ws-hover))',
+          1: 'hsl(var(--ws-text-1))',
+          2: 'hsl(var(--ws-text-2))',
+          3: 'hsl(var(--ws-text-3))',
+          4: 'hsl(var(--ws-text-4))',
+          5: 'hsl(var(--ws-text-5))',
+          accent: 'hsl(var(--ws-accent))',
+          action: 'hsl(var(--ws-action))',
+          'action-hover': 'hsl(var(--ws-action-hover))',
+          select: 'hsl(var(--ws-select))',
+          out: 'hsl(var(--ws-out))',
+        },
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
           foreground: 'hsl(var(--sidebar-foreground))',
@@ -86,6 +103,9 @@ const config: Config = {
         glow: '0 10px 44px -20px hsl(var(--primary) / 0.55)',
         'glow-soft': '0 10px 30px -18px hsl(var(--primary) / 0.35)',
         panel: '0 16px 60px -34px hsl(218 80% 60% / 0.45)',
+        'ws-panel': '0 3px 12px rgb(0 0 0 / 0.22)',
+        'ws-menu': '0 18px 44px rgb(0 0 0 / 0.55)',
+        'ws-inset': 'inset 0 1px 0 rgb(255 255 255 / 0.08)',
       },
       backgroundImage: {
         'hero-grid':

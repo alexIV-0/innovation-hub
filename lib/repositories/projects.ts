@@ -16,6 +16,8 @@ const PROJECT_FIELDS = `
   COALESCE(is_paused, FALSE) AS "isPaused",
   drive_folder_id AS "driveFolderId",
   COALESCE(is_active, TRUE) AS "isActive",
+  COALESCE(is_archived, FALSE) AS "isArchived",
+  archived_at AS "archivedAt",
   client_id AS "clientId",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
@@ -51,6 +53,7 @@ export async function listProjectsByOwner(
        FROM projects
       WHERE user_id = $1
       ORDER BY
+        COALESCE(is_archived, FALSE),
         CASE COALESCE(group_name, 'personal')
           WHEN 'shared' THEN 0
           WHEN 'personal' THEN 1
@@ -161,17 +164,9 @@ export async function createProject(input: {
       input.driveFolderId ?? null,
     ],
   )
-  const project = result.rows[0]
-
-  const { writeFolderCreate } = await import("@/lib/storage/write-path")
-  await writeFolderCreate({ userId: ownerId, projectId: id, folderPath: "", name: "IN" }).catch(
-    () => undefined,
-  )
-  await writeFolderCreate({ userId: ownerId, projectId: id, folderPath: "", name: "OUT" }).catch(
-    () => undefined,
-  )
-
-  return project
+  // Папки IN / OUT намеренно не создаём: структуру проекта задаёт пользователь.
+  // Упрощённый режим работает и с плоским корнем, и с парой IN / OUT.
+  return result.rows[0]
 }
 
 export async function setProjectDriveFolderId(
@@ -229,6 +224,7 @@ export async function updateProject(
     groupName?: ProjectGroupName
     isPaused?: boolean
     isActive?: boolean
+    isArchived?: boolean
   },
 ): Promise<ProjectRecord | null> {
   let isPaused = input.isPaused
@@ -247,6 +243,12 @@ export async function updateProject(
             group_name  = COALESCE($5, group_name),
             is_paused   = COALESCE($6, is_paused),
             is_active   = COALESCE($7, is_active),
+            is_archived = COALESCE($8, is_archived),
+            archived_at = CASE
+                            WHEN $8 IS NULL THEN archived_at
+                            WHEN $8 = TRUE  THEN COALESCE(archived_at, NOW())
+                            ELSE NULL
+                          END,
             updated_at  = NOW()
       WHERE id = $1 AND user_id = $2
       RETURNING ${PROJECT_FIELDS}`,
@@ -258,6 +260,7 @@ export async function updateProject(
       input.groupName ?? null,
       isPaused ?? null,
       isActive ?? null,
+      input.isArchived ?? null,
     ],
   )
   return result.rows[0] ?? null

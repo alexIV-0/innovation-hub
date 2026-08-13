@@ -61,6 +61,8 @@ function serializeProject(project: {
   groupName: string
   isActive: boolean
   isPaused: boolean
+  isArchived: boolean
+  archivedAt: Date | null
   updatedAt: Date
 }) {
   return {
@@ -70,6 +72,9 @@ function serializeProject(project: {
     groupName: project.groupName,
     isActive: project.isActive,
     isPaused: project.isPaused,
+    // Архивные проекты обработчик должен пропускать.
+    isArchived: project.isArchived,
+    archivedAt: project.archivedAt ? project.archivedAt.toISOString() : null,
     updatedAt: project.updatedAt.toISOString(),
   }
 }

@@ -1,0 +1,124 @@
+"use client"
+
+import { Folder, MessageCircle, Pause, Play, Wrench } from "lucide-react"
+
+import { cn } from "@/lib/utils"
+import type { Project } from "./types"
+import { useWorkspace } from "./workspace-context"
+
+/** Карточка проекта в левой колонке: имя, статус обработки и чат. */
+export function ProjectCard({
+  project,
+  groupName,
+}: {
+  project: Project
+  groupName: string
+}) {
+  const { t, selectedId, selectProject, patchProject, openChat, openMenu, menu } =
+    useWorkspace()
+
+  const selected = project.id === selectedId
+  const isTool = groupName === "tools"
+  const paused = project.isPaused
+  const unread = project.unreadCount > 0
+  const isMenuTarget = menu?.kind === "project" && menu.project?.id === project.id
+  const Icon = isTool ? Wrench : Folder
+
+  const chatPill = (
+    <button
+      type="button"
+      title={t.openChat}
+      onClick={(e) => {
+        e.stopPropagation()
+        openChat(project.id)
+      }}
+      className={cn(
+        "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-[3px] text-[11px] hover:brightness-125",
+        unread
+          ? "border-ws-select/50 bg-ws-select/[0.12] text-primary"
+          : "border-white/[0.12] text-ws-3",
+      )}
+    >
+      <MessageCircle className="h-3 w-3" />
+      {t.chat}
+      {unread ? (
+        <span className="h-[7px] w-[7px] rounded-full bg-ws-select ring-2 ring-ws-select/30" />
+      ) : null}
+    </button>
+  )
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={() => selectProject(project.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          selectProject(project.id)
+        }
+      }}
+      onContextMenu={(e) => openMenu("project", e, { project })}
+      className={cn(
+        "relative mb-[7px] cursor-pointer rounded-lg border",
+        isMenuTarget
+          ? "border-ws-accent/75"
+          : selected
+            ? "border-ws-select/55 bg-gradient-to-b from-ws-select/[0.22] to-ws-select/[0.06] shadow-ws-inset"
+            : "border-white/10 hover:border-white/20",
+        paused && !selected && "opacity-55",
+      )}
+    >
+      {selected ? (
+        <span className="absolute bottom-[9px] left-0 top-[7px] w-[3px] rounded-[3px] bg-ws-select" />
+      ) : null}
+
+      <div
+        className={cn(
+          "relative flex items-center gap-2.5 px-[5px] pt-2.5 leading-tight",
+          isTool ? "pb-2.5" : "pb-[3px]",
+        )}
+      >
+        <Icon
+          className={cn(
+            "h-5 w-5 shrink-0",
+            selected ? "text-chart-3" : paused ? "text-ws-4" : "text-ws-3",
+          )}
+        />
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[16px]",
+            selected ? "text-ws-1" : paused ? "text-ws-4" : "text-ws-2",
+          )}
+        >
+          {project.name}
+        </span>
+        {isTool ? chatPill : null}
+      </div>
+
+      {isTool ? null : (
+        <div className="relative flex items-stretch justify-between gap-2 px-[5px] pb-[9px]">
+          <button
+            type="button"
+            title={paused ? t.resumeProject : t.pauseProject}
+            onClick={(e) => {
+              e.stopPropagation()
+              void patchProject(project.id, { isPaused: !paused })
+            }}
+            className={cn(
+              "flex items-center gap-1 rounded-full border px-2.5 py-[3px] text-[11px] hover:brightness-125",
+              paused
+                ? "border-white/[0.12] text-ws-3"
+                : "border-ws-out/40 bg-ws-out/10 text-ws-out",
+            )}
+          >
+            {paused ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            {paused ? t.statusPaused : t.statusActive}
+          </button>
+          {chatPill}
+        </div>
+      )}
+    </div>
+  )
+}

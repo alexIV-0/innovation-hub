@@ -147,6 +147,12 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_folder_id TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS yougile_chat_id TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS chat_last_read_at TIMESTAMPTZ;
+-- Статус «в архиве» отдельно от group_name: обработчики пропускают такие проекты.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS projects_user_archived_idx
+  ON projects (user_id, is_archived, created_at DESC);
 
 -- Logical client grouping (UI hierarchy). Does not change R2 key layout.
 CREATE TABLE IF NOT EXISTS clients (

@@ -24,6 +24,7 @@ export const updateProjectSchema = z
     groupName: projectGroupSchema.optional(),
     isPaused: z.boolean().optional(),
     isActive: z.boolean().optional(),
+    isArchived: z.boolean().optional(),
   })
   .refine(
     (data) =>
@@ -31,7 +32,8 @@ export const updateProjectSchema = z
       data.description !== undefined ||
       data.groupName !== undefined ||
       data.isPaused !== undefined ||
-      data.isActive !== undefined,
+      data.isActive !== undefined ||
+      data.isArchived !== undefined,
     { message: "Nothing to update." },
   )
 

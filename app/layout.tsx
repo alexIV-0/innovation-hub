@@ -27,7 +27,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning — расширения браузера (Dark Reader и т.п.)
+    // дописывают свои data-атрибуты в <html> до гидратации.
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${spaceGrotesk.variable} ${inter.variable} min-h-screen font-sans antialiased`}
       >

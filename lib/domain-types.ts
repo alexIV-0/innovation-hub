@@ -27,6 +27,9 @@ export type ProjectRecord = {
   isPaused: boolean
   driveFolderId: string | null
   isActive: boolean
+  /** Проект в архиве: скрыт из рабочего списка, обработки по нему не запускаются. */
+  isArchived: boolean
+  archivedAt: Date | null
   /** Optional client grouping (UI hierarchy; not part of R2 keys). */
   clientId: string | null
   createdAt: Date

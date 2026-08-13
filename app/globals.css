@@ -50,6 +50,26 @@
     --sidebar-border: 224 18% 20%;
     --sidebar-ring: 214 88% 66%;
     --radius: 0.75rem;
+
+    /* ===== Workspace zone (/account, /admin) — см. docs/UI_TOKENS.md ===== */
+    /* поверхности: от самой глубокой к приподнятой */
+    --ws-well: 220 37% 6%;
+    --ws-panel: 226 26% 9.5%;
+    --ws-control: 220 32% 9%;
+    --ws-raised: 222 30% 12%;
+    --ws-hover: 221 31% 13%;
+    /* нейтральная шкала текста */
+    --ws-text-1: 217 31% 95%;
+    --ws-text-2: 220 14% 79%;
+    --ws-text-3: 220 10% 64%;
+    --ws-text-4: 221 9% 42%;
+    --ws-text-5: 224 13% 33%;
+    /* акценты */
+    --ws-accent: 211 68% 62%;
+    --ws-action: 217 89% 53%;
+    --ws-action-hover: 217 81% 46%;
+    --ws-select: 212 74% 52%;
+    --ws-out: 153 60% 53%;
   }
 }
 

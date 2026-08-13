@@ -1,5 +1,9 @@
 import { Resend } from "resend"
 import { getPublicSiteUrl } from "@/lib/public-site-url"
+import {
+  projectAccessGrantedHtml,
+  projectInviteWithPasswordHtml,
+} from "@/lib/mail/templates"
 
 function siteBase(): string {
   return getPublicSiteUrl() ?? "https://ffworks.pro"
@@ -57,22 +61,31 @@ export async function sendProjectAccessGrantedEmail(input: {
   to: string
   inviteeName: string
   projectName: string
+  projectId: string
   role: "viewer" | "editor"
   inviterName: string
 }): Promise<MailResult> {
   const site = siteBase()
-  const roleLabel = input.role === "editor" ? "editor" : "viewer"
-  const subject = `Access to “${input.projectName}”`
+  const openUrl = `${site}/account/projects/${input.projectId}`
+  const roleLabel = input.role === "editor" ? "Editor" : "Viewer"
+  const subject = `${input.inviterName} shared “${input.projectName}” with you`
   const text = [
     `Hi ${input.inviteeName},`,
     ``,
     `${input.inviterName} shared the project “${input.projectName}” with you as ${roleLabel}.`,
+    input.role === "editor"
+      ? "You can open this project, view files, and make changes."
+      : "You can open this project and view its files.",
     ``,
-    `Open your shared projects: ${site}/account/projects?tab=shared`,
+    `Open the project: ${openUrl}`,
   ].join("\n")
-  const html = `<p>Hi ${escapeHtml(input.inviteeName)},</p>
-<p>${escapeHtml(input.inviterName)} shared the project <strong>${escapeHtml(input.projectName)}</strong> with you as <strong>${roleLabel}</strong>.</p>
-<p><a href="${site}/account/projects?tab=shared">Open shared projects</a></p>`
+  const html = projectAccessGrantedHtml({
+    inviteeName: input.inviteeName,
+    projectName: input.projectName,
+    role: input.role,
+    inviterName: input.inviterName,
+    openUrl,
+  })
   return sendMail({ to: input.to, subject, html, text })
 }
 
@@ -85,32 +98,28 @@ export async function sendProjectInviteWithPasswordEmail(input: {
   temporaryPassword: string
 }): Promise<MailResult> {
   const site = siteBase()
-  const roleLabel = input.role === "editor" ? "editor" : "viewer"
-  const subject = `You're invited to “${input.projectName}”`
+  const loginUrl = `${site}/login`
+  const roleLabel = input.role === "editor" ? "Editor" : "Viewer"
+  const subject = `${input.inviterName} invited you to “${input.projectName}”`
   const text = [
     `Hi ${input.inviteeName},`,
     ``,
-    `${input.inviterName} invited you to InnoHub and shared “${input.projectName}” as ${roleLabel}.`,
+    `${input.inviterName} invited you to FF Works and shared “${input.projectName}” as ${roleLabel}.`,
     ``,
-    `Sign in: ${site}/login`,
+    `Sign in: ${loginUrl}`,
     `Email: ${input.to}`,
     `Temporary password: ${input.temporaryPassword}`,
     ``,
     `You will be asked to change this password after sign-in.`,
   ].join("\n")
-  const html = `<p>Hi ${escapeHtml(input.inviteeName)},</p>
-<p>${escapeHtml(input.inviterName)} invited you to InnoHub and shared <strong>${escapeHtml(input.projectName)}</strong> as <strong>${roleLabel}</strong>.</p>
-<p>Sign in at <a href="${site}/login">${site}/login</a><br/>
-Email: ${escapeHtml(input.to)}<br/>
-Temporary password: <code>${escapeHtml(input.temporaryPassword)}</code></p>
-<p>You will be asked to change this password after sign-in.</p>`
+  const html = projectInviteWithPasswordHtml({
+    inviteeName: input.inviteeName,
+    projectName: input.projectName,
+    role: input.role,
+    inviterName: input.inviterName,
+    email: input.to,
+    temporaryPassword: input.temporaryPassword,
+    loginUrl,
+  })
   return sendMail({ to: input.to, subject, html, text })
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
 }

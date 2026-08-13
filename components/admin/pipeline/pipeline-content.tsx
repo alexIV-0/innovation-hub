@@ -8,6 +8,7 @@ import { ClipboardPanel } from "@/components/account/workspace/clipboard-panel"
 import { WorkspaceContextMenu } from "@/components/account/workspace/context-menu"
 import { FullMode } from "@/components/account/workspace/full-mode"
 import { ProjectsColumn } from "@/components/account/workspace/projects-column"
+import { ShareDialog } from "@/components/account/workspace/share-dialog"
 import { WorkspaceDialogs } from "@/components/account/workspace/workspace-dialogs"
 import { WorkspaceProvider } from "@/components/account/workspace/workspace-context"
 import { createPipelineSource } from "./pipeline-source"
@@ -65,6 +66,7 @@ function PipelineLayout({
 
       <ClipboardPanel />
       <WorkspaceContextMenu />
+      <ShareDialog />
       <WorkspaceDialogs />
     </div>
   )

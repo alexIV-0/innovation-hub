@@ -167,6 +167,8 @@ type WorkspaceValue = {
   createTextFile: (target: UploadTarget) => void
   triggerFolderUpload: (target: UploadTarget) => void
   shareProject: (project: Project) => void
+  shareTarget: Project | null
+  closeShareDialog: () => void
   restoreProject: (project: Project) => void
 
   // перемещение
@@ -389,6 +391,7 @@ export function WorkspaceProvider({
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
   const [clipboard, setClipboard] = useState<Clipboard | null>(null)
   const [moveTargets, setMoveTargets] = useState<DriveFile[] | null>(null)
+  const [shareTarget, setShareTarget] = useState<Project | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState("")
   const [descDraft, setDescDraft] = useState("")
@@ -1069,40 +1072,11 @@ export function WorkspaceProvider({
     [selectedId, t, loadDrive],
   )
 
-  const shareProject = useCallback(
-    (project: Project) => {
-      setPrompt({
-        title: t.mShare,
-        label: "Email",
-        initial: "",
-        confirmLabel: t.mShare,
-        onSubmit: (email) => {
-          void (async () => {
-            const res = await fetch(`/api/projects/${project.id}/members`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email: email.trim(), role: "viewer" }),
-            })
-            const data = await res.json().catch(() => ({}))
-            if (!res.ok) {
-              toast.error(data.message ?? "Share failed")
-              return
-            }
-            if (data.mailOk === false) {
-              toast.message(
-                data.mailError
-                  ? `Shared, but email failed: ${data.mailError}`
-                  : "Shared (email not sent)",
-              )
-            } else {
-              toast.success(t.mShare)
-            }
-          })()
-        },
-      })
-    },
-    [t],
-  )
+  const shareProject = useCallback((project: Project) => {
+    setShareTarget(project)
+  }, [])
+
+  const closeShareDialog = useCallback(() => setShareTarget(null), [])
 
   const restoreProject = useCallback(
     (project: Project) => {
@@ -1322,6 +1296,8 @@ export function WorkspaceProvider({
     createTextFile,
     triggerFolderUpload,
     shareProject,
+    shareTarget,
+    closeShareDialog,
     restoreProject,
     moveTargets,
     openMoveDialog,

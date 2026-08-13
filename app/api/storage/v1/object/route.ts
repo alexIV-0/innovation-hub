@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
@@ -37,7 +37,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const data = parsed.data
-  const access = await requireOwnedProjectAccess(auth, data.projectId)
+  const access = await requireEditableProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
   const file = await findFileById(data.fileId)
@@ -55,6 +55,7 @@ export async function DELETE(request: NextRequest) {
     userId: access.ownerId,
     projectId: access.projectId,
     fileId: data.fileId,
+    deletedBy: auth.userId,
     eventId: data.eventId,
   })
   return NextResponse.json({ ok: true, ...result })

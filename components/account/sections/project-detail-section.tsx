@@ -20,6 +20,7 @@ import {
   UploadCloud,
 } from "lucide-react"
 import { toast } from "sonner"
+import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import { AccountPageHeader } from "@/components/account/shell/account-page-header"
 import {
   ProjectAutomationPanel,
@@ -238,53 +239,22 @@ export function ProjectDetailSection({
       setUploading(true)
       setProgress(0)
       try {
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest()
-          const qs = new URLSearchParams({ fileName: file.name })
-          xhr.open(
-            "POST",
-            `/api/projects/${project.id}/media?${qs.toString()}`,
-          )
-          xhr.withCredentials = true
-          if (file.type) {
-            xhr.setRequestHeader("Content-Type", file.type)
-          }
-          xhr.setRequestHeader(
-            "x-file-name",
-            encodeURIComponent(file.name),
-          )
-
-          xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable) {
-              setProgress(Math.round((event.loaded / event.total) * 100))
-            }
-          }
-
-          xhr.onload = () => {
-            try {
-              const data = JSON.parse(xhr.responseText) as
-                | (ProjectMediaItem & { message?: string })
-                | { message?: string }
-              if (xhr.status >= 200 && xhr.status < 300 && "id" in data) {
-                setMedia((prev) => [data as ProjectMediaItem, ...prev])
-                toast.success(`Uploaded ${file.name}`)
-                resolve()
-                return
-              }
-              reject(
-                new Error(
-                  "message" in data && data.message
-                    ? data.message
-                    : `Upload failed (${xhr.status})`,
-                ),
-              )
-            } catch {
-              reject(new Error(`Upload failed (${xhr.status})`))
-            }
-          }
-          xhr.onerror = () => reject(new Error("Network error during upload."))
-          xhr.send(file)
+        const uploaded = await uploadProjectFileDirect({
+          projectId: project.id,
+          file,
+          folderPath: "",
+          onProgress: setProgress,
         })
+        const item: ProjectMediaItem = {
+          id: uploaded.id,
+          fileName: uploaded.name,
+          mimeType: uploaded.contentType,
+          sizeBytes: uploaded.sizeBytes,
+          driveFileId: "",
+          createdAt: uploaded.createdAt,
+        }
+        setMedia((prev) => [item, ...prev])
+        toast.success(`Uploaded ${file.name}`)
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Upload failed.",

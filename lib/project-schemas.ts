@@ -81,7 +81,7 @@ export const presignUploadSchema = z.object({
   fileName: z.string().trim().min(1).max(255),
   contentType: z.string().trim().min(1).max(120),
   folderPath: z.string().max(500).default(""),
-  sizeBytes: z.number().int().nonnegative().max(500 * 1024 * 1024).optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
 })
 
 export const confirmUploadSchema = z.object({
@@ -89,7 +89,7 @@ export const confirmUploadSchema = z.object({
   contentType: z.string().trim().min(1).max(120),
   folderPath: z.string().max(500).default(""),
   s3Key: z.string().trim().min(1).max(1024),
-  sizeBytes: z.number().int().nonnegative().max(500 * 1024 * 1024),
+  sizeBytes: z.number().int().nonnegative(),
 })
 
 export const createMessageSchema = z.object({

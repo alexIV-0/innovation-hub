@@ -3,7 +3,8 @@ import {
   requireProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
-import { getDelta, getLatestCursor } from "@/lib/storage/changes"
+import { getLatestCursor } from "@/lib/storage/changes"
+import { buildDisplayPath, loadDisplayContext } from "@/lib/storage/display-path"
 import { loadStorageTree } from "@/lib/storage/tree"
 
 export const runtime = "nodejs"
@@ -22,10 +23,19 @@ export async function GET(request: NextRequest) {
   if (access instanceof NextResponse) return access
 
   const prefix = request.nextUrl.searchParams.get("prefix") ?? ""
-  const [entries, cursor] = await Promise.all([
+  const [entries, cursor, display] = await Promise.all([
     loadStorageTree({ projectId: access.projectId, prefix }),
     getLatestCursor(access.projectId),
+    loadDisplayContext(access.projectId),
   ])
 
-  return NextResponse.json({ entries, cursor })
+  return NextResponse.json({
+    entries: display
+      ? entries.map((e) => ({
+          ...e,
+          displayPath: buildDisplayPath(display, e.folderPath, e.name),
+        }))
+      : entries,
+    cursor,
+  })
 }

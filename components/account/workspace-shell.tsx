@@ -167,7 +167,7 @@ function SidebarContent({
       <div
         className={cn(
           "flex h-16 shrink-0 items-center gap-2.5 px-3.5",
-          collapsed && "flex-col justify-center gap-1.5 px-2",
+          collapsed && "h-auto flex-col justify-center gap-1.5 px-2 pb-2 pt-3.5",
         )}
       >
         <button

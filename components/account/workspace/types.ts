@@ -20,6 +20,11 @@ export type Project = {
   isActive?: boolean
   /** В архиве: скрыт из рабочего списка, обработки по нему не идут. */
   isArchived: boolean
+  /** Soft-deleted project (cabinet trash tab). */
+  deletedAt: string | null
+  /** Shared with the current user (not owned). */
+  sharedWithMe: boolean
+  memberRole?: "viewer" | "editor" | null
   driveFolderId: string | null
   createdAt: string
   updatedAt: string

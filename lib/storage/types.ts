@@ -1,4 +1,9 @@
-export type StorageChangeOp = "put" | "delete"
+export type StorageChangeOp = "put" | "delete" | "move"
+
+export type StoragePathRef = {
+  folderPath: string
+  name: string
+}
 
 export type StorageChangeRecord = {
   seq: number
@@ -19,6 +24,8 @@ export type StorageChangePayload = {
   isFolder?: boolean
   fileId?: string
   contentType?: string
+  from?: StoragePathRef
+  to?: StoragePathRef
 }
 
 export type StorageDeltaResponse = {
@@ -42,4 +49,5 @@ export type StorageTreeEntry = {
   createdAt: string
   updatedAt: string
   lastSeq: number | null
+  displayPath?: string
 }

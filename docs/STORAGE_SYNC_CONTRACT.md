@@ -27,7 +27,10 @@ Revoke: `DELETE /api/account/machine-tokens` with `{ "id": "…" }`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/projects` | Clients + projects catalog (machine-token friendly) |
+| `GET` | `/projects` | Clients + projects catalog (includes `userId`, `isArchived`, `users[]`) |
+| `POST` | `/projects` | Create a project (machine-token friendly) |
+| `POST` | `/project-rename` | Rename a project (no R2 key change) |
+| `POST` | `/project-state` | Pause / archive a project |
 | `GET` | `/capabilities` | Feature flags (`rename`, `copy`, `multipart`, …) |
 | `GET` | `/tree?projectId=&prefix=` | Bootstrap tree from Postgres + current `cursor` |
 | `GET` | `/delta?projectId=&since=` | Changes after cursor: `{ changes, cursor, truncated }` |
@@ -35,7 +38,9 @@ Revoke: `DELETE /api/account/machine-tokens` with `{ "id": "…" }`.
 | `POST` | `/notify` | After PUT: HEAD object, upsert cache, append journal |
 | `POST` | `/mkdir` | Create folder row + journal |
 | `POST` | `/rename` | Rename/move file or folder (no R2 key change) |
-| `DELETE` | `/object` | Delete file/folder (+ R2) + journal |
+| `DELETE` | `/object` | Soft-delete file/folder (trash, 30 days) |
+| `GET` | `/trash?projectId=` | List trashed items |
+| `POST` | `/trash/restore` | Restore from trash |
 | `POST` | `/reindex?projectId=` | Full LIST vs cache; synthetic changes |
 | `GET`/`PUT` | `/sidecars` | `folderState.json` / `options.json` |
 

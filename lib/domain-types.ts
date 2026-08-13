@@ -12,6 +12,7 @@ export type UserRecord = {
   createdAt: Date
   balanceCents: number
   driveFolderId: string | null
+  mustChangePassword: boolean
   /**
    * Админский гейт конвейера (/admin/pipeline, колонка 1). Выключенный
    * пользователь снимается со слежения целиком, флаги его проектов при этом
@@ -37,6 +38,8 @@ export type ProjectRecord = {
   /** Проект в архиве: скрыт из рабочего списка, обработки по нему не запускаются. */
   isArchived: boolean
   archivedAt: Date | null
+  /** Soft-deleted into project trash; purged after retention. */
+  deletedAt: Date | null
   /** Optional client grouping (UI hierarchy; not part of R2 keys). */
   clientId: string | null
   createdAt: Date

@@ -104,8 +104,12 @@ Content-Type: application/json
 | action | Назначение |
 |---|---|
 | `capabilities` | Флаги возможностей |
-| `projects` | Каталог клиентов и проектов |
-| `tree` | Полное дерево + `cursor` |
+| `projects` | Каталог клиентов и проектов (`userId`, `isArchived`, `users[]`) |
+| `createProject` | Создать проект |
+| `projectRename` | Переименовать проект |
+| `projectState` | Пауза / архивация проекта |
+| `tree` | Полное дерево + `cursor` + `displayPath` |
+| `delta` | Инкремент после `since` (`put` / `delete` / `move`) |
 | `delta` | Инкремент после `since` |
 | `presign` | Signed PUT/GET URL (байты напрямую в R2) |
 | `notify` | Подтверждение после PUT |

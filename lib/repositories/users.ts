@@ -16,6 +16,7 @@ const PUBLIC_USER_FIELDS = `
   created_at AS "createdAt",
   COALESCE(balance_cents, 0) AS "balanceCents",
   drive_folder_id AS "driveFolderId",
+  COALESCE(must_change_password, FALSE) AS "mustChangePassword",
   COALESCE(automation_enabled, FALSE) AS "automationEnabled"
 `
 
@@ -31,6 +32,7 @@ const FULL_USER_FIELDS = `
   provider_account_id AS "providerAccountId",
   COALESCE(balance_cents, 0) AS "balanceCents",
   drive_folder_id AS "driveFolderId",
+  COALESCE(must_change_password, FALSE) AS "mustChangePassword",
   COALESCE(automation_enabled, FALSE) AS "automationEnabled"
 `
 
@@ -55,6 +57,16 @@ export async function findUserByEmail(
 export async function listUsers(): Promise<UserRecord[]> {
   const result = await query<UserRecord>(
     `SELECT ${PUBLIC_USER_FIELDS} FROM users ORDER BY created_at DESC`,
+  )
+  return result.rows
+}
+
+export async function listUsersByIds(ids: string[]): Promise<UserRecord[]> {
+  if (ids.length === 0) return []
+  const unique = [...new Set(ids)]
+  const result = await query<UserRecord>(
+    `SELECT ${PUBLIC_USER_FIELDS} FROM users WHERE id = ANY($1::text[])`,
+    [unique],
   )
   return result.rows
 }
@@ -166,6 +178,7 @@ export async function updateUser(
     passwordHash?: string
     role?: UserRole
     isActive?: boolean
+    mustChangePassword?: boolean
   },
 ): Promise<UserRecord | null> {
   const result = await query<UserRecord>(
@@ -175,6 +188,7 @@ export async function updateUser(
             password_hash = COALESCE($4, password_hash),
             role          = COALESCE($5, role),
             is_active     = COALESCE($6, is_active),
+            must_change_password = COALESCE($7, must_change_password),
             updated_at    = NOW()
       WHERE id = $1
       RETURNING ${PUBLIC_USER_FIELDS}`,
@@ -185,6 +199,7 @@ export async function updateUser(
       input.passwordHash ?? null,
       input.role ?? null,
       input.isActive ?? null,
+      input.mustChangePassword ?? null,
     ],
   )
   return result.rows[0] ?? null

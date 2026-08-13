@@ -65,7 +65,6 @@ export function WorkspaceContextMenu() {
 
   if (!menu) return null
 
-  const soon = ws.notImplemented
   let entries: MenuEntry[] = []
 
   if (menu.kind === "file" && menu.file) {
@@ -137,7 +136,11 @@ export function WorkspaceContextMenu() {
               label: t.mNewFolder,
               onClick: () => ws.createFolder(target),
             } as MenuEntry,
-            { icon: FilePlus, label: t.mNewText, onClick: soon } as MenuEntry,
+            {
+              icon: FilePlus,
+              label: t.mNewText,
+              onClick: () => ws.createTextFile(target),
+            } as MenuEntry,
           ]
         : []),
       { sep: true },
@@ -151,12 +154,11 @@ export function WorkspaceContextMenu() {
             {
               icon: FolderUp,
               label: t.mUploadFolder,
-              onClick: soon,
+              onClick: () => ws.triggerFolderUpload(target),
             } as MenuEntry,
           ]
         : []),
       // «Вставить» показываем только когда в буфере что-то есть.
-      // Перемещение работает уже сейчас, копирование ждёт POST /copy.
       ...(ws.clipboard && can.move
         ? [
             { sep: true } as MenuEntry,
@@ -178,9 +180,25 @@ export function WorkspaceContextMenu() {
               label: t.mRename,
               onClick: () => ws.renameProject(project),
             } as MenuEntry,
-            { icon: Share2, label: t.mShare, onClick: soon } as MenuEntry,
           ]
         : []),
+      ...(project.deletedAt
+        ? [
+            {
+              icon: ArchiveRestore,
+              label: t.mUnarchive,
+              onClick: () => ws.restoreProject(project),
+            } as MenuEntry,
+          ]
+        : project.sharedWithMe || !can.renameProject
+          ? []
+          : [
+              {
+                icon: Share2,
+                label: t.mShare,
+                onClick: () => ws.shareProject(project),
+              } as MenuEntry,
+            ]),
       {
         icon: ExternalLink,
         label: t.mOpenWindow,
@@ -191,15 +209,15 @@ export function WorkspaceContextMenu() {
             "noopener",
           ),
       },
-      ...(can.archiveProject
-        ? [
+      ...(project.deletedAt || project.sharedWithMe || !can.archiveProject
+        ? []
+        : [
             {
               icon: project.isArchived ? ArchiveRestore : Archive,
               label: project.isArchived ? t.mUnarchive : t.mArchive,
               onClick: () => ws.setArchived(project, !project.isArchived),
             } as MenuEntry,
-          ]
-        : []),
+          ]),
       { sep: true },
       {
         icon: FileText,

@@ -6,6 +6,7 @@ import { FullMode } from "./full-mode"
 import { MobileWorkspace } from "./mobile-view"
 import { MoveDialog } from "./move-dialog"
 import { ProjectsColumn } from "./projects-column"
+import { ShareDialog } from "./share-dialog"
 import { AllProjectsPage, SimpleProject } from "./simple-mode"
 import { WorkspaceProvider, useWorkspace } from "./workspace-context"
 import { WorkspaceDialogs } from "./workspace-dialogs"
@@ -40,6 +41,7 @@ function WorkspaceLayout() {
       <ClipboardPanel />
       <WorkspaceContextMenu />
       <MoveDialog />
+      <ShareDialog />
       <WorkspaceDialogs />
     </div>
   )

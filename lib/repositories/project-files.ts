@@ -45,9 +45,13 @@ export async function listAllProjectFiles(
 
 export async function findFileById(
   id: string,
+  options?: { includeDeleted?: boolean },
 ): Promise<ProjectFileRecord | null> {
+  const deleted = options?.includeDeleted
+    ? ""
+    : " AND deleted_at IS NULL"
   const result = await query<ProjectFileRecord>(
-    `SELECT ${FILE_FIELDS} FROM project_files WHERE id = $1`,
+    `SELECT ${FILE_FIELDS} FROM project_files WHERE id = $1${deleted}`,
     [id],
   )
   return result.rows[0] ?? null
@@ -240,7 +244,7 @@ export async function getOwnerFileStats(ownerId: string): Promise<{
             COALESCE(SUM(f.size_bytes), 0)::float8 AS "totalBytes"
        FROM project_files f
        JOIN projects p ON p.id = f.project_id
-      WHERE p.user_id = $1 AND f.is_folder = FALSE`,
+      WHERE p.user_id = $1 AND f.is_folder = FALSE AND f.deleted_at IS NULL`,
     [ownerId],
   )
   return {

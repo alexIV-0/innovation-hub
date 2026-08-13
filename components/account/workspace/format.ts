@@ -114,6 +114,17 @@ export function mapProject(raw: Record<string, unknown>): Project {
     isPaused: Boolean(raw.isPaused ?? !raw.isActive),
     isActive: raw.isActive as boolean | undefined,
     isArchived: Boolean(raw.isArchived),
+    deletedAt:
+      raw.deletedAt == null
+        ? null
+        : typeof raw.deletedAt === "string"
+          ? raw.deletedAt
+          : new Date(String(raw.deletedAt)).toISOString(),
+    sharedWithMe: Boolean(raw.sharedWithMe),
+    memberRole:
+      raw.memberRole === "viewer" || raw.memberRole === "editor"
+        ? raw.memberRole
+        : null,
     driveFolderId: (raw.driveFolderId as string | null) ?? null,
     createdAt: String(raw.createdAt ?? ""),
     updatedAt: String(raw.updatedAt ?? ""),

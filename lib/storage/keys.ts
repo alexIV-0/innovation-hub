@@ -1,10 +1,22 @@
 import { buildProjectObjectKey, projectObjectPrefix } from "@/lib/s3-config"
 
+export const CATALOG_FOLDER_NAME = "_catalog"
+
 const PROJECT_KEY_RE =
   /^projects\/([^/]+)\/([^/]+)\/(?:options\/(.+)|([^/]+)\/(.+)|([^/]+))$/
 
 export function projectPrefix(userId: string, projectId: string): string {
   return projectObjectPrefix(userId, projectId)
+}
+
+export function isCatalogKey(
+  key: string,
+  userId: string,
+  projectId: string,
+): boolean {
+  return key.startsWith(
+    `${projectPrefix(userId, projectId)}${CATALOG_FOLDER_NAME}/`,
+  )
 }
 
 export function parseProjectIdFromKey(key: string): string | null {
@@ -51,6 +63,16 @@ export function isOptionsKey(
   projectId: string,
 ): boolean {
   return key.startsWith(`${projectPrefix(userId, projectId)}options/`)
+}
+
+/** Physical object names are `{uuid}-{safeName}`. Strip the uuid for the catalog. */
+const OBJECT_NAME_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(.+)$/i
+
+export function logicalNameFromObjectKey(keyOrBasename: string): string {
+  const basename = keyOrBasename.slice(keyOrBasename.lastIndexOf("/") + 1)
+  const match = basename.match(OBJECT_NAME_UUID_RE)
+  return match?.[1] && match[1].length > 0 ? match[1] : basename
 }
 
 export { PROJECT_KEY_RE }

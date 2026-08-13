@@ -7,6 +7,7 @@ import {
   hashPassword,
 } from "@/lib/auth"
 import { createUser, findUserByEmail } from "@/lib/repositories/users"
+import { syncUserMeta } from "@/lib/project-storage"
 
 const signupRequestSchema = z.object({
   fullName: z.string().min(2).max(120),
@@ -45,6 +46,11 @@ export async function POST(request: Request) {
         fullName: parsed.data.fullName,
         email,
         passwordHash,
+      })
+      void syncUserMeta({
+        userId: user.id,
+        email: user.email,
+        createdAt: user.createdAt.toISOString(),
       })
     } catch (error) {
       if (

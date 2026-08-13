@@ -1,62 +1,14 @@
-import { randomUUID } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import { projectUploadObjectKey } from "@/lib/project-storage"
-import {
-  findFileById,
-  listAllProjectFiles,
-} from "@/lib/repositories/project-files"
+import { listAllProjectFiles } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
-import { isS3Configured } from "@/lib/s3-client"
-import {
-  resolveUploadContentType,
-  safeBaseFileName,
-} from "@/lib/s3-upload-policy"
-import { writeR2PutFromBuffer } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
-export const maxDuration = 120
 
 type RouteContext = { params: Promise<{ id: string }> }
 
-const DEFAULT_MAX_BYTES = 250 * 1024 * 1024
-
-function getMaxBytes() {
-  const raw = process.env.PROJECT_MEDIA_UPLOAD_MAX_BYTES
-  const n = raw ? Number.parseInt(raw, 10) : NaN
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_BYTES
-}
-
 function jsonError(message: string, status: number) {
   return NextResponse.json({ message }, { status })
-}
-
-function decodeFileNameHeader(value: string | null): string {
-  if (!value) return "upload"
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    return value
-  }
-}
-
-async function resolveUploadFolderPath(
-  projectId: string,
-  folderPathParam: string | null,
-  parentId: string | null,
-): Promise<string | null> {
-  if (folderPathParam != null && folderPathParam !== "") {
-    return folderPathParam.replace(/^\/+|\/+$/g, "")
-  }
-  if (!parentId || parentId === projectId) return ""
-
-  const folder = await findFileById(parentId)
-  if (!folder || folder.projectId !== projectId || !folder.isFolder) {
-    return null
-  }
-  return folder.folderPath === ""
-    ? folder.name
-    : `${folder.folderPath}/${folder.name}`
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -84,118 +36,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   })
 }
 
-export async function POST(request: NextRequest, context: RouteContext) {
-  const auth = await requireUserApi(request)
-  if (auth instanceof NextResponse) return auth
-
-  if (!isS3Configured()) {
-    return jsonError(
-      "Media uploads are temporarily unavailable. Please try again later.",
-      503,
-    )
-  }
-
-  const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return jsonError("Project not found.", 404)
-  }
-
-  const url = new URL(request.url)
-  const folderPath = await resolveUploadFolderPath(
-    project.id,
-    url.searchParams.get("folderPath"),
-    url.searchParams.get("parentId"),
+/** Bytes go to R2 via presigned PUT. See POST /api/storage/v1/presign + /notify. */
+export async function POST() {
+  return jsonError(
+    "Upload through the server is disabled. Use POST /api/storage/v1/presign then PUT to the returned URL, then POST /api/storage/v1/notify.",
+    410,
   )
-  if (folderPath == null) {
-    return jsonError("Invalid upload folder.", 400)
-  }
-
-  const maxBytes = getMaxBytes()
-  const fileNameRaw =
-    url.searchParams.get("fileName") ??
-    request.headers.get("x-file-name") ??
-    "upload"
-  const fileName = safeBaseFileName(decodeFileNameHeader(fileNameRaw))
-
-  const headerType = request.headers.get("content-type") ?? ""
-  const contentType = resolveUploadContentType({
-    name: fileName,
-    type: headerType,
-  })
-  if (!contentType) {
-    return jsonError("Unsupported file type for upload.", 400)
-  }
-
-  const declaredLength = Number.parseInt(
-    request.headers.get("content-length") ?? "",
-    10,
-  )
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    return jsonError(`File too large (max ${maxBytes} bytes).`, 413)
-  }
-
-  if (!request.body) {
-    return jsonError("Empty request body.", 400)
-  }
-
-  const chunks: Buffer[] = []
-  let total = 0
-  const reader = request.body.getReader()
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (!value) continue
-      total += value.byteLength
-      if (total > maxBytes) {
-        return jsonError(`File too large (max ${maxBytes} bytes).`, 413)
-      }
-      chunks.push(Buffer.from(value))
-    }
-  } catch {
-    return jsonError("Upload stream interrupted.", 400)
-  }
-
-  const buffer = Buffer.concat(chunks)
-  if (buffer.length === 0) {
-    return jsonError("Empty file.", 400)
-  }
-
-  const objectName = `${randomUUID()}-${fileName}`
-  const s3Key = projectUploadObjectKey(
-    project.ownerId,
-    project.id,
-    folderPath,
-    objectName,
-  )
-
-  try {
-    const file = await writeR2PutFromBuffer({
-      projectId: project.id,
-      key: s3Key,
-      body: buffer,
-      contentType,
-      fileName,
-      folderPath,
-    })
-    return NextResponse.json(
-      {
-        id: file.id,
-        projectId: file.projectId,
-        fileName: file.name,
-        mimeType: file.contentType,
-        sizeBytes: file.sizeBytes,
-        s3Key: file.s3Key,
-        createdAt: file.createdAt,
-      },
-      { status: 201 },
-    )
-  } catch (error) {
-    console.error("[project-media] upload failed", error)
-    return jsonError(
-      error instanceof Error ? error.message : "Failed to upload file.",
-      503,
-    )
-  }
 }

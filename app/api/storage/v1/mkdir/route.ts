@@ -1,18 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
-import { writeFolderCreate } from "@/lib/storage/write-path"
+import { StorageWriteError, writeEnsureFolderPath, writeFolderCreate } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
 const schema = z.object({
   projectId: z.string().min(1),
   folderPath: z.string().default(""),
-  name: z.string().min(1).max(180),
+  name: z.string().min(1).max(180).optional(),
+  /** Full relative path to ensure (a/b/c) — creates missing parents. */
+  ensurePath: z.string().min(1).max(1000).optional(),
   eventId: z.string().optional(),
 })
 
@@ -37,20 +39,39 @@ export async function POST(request: NextRequest) {
   }
 
   const data = parsed.data
-  if (data.name.includes("/") || data.name.includes("\\")) {
-    return NextResponse.json({ message: "Invalid folder name." }, { status: 400 })
-  }
-  if (data.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    return NextResponse.json(
-      { message: "This folder name is reserved." },
-      { status: 403 },
-    )
-  }
-
-  const access = await requireOwnedProjectAccess(auth, data.projectId)
+  const access = await requireEditableProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
   try {
+    if (data.ensurePath) {
+      const base = data.folderPath.replace(/^\/+|\/+$/g, "")
+      const rel = data.ensurePath.replace(/^\/+|\/+$/g, "")
+      const full = base ? `${base}/${rel}` : rel
+      const result = await writeEnsureFolderPath({
+        userId: access.ownerId,
+        projectId: access.projectId,
+        folderPath: full,
+        eventId: data.eventId,
+      })
+      return NextResponse.json(
+        { folderPath: result.folderPath, fileIds: result.folderIds },
+        { status: 201 },
+      )
+    }
+
+    if (!data.name) {
+      return NextResponse.json({ message: "name is required." }, { status: 400 })
+    }
+    if (data.name.includes("/") || data.name.includes("\\")) {
+      return NextResponse.json({ message: "Invalid folder name." }, { status: 400 })
+    }
+    if (data.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
+      return NextResponse.json(
+        { message: "This folder name is reserved." },
+        { status: 403 },
+      )
+    }
+
     const file = await writeFolderCreate({
       userId: access.ownerId,
       projectId: access.projectId,
@@ -58,8 +79,11 @@ export async function POST(request: NextRequest) {
       name: data.name,
       eventId: data.eventId,
     })
-    return NextResponse.json({ file }, { status: 201 })
+    return NextResponse.json({ file, fileIds: [file.id] }, { status: 201 })
   } catch (error) {
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
     const msg = error instanceof Error ? error.message : "Could not create folder."
     if (msg.includes("unique") || msg.includes("duplicate")) {
       return NextResponse.json(

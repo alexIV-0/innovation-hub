@@ -19,7 +19,7 @@ export const CABINET_SOURCE: WorkspaceSource = {
     const qs = params.toString()
     return qs ? `/account/projects?${qs}` : "/account/projects"
   },
-  projectsUrl: () => "/api/projects",
+  projectsUrl: () => "/api/projects?archived=all",
   driveUrl: (projectId) => `/api/projects/${projectId}/drive`,
   treeCursorUrl: (projectId) =>
     `/api/storage/v1/tree?projectId=${encodeURIComponent(projectId)}`,

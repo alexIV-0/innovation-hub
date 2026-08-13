@@ -1,6 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import {
-  DeleteObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -12,13 +11,24 @@ import {
   appendStorageChange,
   nowUnixSec,
 } from "@/lib/storage/changes"
+import { StorageWriteError } from "@/lib/storage/errors"
+import {
+  assertLogicalPath,
+  assertNameFree,
+  folderPrefix,
+  isMoveIntoSelf,
+  validateLogicalName,
+} from "@/lib/storage/file-names"
 import {
   folderPathFromKey,
+  isCatalogKey,
+  isOptionsKey,
   logicalKeyForFile,
+  logicalNameFromObjectKey,
   parseProjectIdFromKey,
   projectPrefix,
 } from "@/lib/storage/keys"
-import type { StorageChangePayload } from "@/lib/storage/types"
+import type { StorageChangeOp, StorageChangePayload } from "@/lib/storage/types"
 import { getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
 
@@ -34,12 +44,7 @@ const FILE_FIELDS = `
   created_at AS "createdAt"
 `
 
-export class StorageWriteError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "StorageWriteError"
-  }
-}
+export { StorageWriteError }
 
 export type ObjectHead = {
   etag: string | null
@@ -72,7 +77,7 @@ async function journal(
   input: {
     projectId: string
     key: string
-    op: "put" | "delete"
+    op: StorageChangeOp
     size?: number | null
     etag?: string | null
     contentHash?: string | null
@@ -128,13 +133,22 @@ export async function writeFolderCreate(input: {
   name: string
   eventId?: string
 }): Promise<ProjectFileRecord> {
+  const name = validateLogicalName(input.name)
+  const folderPath = input.folderPath.replace(/^\/+|\/+$/g, "")
+  assertLogicalPath(folderPath, name)
+
   return withTransaction(async (client) => {
+    await assertNameFree(client, {
+      projectId: input.projectId,
+      folderPath,
+      name,
+    })
     const id = randomUUID()
     const key = logicalKeyForFile({
       userId: input.userId,
       projectId: input.projectId,
-      folderPath: input.folderPath,
-      name: input.name,
+      folderPath,
+      name,
     })
 
     const result = await client.query<ProjectFileRecord>(
@@ -143,7 +157,7 @@ export async function writeFolderCreate(input: {
        )
        VALUES ($1, $2, $3, $4, TRUE, NULL, 0, '')
        RETURNING ${FILE_FIELDS}`,
-      [id, input.projectId, input.folderPath, input.name],
+      [id, input.projectId, folderPath, name],
     )
     const file = result.rows[0]!
 
@@ -155,8 +169,8 @@ export async function writeFolderCreate(input: {
       eventId: input.eventId ?? null,
       payload: {
         fileId: file.id,
-        name: input.name,
-        folderPath: input.folderPath,
+        name,
+        folderPath,
         isFolder: true,
       },
     })
@@ -166,6 +180,62 @@ export async function writeFolderCreate(input: {
     ])
     return file
   })
+}
+
+/**
+ * Ensure every segment of `folderPath` exists (a/b/c). Returns the deepest folder row.
+ * Creates missing parents; returns the last existing/created folder, or null for root.
+ */
+export async function writeEnsureFolderPath(input: {
+  userId: string
+  projectId: string
+  folderPath: string
+  eventId?: string
+}): Promise<{ folderIds: string[]; folderPath: string }> {
+  const cleaned = input.folderPath.replace(/^\/+|\/+$/g, "")
+  if (!cleaned) return { folderIds: [], folderPath: "" }
+
+  const segments = cleaned.split("/").filter(Boolean)
+  const folderIds: string[] = []
+  let parent = ""
+
+  for (let i = 0; i < segments.length; i++) {
+    const name = validateLogicalName(segments[i]!)
+    const existing = await withTransaction(async (client) => {
+      const found = await client.query<ProjectFileRecord>(
+        `SELECT ${FILE_FIELDS}
+           FROM project_files
+          WHERE project_id = $1
+            AND lower(folder_path) = lower($2)
+            AND lower(name) = lower($3)
+            AND is_folder = TRUE
+            AND deleted_at IS NULL
+          LIMIT 1`,
+        [input.projectId, parent, name],
+      )
+      return found.rows[0] ?? null
+    })
+
+    if (existing) {
+      folderIds.push(existing.id)
+      parent = parent ? `${parent}/${existing.name}` : existing.name
+      continue
+    }
+
+    const created = await writeFolderCreate({
+      userId: input.userId,
+      projectId: input.projectId,
+      folderPath: parent,
+      name,
+      eventId: input.eventId
+        ? `${input.eventId}:mkdir:${i}`
+        : undefined,
+    })
+    folderIds.push(created.id)
+    parent = parent ? `${parent}/${created.name}` : created.name
+  }
+
+  return { folderIds, folderPath: parent }
 }
 
 export async function writeFilePut(input: {
@@ -180,7 +250,16 @@ export async function writeFilePut(input: {
   originMtime?: number | null
   eventId?: string
 }): Promise<ProjectFileRecord> {
+  const name = validateLogicalName(input.name)
+  const folderPath = input.folderPath.replace(/^\/+|\/+$/g, "")
+  assertLogicalPath(folderPath, name)
+
   return withTransaction(async (client) => {
+    await assertNameFree(client, {
+      projectId: input.projectId,
+      folderPath,
+      name,
+    })
     const id = randomUUID()
     const result = await client.query<ProjectFileRecord>(
       `INSERT INTO project_files (
@@ -192,8 +271,8 @@ export async function writeFilePut(input: {
       [
         id,
         input.projectId,
-        input.folderPath,
-        input.name,
+        folderPath,
+        name,
         input.s3Key,
         input.sizeBytes,
         input.contentType,
@@ -214,8 +293,8 @@ export async function writeFilePut(input: {
       eventId: input.eventId ?? null,
       payload: {
         fileId: file.id,
-        name: input.name,
-        folderPath: input.folderPath,
+        name,
+        folderPath,
         isFolder: false,
         contentType: input.contentType,
       },
@@ -313,9 +392,9 @@ export async function writeFileDelete(input: {
   userId: string
   projectId: string
   fileId: string
-  deleteFromR2?: boolean
+  deletedBy?: string | null
   eventId?: string
-}): Promise<{ deletedS3Keys: string[] }> {
+}): Promise<{ fileIds: string[]; deletedS3Keys: string[] }> {
   return withTransaction(async (client) => {
     const found = await client.query<{
       id: string
@@ -332,111 +411,77 @@ export async function writeFileDelete(input: {
               is_folder AS "isFolder",
               s3_key AS "s3Key"
          FROM project_files
-        WHERE id = $1 AND project_id = $2`,
+        WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL`,
       [input.fileId, input.projectId],
     )
     const existing = found.rows[0]
-    if (!existing) return { deletedS3Keys: [] }
+    if (!existing) return { fileIds: [], deletedS3Keys: [] }
 
-    const keys: string[] = []
+    const prefix = existing.isFolder
+      ? folderPrefix(existing.folderPath, existing.name)
+      : null
 
-    if (existing.isFolder) {
-      const prefix =
-        existing.folderPath === ""
-          ? existing.name
-          : `${existing.folderPath}/${existing.name}`
-
-      const children = await client.query<{ s3Key: string | null; id: string; name: string; folderPath: string }>(
-        `SELECT id, s3_key AS "s3Key", name, folder_path AS "folderPath"
-           FROM project_files
-          WHERE project_id = $1
-            AND (folder_path = $2 OR folder_path LIKE $2 || '/%')`,
-        [input.projectId, prefix],
-      )
-
-      for (const child of children.rows) {
-        if (child.s3Key) {
-          keys.push(child.s3Key)
-          const seq = await journal(client, {
-            projectId: input.projectId,
-            key: child.s3Key,
-            op: "delete",
-            eventId: input.eventId ? `${input.eventId}:${child.id}` : null,
-            payload: {
-              fileId: child.id,
-              name: child.name,
-              folderPath: child.folderPath,
-              isFolder: false,
-            },
-          })
-          await client.query(
-            `UPDATE project_files SET deleted_at = NOW(), last_seq = $2 WHERE id = $1`,
-            [child.id, seq],
-          )
-        }
-      }
-
-      await client.query(
-        `DELETE FROM project_files
-          WHERE project_id = $1
-            AND (folder_path = $2 OR folder_path LIKE $2 || '/%')`,
-        [input.projectId, prefix],
-      )
-
-      const folderKey = logicalKeyForFile({
-        userId: input.userId,
-        projectId: input.projectId,
-        folderPath: existing.folderPath,
-        name: existing.name,
-      })
-      await journal(client, {
-        projectId: input.projectId,
-        key: folderKey,
-        op: "delete",
-        eventId: input.eventId ? `${input.eventId}:folder` : null,
-        payload: {
-          fileId: existing.id,
-          name: existing.name,
-          folderPath: existing.folderPath,
-          isFolder: true,
-        },
-      })
-    } else if (existing.s3Key) {
-      keys.push(existing.s3Key)
-      const seq = await journal(client, {
-        projectId: input.projectId,
-        key: existing.s3Key,
-        op: "delete",
-        eventId: input.eventId ?? null,
-        payload: {
-          fileId: existing.id,
-          name: existing.name,
-          folderPath: existing.folderPath,
-          isFolder: false,
-        },
-      })
-      await client.query(
-        `UPDATE project_files SET deleted_at = NOW(), last_seq = $2 WHERE id = $1`,
-        [existing.id, seq],
-      )
-    }
-
-    await client.query(
-      `DELETE FROM project_files WHERE id = $1 AND project_id = $2`,
-      [input.fileId, input.projectId],
+    const targets = await client.query<{
+      id: string
+      s3Key: string | null
+      name: string
+      folderPath: string
+      isFolder: boolean
+    }>(
+      prefix == null
+        ? `SELECT id, s3_key AS "s3Key", name, folder_path AS "folderPath",
+                  is_folder AS "isFolder"
+             FROM project_files
+            WHERE id = $1 AND deleted_at IS NULL`
+        : `SELECT id, s3_key AS "s3Key", name, folder_path AS "folderPath",
+                  is_folder AS "isFolder"
+             FROM project_files
+            WHERE project_id = $2
+              AND deleted_at IS NULL
+              AND (id = $1 OR folder_path = $3 OR folder_path LIKE $3 || '/%')`,
+      prefix == null
+        ? [existing.id]
+        : [existing.id, input.projectId, prefix],
     )
 
-    if (input.deleteFromR2 !== false && keys.length > 0 && isS3Configured()) {
-      const clientS3 = getS3Client()
-      const bucket = getS3Bucket()
-      await Promise.allSettled(
-        keys.map((key) =>
-          clientS3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
-        ),
+    const deletedAt = new Date()
+    const fileIds: string[] = []
+
+    for (const row of targets.rows) {
+      const key =
+        row.s3Key ??
+        logicalKeyForFile({
+          userId: input.userId,
+          projectId: input.projectId,
+          folderPath: row.folderPath,
+          name: row.name,
+        })
+      const seq = await journal(client, {
+        projectId: input.projectId,
+        key,
+        op: "delete",
+        eventId: input.eventId
+          ? row.id === existing.id
+            ? input.eventId
+            : `${input.eventId}:${row.id}`
+          : null,
+        payload: {
+          fileId: row.id,
+          name: row.name,
+          folderPath: row.folderPath,
+          isFolder: row.isFolder,
+        },
+      })
+      await client.query(
+        `UPDATE project_files
+            SET deleted_at = $3, deleted_by = $4, last_seq = $2, updated_at = NOW()
+          WHERE id = $1`,
+        [row.id, seq, deletedAt, input.deletedBy ?? null],
       )
+      fileIds.push(row.id)
     }
 
-    return { deletedS3Keys: keys }
+    return { fileIds, deletedS3Keys: [] }
   })
 }
 
@@ -450,29 +495,55 @@ export async function writeRename(input: {
 }): Promise<ProjectFileRecord | null> {
   return withTransaction(async (client) => {
     const found = await client.query<ProjectFileRecord>(
-      `SELECT ${FILE_FIELDS} FROM project_files WHERE id = $1 AND project_id = $2`,
+      `SELECT ${FILE_FIELDS}
+         FROM project_files
+        WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL`,
       [input.fileId, input.projectId],
     )
     const existing = found.rows[0]
     if (!existing) return null
 
-    const newName = input.name ?? existing.name
-    const newFolder = input.folderPath ?? existing.folderPath
+    const newName = input.name !== undefined
+      ? validateLogicalName(input.name)
+      : existing.name
+    const newFolder = (input.folderPath ?? existing.folderPath).replace(
+      /^\/+|\/+$/g,
+      "",
+    )
+    assertLogicalPath(newFolder, newName)
+
+    if (newName === existing.name && newFolder === existing.folderPath) {
+      return existing
+    }
 
     if (existing.isFolder) {
-      const oldPrefix =
-        existing.folderPath === ""
-          ? existing.name
-          : `${existing.folderPath}/${existing.name}`
-      const newPrefix =
-        newFolder === "" ? newName : `${newFolder}/${newName}`
+      const oldPrefix = folderPrefix(existing.folderPath, existing.name)
+      if (isMoveIntoSelf(oldPrefix, newFolder)) {
+        throw new StorageWriteError(
+          "Cannot move a folder into itself or a descendant.",
+          409,
+        )
+      }
+    }
+
+    await assertNameFree(client, {
+      projectId: input.projectId,
+      folderPath: newFolder,
+      name: newName,
+      excludeId: existing.id,
+    })
+
+    if (existing.isFolder) {
+      const oldPrefix = folderPrefix(existing.folderPath, existing.name)
+      const newPrefix = folderPrefix(newFolder, newName)
 
       await client.query(
         `UPDATE project_files
             SET folder_path = CASE
                   WHEN folder_path = $2 THEN $3
                   ELSE $3 || substr(folder_path, length($2) + 1)
-                END
+                END,
+                updated_at = NOW()
           WHERE project_id = $1
             AND (folder_path = $2 OR folder_path LIKE $2 || '/%')`,
         [input.projectId, oldPrefix, newPrefix],
@@ -491,52 +562,34 @@ export async function writeRename(input: {
     const file = result.rows[0]
     if (!file) return null
 
-    const oldKey = existing.s3Key
-      ?? logicalKeyForFile({
+    const key =
+      existing.s3Key ??
+      logicalKeyForFile({
         userId: input.userId,
         projectId: input.projectId,
         folderPath: existing.folderPath,
         name: existing.name,
       })
-    const newKey = file.s3Key
-      ?? logicalKeyForFile({
-        userId: input.userId,
-        projectId: input.projectId,
-        folderPath: file.folderPath,
-        name: file.name,
-      })
 
-    if (oldKey !== newKey) {
-      await journal(client, {
-        projectId: input.projectId,
-        key: oldKey,
-        op: "delete",
-        eventId: input.eventId ? `${input.eventId}:del` : null,
-        payload: {
-          fileId: file.id,
-          name: existing.name,
-          folderPath: existing.folderPath,
-          isFolder: existing.isFolder,
-        },
-      })
-      const seq = await journal(client, {
-        projectId: input.projectId,
-        key: newKey,
-        op: "put",
-        size: file.isFolder ? 0 : file.sizeBytes,
-        eventId: input.eventId ? `${input.eventId}:put` : null,
-        payload: {
-          fileId: file.id,
-          name: file.name,
-          folderPath: file.folderPath,
-          isFolder: file.isFolder,
-        },
-      })
-      await client.query(`UPDATE project_files SET last_seq = $2 WHERE id = $1`, [
-        file.id,
-        seq,
-      ])
-    }
+    const seq = await journal(client, {
+      projectId: input.projectId,
+      key,
+      op: "move",
+      size: file.isFolder ? 0 : file.sizeBytes,
+      eventId: input.eventId ?? null,
+      payload: {
+        fileId: file.id,
+        isFolder: existing.isFolder,
+        name: file.name,
+        folderPath: file.folderPath,
+        from: { folderPath: existing.folderPath, name: existing.name },
+        to: { folderPath: file.folderPath, name: file.name },
+      },
+    })
+    await client.query(`UPDATE project_files SET last_seq = $2 WHERE id = $1`, [
+      file.id,
+      seq,
+    ])
 
     return file
   })
@@ -658,6 +711,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
     for (const obj of page.Contents ?? []) {
       if (!obj.Key || obj.Key.endsWith("/")) continue
       if (obj.Key.includes("/options/")) continue
+      if (obj.Key.includes("/_catalog/")) continue
       if (obj.Key.endsWith("project-meta.json")) continue
       remoteKeys.set(obj.Key, {
         etag: obj.ETag?.replace(/"/g, "") ?? null,
@@ -676,8 +730,13 @@ export async function reindexProject(userId: string, projectId: string): Promise
   let removed = 0
 
   await withTransaction(async (db) => {
-    const local = await db.query<{ id: string; s3Key: string; etag: string | null }>(
-      `SELECT id, s3_key AS "s3Key", etag
+    const local = await db.query<{
+      id: string
+      s3Key: string
+      etag: string | null
+      name: string
+    }>(
+      `SELECT id, s3_key AS "s3Key", etag, name
          FROM project_files
         WHERE project_id = $1 AND s3_key IS NOT NULL AND is_folder = FALSE`,
       [projectId],
@@ -685,8 +744,14 @@ export async function reindexProject(userId: string, projectId: string): Promise
     const localByKey = new Map(local.rows.map((r) => [r.s3Key, r]))
 
     for (const [key, head] of remoteKeys) {
-      const name = key.slice(key.lastIndexOf("/") + 1)
-      const folderPath = folderPathFromKey(userId, projectId, key, name)
+      const physicalName = key.slice(key.lastIndexOf("/") + 1)
+      const name = logicalNameFromObjectKey(physicalName)
+      const folderPath = folderPathFromKey(
+        userId,
+        projectId,
+        key,
+        physicalName,
+      )
       const row = localByKey.get(key)
       if (!row) {
         const fileId = randomUUID()
@@ -725,7 +790,12 @@ export async function reindexProject(userId: string, projectId: string): Promise
           size: head.size,
           etag: head.etag,
           eventId: `reindex:sync:${createHash("sha256").update(key + (head.etag ?? "")).digest("hex").slice(0, 16)}`,
-          payload: { fileId: row.id, name, folderPath, isFolder: false },
+          payload: {
+            fileId: row.id,
+            name: row.name,
+            folderPath,
+            isFolder: false,
+          },
         })
         await db.query(
           `UPDATE project_files
@@ -739,6 +809,10 @@ export async function reindexProject(userId: string, projectId: string): Promise
     }
 
     for (const [, row] of localByKey) {
+      // options/* is listed out of remoteKeys (sidecars + processing stats).
+      // Do not treat those catalog rows as missing objects.
+      if (isOptionsKey(row.s3Key, userId, projectId)) continue
+      if (isCatalogKey(row.s3Key, userId, projectId)) continue
       await journal(db, {
         projectId,
         key: row.s3Key,
@@ -758,7 +832,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
 export async function journalStorageEvent(input: {
   projectId: string
   key: string
-  op: "put" | "delete"
+  op: StorageChangeOp
   size?: number | null
   etag?: string | null
   contentHash?: string | null

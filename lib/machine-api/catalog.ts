@@ -129,13 +129,16 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
     exampleProps: {},
     exampleResponse: {
       apiVersion: 1,
+      protocol: 2,
       multipart: false,
       rename: true,
+      move: true,
       copy: false,
       sharing: false,
       clients: true,
       originMtime: true,
       contentHash: true,
+      trash: true,
     },
   },
   {
@@ -152,18 +155,133 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
     props: [],
     exampleProps: {},
     exampleResponse: {
+      users: [
+        {
+          id: "uuid",
+          email: "anya@studio.example",
+          fullName: "Аня Смирнова",
+        },
+      ],
       clients: [{ id: "uuid", displayName: "Megafon" }],
       projects: [
         {
           id: "uuid",
           name: "Ads Q3",
           clientId: "uuid",
+          userId: "uuid",
+          ownerEmail: "anya@studio.example",
           groupName: "personal",
           isActive: true,
           isPaused: false,
+          isArchived: false,
+          archivedAt: null,
           updatedAt: "2026-08-13T12:00:00.000Z",
         },
       ],
+    },
+  },
+  {
+    action: "createProject",
+    group: "storage",
+    summary: {
+      ru: "Создать проект в папке владельца токена.",
+      en: "Create a project in the token owner's folder.",
+    },
+    description: {
+      ru: "Токен, привязанный к одному проекту, создать новый не может (403).",
+      en: "A token scoped to one project cannot create another (403).",
+    },
+    props: [
+      {
+        name: "name",
+        type: "string",
+        required: true,
+        notes: { ru: "1–120 символов.", en: "1–120 characters." },
+      },
+      {
+        name: "clientId",
+        type: "string | null",
+        required: false,
+        notes: { ru: "Клиент владельца.", en: "Must belong to the owner." },
+      },
+    ],
+    exampleProps: { name: "Ads Q3", clientId: null },
+    exampleResponse: {
+      project: {
+        id: "uuid",
+        name: "Ads Q3",
+        userId: "uuid",
+        ownerEmail: "anya@studio.example",
+        isArchived: false,
+        isPaused: false,
+      },
+    },
+  },
+  {
+    action: "projectRename",
+    group: "storage",
+    summary: {
+      ru: "Переименовать проект. Ключи в бакете не меняются.",
+      en: "Rename a project. Object keys do not change.",
+    },
+    description: {
+      ru: "Имя живёт в Postgres. Клиент перечитывает его следующим projects.",
+      en: "The name lives in Postgres. Clients pick it up on the next projects call.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string",
+        required: true,
+        notes: { ru: "ID проекта.", en: "Project id." },
+      },
+      {
+        name: "name",
+        type: "string",
+        required: true,
+        notes: { ru: "Новое имя, 1–120 символов.", en: "New name, 1–120 characters." },
+      },
+    ],
+    exampleProps: { projectId: "project-uuid", name: "Kotliar" },
+    exampleResponse: { project: { id: "project-uuid", name: "Kotliar" } },
+  },
+  {
+    action: "projectState",
+    group: "storage",
+    summary: {
+      ru: "Пауза или архивация проекта.",
+      en: "Pause or archive a project.",
+    },
+    description: {
+      ru: "paused и archived независимы. Архивный проект обработчик не трогает.",
+      en: "paused and archived are independent. Workers must skip archived projects.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string",
+        required: true,
+        notes: { ru: "ID проекта.", en: "Project id." },
+      },
+      {
+        name: "paused",
+        type: "boolean",
+        required: false,
+        notes: { ru: "Пауза обработки.", en: "Pause processing." },
+      },
+      {
+        name: "archived",
+        type: "boolean",
+        required: false,
+        notes: {
+          ru: "В архив / из архива. Нужно хотя бы одно из paused/archived.",
+          en: "Archive / unarchive. At least one of paused/archived is required.",
+        },
+      },
+    ],
+    exampleProps: { projectId: "project-uuid", archived: true },
+    exampleResponse: {
+      project: { id: "project-uuid", isArchived: true, isPaused: false },
     },
   },
   {

@@ -6,7 +6,7 @@ import { findFileById } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
 import { getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
-import { writeFileDelete, writeRename } from "@/lib/storage/write-path"
+import { writeFileDelete, writeRename, StorageWriteError } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -92,11 +92,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const body = await request.json().catch(() => null)
   const name =
-    typeof body?.name === "string" ? body.name.trim().slice(0, 180) : ""
-  if (!name || name.includes("/") || name.includes("\\")) {
+    typeof body?.name === "string" ? body.name.trim().slice(0, 180) : undefined
+  const folderPath =
+    typeof body?.folderPath === "string" ? body.folderPath : undefined
+  if (name === undefined && folderPath === undefined) {
     return NextResponse.json({ message: "Invalid name." }, { status: 400 })
   }
-  if (name.toLowerCase() === OPTIONS_FOLDER_NAME) {
+  if (name !== undefined && (!name || name.includes("/") || name.includes("\\"))) {
+    return NextResponse.json({ message: "Invalid name." }, { status: 400 })
+  }
+  if (name?.toLowerCase() === OPTIONS_FOLDER_NAME) {
     return NextResponse.json(
       { message: "This folder name is reserved." },
       { status: 403 },
@@ -109,12 +114,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       fileId,
       projectId: id,
       name,
+      folderPath,
     })
     if (!file) {
       return NextResponse.json({ message: "File not found." }, { status: 404 })
     }
     return NextResponse.json({ file })
   } catch (error) {
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
     const msg = error instanceof Error ? error.message : "Rename failed."
     if (msg.includes("unique") || msg.includes("duplicate")) {
       return NextResponse.json(
@@ -139,6 +148,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     userId: owned.project.ownerId,
     projectId: id,
     fileId,
+    deletedBy: auth.userId,
   })
 
   return NextResponse.json({ ok: true })

@@ -57,7 +57,10 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await hashPassword(parsed.data.newPassword)
-  const updated = await updateUser(current.id, { passwordHash })
+  const updated = await updateUser(current.id, {
+    passwordHash,
+    mustChangePassword: false,
+  })
   if (!updated) {
     return NextResponse.json(
       { message: "Unable to update your password right now." },

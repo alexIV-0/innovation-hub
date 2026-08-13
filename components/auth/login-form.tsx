@@ -63,7 +63,11 @@ export function LoginForm({
       })
 
       const raw = await response.text()
-      let data: { message?: string; role?: "USER" | "ADMIN" } = {}
+      let data: {
+        message?: string
+        role?: "USER" | "ADMIN"
+        mustChangePassword?: boolean
+      } = {}
       try {
         data = raw ? (JSON.parse(raw) as typeof data) : {}
       } catch {
@@ -83,9 +87,11 @@ export function LoginForm({
       setServerMessage(data.message ?? "Signed in successfully.")
       form.reset({ email: values.email, password: "" })
       const target =
-        redirectTo.startsWith("/") && !redirectTo.startsWith("//")
-          ? redirectTo
-          : "/account"
+        data.mustChangePassword
+          ? "/account/security?mustChange=1"
+          : redirectTo.startsWith("/") && !redirectTo.startsWith("//")
+            ? redirectTo
+            : "/account"
       window.location.assign(target)
     } catch {
       setServerError("Unable to reach the server. Please try again.")

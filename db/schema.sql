@@ -166,9 +166,14 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS chat_last_read_at TIMESTAMPTZ;
 -- Статус «в архиве» отдельно от group_name: обработчики пропускают такие проекты.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS projects_user_archived_idx
   ON projects (user_id, is_archived, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS projects_deleted_idx
+  ON projects (user_id, deleted_at)
+  WHERE deleted_at IS NOT NULL;
 
 -- Logical client grouping (UI hierarchy). Does not change R2 key layout.
 CREATE TABLE IF NOT EXISTS clients (
@@ -215,6 +220,7 @@ CREATE TABLE IF NOT EXISTS project_files (
   content_hash  TEXT,
   origin_mtime  INTEGER,
   deleted_at    TIMESTAMPTZ,
+  deleted_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_seq      BIGINT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -229,7 +235,7 @@ CREATE TABLE IF NOT EXISTS storage_changes (
   seq          BIGSERIAL PRIMARY KEY,
   project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   key          TEXT NOT NULL,
-  op           TEXT NOT NULL CHECK (op IN ('put', 'delete')),
+  op           TEXT NOT NULL CHECK (op IN ('put', 'delete', 'move')),
   size         BIGINT,
   etag         TEXT,
   content_hash TEXT,
@@ -287,7 +293,12 @@ CREATE INDEX IF NOT EXISTS remote_computers_heartbeat_idx
   WHERE revoked_at IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS project_files_unique_name_idx
-  ON project_files (project_id, folder_path, name);
+  ON project_files (project_id, lower(folder_path), lower(name))
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS project_files_trash_idx
+  ON project_files (project_id, deleted_at)
+  WHERE deleted_at IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS project_files_project_folder_idx
   ON project_files (project_id, folder_path);
@@ -299,6 +310,43 @@ CREATE INDEX IF NOT EXISTS project_files_s3_key_idx
 CREATE INDEX IF NOT EXISTS project_files_created_at_idx
   ON project_files (project_id, created_at DESC)
   WHERE is_folder = FALSE;
+
+CREATE TABLE IF NOT EXISTS storage_jobs (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id   TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK (kind IN ('copy','move','purge','recatalog')),
+  state        TEXT NOT NULL CHECK (state IN ('queued','running','done','failed','cancelled')),
+  total        INTEGER NOT NULL DEFAULT 0,
+  done         INTEGER NOT NULL DEFAULT 0,
+  error        TEXT,
+  payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  event_id     TEXT UNIQUE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS storage_jobs_state_idx
+  ON storage_jobs (state, created_at)
+  WHERE state IN ('queued', 'running');
+
+CREATE INDEX IF NOT EXISTS storage_jobs_user_idx
+  ON storage_jobs (user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS project_members (
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role        TEXT NOT NULL CHECK (role IN ('viewer','editor')),
+  invited_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (project_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS project_members_user_idx
+  ON project_members (user_id);
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- ===== Конвейер: сканер и очередь задач =====
 

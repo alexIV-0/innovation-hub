@@ -7,6 +7,7 @@ import { findFileById } from "@/lib/repositories/project-files"
 import { apiError, apiOk } from "@/lib/machine-api/http"
 import { defineAction } from "@/lib/machine-api/types"
 import {
+  requireEditableProjectAccess,
   requireOwnedProjectAccess,
   requireProjectAccess,
 } from "@/lib/storage/auth"
@@ -54,7 +55,7 @@ export const presignAction = defineAction(
 
     const access =
       data.method === "PUT"
-        ? await requireOwnedProjectAccess(auth, data.projectId)
+        ? await requireEditableProjectAccess(auth, data.projectId)
         : await requireProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
 
@@ -126,7 +127,7 @@ export const notifyAction = defineAction(
     eventId: z.string().optional(),
   }),
   async (auth, data) => {
-    const access = await requireOwnedProjectAccess(auth, data.projectId)
+    const access = await requireEditableProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
 
     const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
@@ -146,7 +147,7 @@ export const notifyAction = defineAction(
         contentHash: data.contentHash,
         eventId: data.eventId,
       })
-      return apiOk({ file }, 201)
+      return apiOk({ file, fileIds: [file.id] }, 201)
     } catch (error) {
       if (error instanceof StorageWriteError) {
         return apiError(error.message, 409)
@@ -175,7 +176,7 @@ export const mkdirAction = defineAction(
       return apiError("This folder name is reserved.", 403)
     }
 
-    const access = await requireOwnedProjectAccess(auth, data.projectId)
+    const access = await requireEditableProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
 
     try {
@@ -186,8 +187,11 @@ export const mkdirAction = defineAction(
         name: data.name,
         eventId: data.eventId,
       })
-      return apiOk({ file }, 201)
+      return apiOk({ file, fileIds: [file.id] }, 201)
     } catch (error) {
+      if (error instanceof StorageWriteError) {
+        return apiError(error.message, error.status)
+      }
       const msg =
         error instanceof Error ? error.message : "Could not create folder."
       if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -215,7 +219,7 @@ export const renameAction = defineAction(
       return apiError("Invalid name.", 400)
     }
 
-    const access = await requireOwnedProjectAccess(auth, data.projectId)
+    const access = await requireEditableProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
 
     try {
@@ -228,8 +232,11 @@ export const renameAction = defineAction(
         eventId: data.eventId,
       })
       if (!file) return apiError("File not found.", 404)
-      return apiOk({ file })
+      return apiOk({ file, fileIds: [file.id] })
     } catch (error) {
+      if (error instanceof StorageWriteError) {
+        return apiError(error.message, error.status)
+      }
       const msg = error instanceof Error ? error.message : "Could not rename."
       if (msg.includes("unique") || msg.includes("duplicate")) {
         return apiError("A file or folder with that name already exists.", 409)
@@ -246,7 +253,7 @@ export const deleteObjectAction = defineAction(
     eventId: z.string().optional(),
   }),
   async (auth, data) => {
-    const access = await requireOwnedProjectAccess(auth, data.projectId)
+    const access = await requireEditableProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
 
     const file = await findFileById(data.fileId)
@@ -261,6 +268,7 @@ export const deleteObjectAction = defineAction(
       userId: access.ownerId,
       projectId: access.projectId,
       fileId: data.fileId,
+      deletedBy: auth.userId,
       eventId: data.eventId,
     })
     return apiOk({ ok: true, ...result })
@@ -272,7 +280,7 @@ export const reindexAction = defineAction(
     projectId: z.string().min(1),
   }),
   async (auth, data) => {
-    const access = await requireOwnedProjectAccess(auth, data.projectId)
+    const access = await requireEditableProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
 
     try {
@@ -318,7 +326,7 @@ const putSidecarSchema = z.discriminatedUnion("kind", [
 ])
 
 export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data) => {
-  const access = await requireOwnedProjectAccess(auth, data.projectId)
+  const access = await requireEditableProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
   try {
@@ -374,3 +382,87 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
     )
   }
 })
+
+export const copyAction = defineAction(
+  z.object({
+    projectId: z.string().uuid(),
+    fileIds: z.array(z.string().uuid()).min(1).max(500),
+    destProjectId: z.string().uuid().optional(),
+    destFolderPath: z.string().default(""),
+    eventId: z.string().optional(),
+  }),
+  async (auth, data) => {
+    const destProjectId = data.destProjectId ?? data.projectId
+    const sourceAccess = await requireProjectAccess(auth, data.projectId)
+    if (sourceAccess instanceof NextResponse) return sourceAccess
+    const destAccess = await requireEditableProjectAccess(auth, destProjectId)
+    if (destAccess instanceof NextResponse) return destAccess
+
+    try {
+      const { countCopyWork, copySingleFile, buildCopyPlan } = await import(
+        "@/lib/storage/copy"
+      )
+      const { createJob } = await import("@/lib/storage/jobs")
+      const { scheduleJob } = await import("@/lib/storage/job-runner")
+
+      const { total, syncSingle } = await countCopyWork(
+        data.projectId,
+        data.fileIds,
+      )
+      if (syncSingle) {
+        const file = await copySingleFile({
+          sourceProjectId: data.projectId,
+          destProjectId: destAccess.projectId,
+          destOwnerId: destAccess.ownerId,
+          destFolderPath: data.destFolderPath,
+          source: syncSingle,
+          eventId: data.eventId ?? null,
+        })
+        return apiOk({ files: [file], fileIds: [file.id] })
+      }
+
+      await buildCopyPlan({
+        projectId: data.projectId,
+        fileIds: data.fileIds,
+      })
+      const job = await createJob({
+        userId: auth.userId,
+        projectId: destAccess.projectId,
+        kind: "copy",
+        total,
+        eventId: data.eventId ?? null,
+        payload: {
+          sourceProjectId: data.projectId,
+          destProjectId: destAccess.projectId,
+          destOwnerId: destAccess.ownerId,
+          destFolderPath: data.destFolderPath,
+          fileIds: data.fileIds,
+          eventId: data.eventId,
+        },
+      })
+      scheduleJob(job.id)
+      return apiOk({ jobId: job.id }, 202)
+    } catch (error) {
+      if (error instanceof StorageWriteError) {
+        return apiError(error.message, error.status)
+      }
+      return apiError(
+        error instanceof Error ? error.message : "Copy failed.",
+        500,
+      )
+    }
+  },
+)
+
+export const getJobAction = defineAction(
+  z.object({ jobId: z.string().uuid() }),
+  async (auth, data) => {
+    const { getJob, serializeJob } = await import("@/lib/storage/jobs")
+    const job = await getJob(data.jobId)
+    if (!job) return apiError("Job not found.", 404)
+    if (auth.role !== "ADMIN" && job.userId !== auth.userId) {
+      return apiError("Job not found.", 404)
+    }
+    return apiOk({ job: serializeJob(job) })
+  },
+)

@@ -92,11 +92,18 @@ Extends file metadata from the cache:
   "contentHash": null,
   "eventTime": 1722930000,
   "fileId": "uuid",
-  "contentType": "video/quicktime"
+  "contentType": "video/quicktime",
+  "from": null,
+  "to": null,
+  "displayPath": "anya@studio.example / Ads Q3 / IN / clip.mov"
 }
 ```
 
-`op` is `"put"` or `"delete"`. `seq` is monotonic per journal (global `BIGSERIAL`).
+`op` is `"put"`, `"delete"`, or `"move"`. `seq` is monotonic per journal (global `BIGSERIAL`).
+
+For `move`, `from` / `to` are `{ "folderPath", "name" }`. `name` / `folderPath` on the event match `to`. A folder move is **one** event — clients rewrite descendant prefixes locally (`fileId` is stable).
+
+Tree entries also include `displayPath`.
 
 ### Error body
 
@@ -169,16 +176,24 @@ Feature flags for storage clients. Authenticated via session, machine token, or 
 ```json
 {
   "apiVersion": 1,
-  "multipart": false,
+  "protocol": 2,
+  "multipart": true,
   "rename": true,
-  "copy": false,
-  "sharing": false,
+  "move": true,
+  "copy": true,
+  "sharing": true,
   "clients": true,
   "originMtime": true,
-  "contentHash": true
+  "contentHash": true,
+  "trash": true
 }
 ```
 
+`protocol: 2` means `/delta` may include `op: "move"`. Clients that do not understand `move` must treat unknown ops as a signal to refetch `/tree`.
+
+`sharing: true` applies to the **website** only. Machine tokens never see shared projects — they continue to list ownership only.
+
+Configure the R2 bucket with a lifecycle rule to **abort incomplete multipart uploads** (e.g. after 7 days), otherwise abandoned parts accumulate and are billed.
 ---
 
 ## `GET /api/storage/v1/projects`
@@ -195,12 +210,17 @@ List clients and projects visible to the caller. Prefer this over `GET /api/proj
 
 ```json
 {
+  "users": [
+    { "id": "uuid", "email": "anya@studio.example", "fullName": "Аня Смирнова" }
+  ],
   "clients": [{ "id": "uuid", "displayName": "Megafon" }],
   "projects": [
     {
       "id": "uuid",
       "name": "Ads Q3",
       "clientId": "uuid",
+      "userId": "uuid",
+      "ownerEmail": "anya@studio.example",
       "groupName": "personal",
       "isActive": true,
       "isPaused": false,
@@ -214,6 +234,10 @@ List clients and projects visible to the caller. Prefer this over `GET /api/proj
 
 `clientId` may be `null`. Client grouping is a DB relation only — R2 keys use `projects/{userId}/{projectId}/…`.
 
+`userId` is the project owner (the first path segment of the R2 prefix). `users[]` lists those owners so the client can label the folder with `email` / `fullName` instead of a truncated UUID.
+
+This endpoint returns **all** projects, including archived. The worker must skip rows with `isArchived: true`. Cabinet `GET /api/projects` is the opposite: it filters on the server (`?archived=true|false|all`, default `false`).
+
 **Processing flags.** Three independent booleans, do not conflate them:
 
 | Field | Meaning | What a worker should do |
@@ -223,6 +247,117 @@ List clients and projects visible to the caller. Prefer this over `GET /api/proj
 | `isArchived` | Project moved to the Archive tab | **Skip — never start processing.** `archivedAt` holds the timestamp |
 
 Archiving no longer sets `groupName` to `"archive"`: the group only drives UI layout, the status lives in `isArchived`.
+
+### `POST /api/storage/v1/projects`
+
+Create a project in the token owner's folder. Scoped machine tokens (`projectId` set) cannot create — `403`.
+
+**Body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | yes | 1–120 chars |
+| `clientId` | string \| null | no | Must belong to the owner |
+| `description` | string | no | |
+| `groupName` | `"personal"` \| `"shared"` \| `"tools"` \| `"archive"` | no | UI layout only |
+
+**Response `201`:** `{ "project": { id, name, userId, ownerEmail, isArchived, … } }`
+
+### `POST /api/storage/v1/project-rename`
+
+Rename a project. R2 keys do not change.
+
+**Body:** `{ "projectId": "uuid", "name": "New name" }`  
+**Response `200`:** `{ "project": { … } }`
+
+### `POST /api/storage/v1/project-state`
+
+Pause / resume or archive / unarchive. Fields are independent; at least one is required.
+
+**Body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `projectId` | string | yes | |
+| `paused` | boolean | no | Writes `is_paused` and mirrors `is_active` |
+| `archived` | boolean | no | Writes `is_archived` / `archived_at`; workers must skip archived projects |
+
+**Response `200`:** `{ "project": { … } }`
+
+### `DELETE /api/storage/v1/projects`
+
+Soft-delete a project into trash (30 days). R2 objects are **not** deleted immediately. Scoped tokens → `403`.
+
+**Body:** `{ "projectId": "uuid" }`  
+**Response `200`:** `{ "ok": true }`
+
+### `POST /api/storage/v1/project-restore`
+
+Restore a soft-deleted project.
+
+**Body:** `{ "projectId": "uuid" }`  
+**Response `200`:** `{ "project": { … } }`
+
+---
+
+## `POST /api/storage/v1/copy`
+
+Server-side `CopyObject` into the destination owner's prefix. Colliding names get ` (2)`, ` (3)`, …
+
+**Body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `projectId` | string | yes | Source project |
+| `fileIds` | string[] | yes | Roots to copy (files and/or folders) |
+| `destProjectId` | string | no | Defaults to `projectId` |
+| `destFolderPath` | string | no | Logical destination folder |
+| `eventId` | string | no | Idempotency key for the job |
+
+**Response `200`** (single file): `{ "files": […], "fileIds": ["…"] }`  
+**Response `202`** (folder / batch): `{ "jobId": "uuid" }` — poll `GET /jobs/:id`; completed payload includes `fileIds`.
+
+Cross-project copy is allowed when the actor can read the source and write the destination. Machine tokens only see owned projects.
+
+---
+
+## `GET /api/storage/v1/jobs/:id`
+
+Progress for long-running storage jobs (`copy`, `move`, `purge`, `recatalog`).
+
+**Response `200`**
+
+```json
+{
+  "job": {
+    "id": "uuid",
+    "kind": "copy",
+    "state": "running",
+    "total": 12,
+    "done": 4,
+    "error": null,
+    "projectId": "uuid",
+    "payload": { "fileIds": ["…"] },
+    "createdAt": "…",
+    "updatedAt": "…"
+  }
+}
+```
+
+---
+
+## Multipart upload
+
+For objects larger than ~5 GiB or resumable uploads. After `complete`, the catalog is updated the same way as `/notify`.
+
+| Endpoint | Body (summary) | Response |
+|---|---|---|
+| `POST /multipart/create` | `{ projectId, folderPath, fileName, contentType? }` | `{ uploadId, s3Key, fileName, folderPath, contentType }` |
+| `POST /multipart/presign-part` | `{ projectId, s3Key, uploadId, partNumber, ttlSec? }` | `{ url, method: "PUT", partNumber, expiresIn }` |
+| `POST /multipart/complete` | `{ projectId, s3Key, uploadId, folderPath, fileName, parts: [{ partNumber, etag }], … }` | `{ file, fileIds }` |
+| `POST /multipart/abort` | `{ projectId, s3Key, uploadId }` | `{ ok: true }` |
+
+Machine-api actions: `multipartCreate`, `multipartPresignPart`, `multipartComplete`, `multipartAbort`, `copy`, `getJob`, `deleteProject`, `restoreProject`.
 
 ---
 
@@ -392,7 +527,7 @@ Reserved name: `options` → `403`.
 
 ## `DELETE /api/storage/v1/object`
 
-Delete a file or folder (cascade children). Removes R2 objects for files and journals deletes.
+Soft-delete a file or folder (cascade children). Rows are marked `deleted_at`; **R2 objects stay**. Journal `op: "delete"` so clients drop the item from lists.
 
 **Body**
 
@@ -407,11 +542,23 @@ Delete a file or folder (cascade children). Removes R2 objects for files and jou
 ```json
 {
   "ok": true,
-  "deletedS3Keys": ["projects/{userId}/{projectId}/…"]
+  "fileIds": ["uuid"],
+  "deletedS3Keys": []
 }
 ```
 
-`options` folder → `403`. Missing file → `404`.
+`options` folder → `403`. Missing file → `404`. Retention is **30 days**, then a purge removes the row and the object.
+
+### `GET /api/storage/v1/trash?projectId=`
+
+**Response `200`:** `{ "items": [{ "fileId", "name", "folderPath", "isFolder", "deletedAt", "sizeBytes" }] }`
+
+### `POST /api/storage/v1/trash/restore`
+
+**Body:** `{ "projectId", "fileId", "eventId"? }`  
+If the parent folder is gone, restores to the project root. If the name is taken, uses `name (2).ext`. Folder restore also restores descendants deleted in the same cascade. Journal `put`.
+
+**Response `200`:** `{ "file": ProjectFile }`
 
 ---
 
@@ -433,7 +580,7 @@ Full `ListObjectsV2` of the project prefix vs Postgres. Inserts / updates / remo
 }
 ```
 
-Skips `options/*` and `project-meta.json`. Max duration 120s. Owner (or admin) only.
+Skips `options/*` and `project-meta.json` in the R2 listing. Catalog rows under `options/` (processing stats) are **not** deleted. New rows get a logical name (uuid prefix stripped); existing names are left alone. Max duration 120s. Owner (or admin) only.
 
 ---
 

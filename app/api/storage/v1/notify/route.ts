@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { projectPrefix } from "@/lib/storage/keys"
@@ -9,7 +9,6 @@ import {
   StorageWriteError,
   writeNotifyUpload,
 } from "@/lib/storage/write-path"
-import { safeBaseFileName } from "@/lib/s3-upload-policy"
 
 export const runtime = "nodejs"
 
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
   }
 
   const data = parsed.data
-  const access = await requireOwnedProjectAccess(auth, data.projectId)
+  const access = await requireEditableProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
   const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
@@ -61,17 +60,17 @@ export async function POST(request: NextRequest) {
       projectId: access.projectId,
       s3Key: data.s3Key,
       folderPath: data.folderPath,
-      fileName: safeBaseFileName(data.fileName),
+      fileName: data.fileName,
       sizeBytes: data.sizeBytes,
       contentType: data.contentType,
       originMtime: data.originMtime,
       contentHash: data.contentHash,
       eventId: data.eventId,
     })
-    return NextResponse.json({ file }, { status: 201 })
+    return NextResponse.json({ file, fileIds: [file.id] }, { status: 201 })
   } catch (error) {
     if (error instanceof StorageWriteError) {
-      return NextResponse.json({ message: error.message }, { status: 409 })
+      return NextResponse.json({ message: error.message }, { status: error.status })
     }
     console.error("[storage] notify failed", error)
     return NextResponse.json(

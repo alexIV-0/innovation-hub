@@ -17,6 +17,7 @@ import {
   findUserByProviderAccount,
   linkProviderToUser,
 } from "@/lib/repositories/users"
+import { syncUserMeta } from "@/lib/project-storage"
 
 export const dynamic = "force-dynamic"
 
@@ -122,6 +123,11 @@ export async function GET(request: Request) {
           email,
           provider: "google",
           providerAccountId: profile.sub,
+        })
+        void syncUserMeta({
+          userId: created.id,
+          email: created.email,
+          createdAt: created.createdAt.toISOString(),
         })
         user = {
           ...created,

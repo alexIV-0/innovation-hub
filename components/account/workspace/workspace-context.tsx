@@ -13,6 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
 import { useI18n, type Dictionary, type Lang } from "@/components/account/i18n"
+import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import {
   findChildByName,
   itemsAtPath,
@@ -163,6 +164,12 @@ type WorkspaceValue = {
   downloadItem: (file: DriveFile) => void
   uploadFiles: (list: FileList | File[], target: UploadTarget) => Promise<void>
   triggerUpload: (target: UploadTarget) => void
+  createTextFile: (target: UploadTarget) => void
+  triggerFolderUpload: (target: UploadTarget) => void
+  shareProject: (project: Project) => void
+  shareTarget: Project | null
+  closeShareDialog: () => void
+  restoreProject: (project: Project) => void
 
   // перемещение
   /** Элементы, для которых открыт диалог выбора папки назначения. */
@@ -219,12 +226,22 @@ export function useWorkspace() {
   return ctx
 }
 
-function uploadViaXhr(
+async function uploadViaXhr(
   source: WorkspaceSource,
   projectId: string,
   file: File,
   target: UploadTarget,
 ): Promise<void> {
+  // Кабинет — через storage v1 (presign → PUT → notify). Админский конвейер
+  // и другие источники ходят на свой uploadUrl (прокси байтов через Next).
+  if (source.scopeKey === "cabinet") {
+    await uploadProjectFileDirect({
+      projectId,
+      file,
+      folderPath: target.folderPath ?? "",
+    })
+    return
+  }
   return new Promise((resolve, reject) => {
     const qs = new URLSearchParams({ fileName: file.name })
     if (target.parentId) qs.set("parentId", target.parentId)
@@ -267,6 +284,7 @@ export function WorkspaceProvider({
   const searchParams = useSearchParams()
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const uploadTargetRef = useRef<UploadTarget>({ parentId: null, folderPath: "" })
   const storageCursorRef = useRef(0)
 
@@ -373,6 +391,7 @@ export function WorkspaceProvider({
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
   const [clipboard, setClipboard] = useState<Clipboard | null>(null)
   const [moveTargets, setMoveTargets] = useState<DriveFile[] | null>(null)
+  const [shareTarget, setShareTarget] = useState<Project | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState("")
   const [descDraft, setDescDraft] = useState("")
@@ -579,8 +598,9 @@ export function WorkspaceProvider({
    * Разделы в боковом меню плоские, поэтому группировки внутри списка больше нет.
    */
   const tabOf = useCallback((p: Project): ProjectTab => {
+    if (p.deletedAt) return "trash"
+    if (p.sharedWithMe) return "shared"
     if (p.isArchived) return "archive"
-    if (p.groupName === "shared") return "shared"
     if (p.groupName === "tools") return "tools"
     return "projects"
   }, [])
@@ -603,7 +623,6 @@ export function WorkspaceProvider({
     // и понимать, какие из них не обрабатываются. Порядок задаёт запрос —
     // архивные идут последними.
     if (!source.splitByTab) return projects.filter(matchesQuery)
-    if (projectTab === "trash") return []
     return projects.filter((p) => tabOf(p) === projectTab && matchesQuery(p))
   }, [projects, projectTab, tabOf, matchesQuery, source.splitByTab])
 
@@ -955,6 +974,130 @@ export function WorkspaceProvider({
     fileInputRef.current?.click()
   }, [])
 
+  const triggerFolderUpload = useCallback((target: UploadTarget) => {
+    uploadTargetRef.current = target
+    folderInputRef.current?.click()
+  }, [])
+
+  const uploadFolderFiles = useCallback(
+    async (list: FileList | File[], target: UploadTarget) => {
+      if (!selectedId) return
+      const files = Array.from(list).filter((f) => {
+        const name = f.name.toLowerCase()
+        return name !== ".ds_store" && name !== "thumbs.db"
+      })
+      if (!files.length) return
+      setUploading(true)
+      try {
+        const dirs = new Set<string>()
+        for (const file of files) {
+          const rel = (file as File & { webkitRelativePath?: string })
+            .webkitRelativePath
+          if (!rel) continue
+          const parts = rel.split("/")
+          parts.pop()
+          if (parts.length) dirs.add(parts.join("/"))
+        }
+        for (const ensurePath of [...dirs].sort(
+          (a, b) => a.split("/").length - b.split("/").length,
+        )) {
+          await fetch("/api/storage/v1/mkdir", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId: selectedId,
+              folderPath: target.folderPath,
+              ensurePath,
+            }),
+          })
+        }
+        for (const file of files) {
+          const rel = (file as File & { webkitRelativePath?: string })
+            .webkitRelativePath
+          let folderPath = target.folderPath
+          if (rel) {
+            const parts = rel.split("/")
+            parts.pop()
+            const nested = parts.join("/")
+            const base = target.folderPath.replace(/^\/+|\/+$/g, "")
+            folderPath = nested
+              ? base
+                ? `${base}/${nested}`
+                : nested
+              : base
+          }
+          try {
+            await uploadViaXhr(sourceRef.current, selectedId, file, {
+              parentId: null,
+              folderPath,
+            })
+          } catch (err) {
+            toast.error(
+              err instanceof Error ? err.message : `Upload failed: ${file.name}`,
+            )
+          }
+        }
+        await loadDrive(selectedId, true)
+      } finally {
+        setUploading(false)
+      }
+    },
+    [selectedId, loadDrive],
+  )
+
+  const createTextFile = useCallback(
+    (target: UploadTarget) => {
+      if (!selectedId) return
+      setPrompt({
+        title: t.mNewText,
+        label: t.folderNamePrompt,
+        initial: "untitled.txt",
+        confirmLabel: t.create,
+        onSubmit: (rawName) => {
+          void (async () => {
+            let name = rawName.trim() || "untitled.txt"
+            if (!/\.(txt|md|json)$/i.test(name)) name = `${name}.txt`
+            const blob = new Blob([""], { type: "text/plain" })
+            const file = new File([blob], name, { type: "text/plain" })
+            try {
+              await uploadViaXhr(sourceRef.current, selectedId, file, target)
+              await loadDrive(selectedId, true)
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Failed")
+            }
+          })()
+        },
+      })
+    },
+    [selectedId, t, loadDrive],
+  )
+
+  const shareProject = useCallback((project: Project) => {
+    setShareTarget(project)
+  }, [])
+
+  const closeShareDialog = useCallback(() => setShareTarget(null), [])
+
+  const restoreProject = useCallback(
+    (project: Project) => {
+      void (async () => {
+        const res = await fetch("/api/storage/v1/project-restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: project.id }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error(data.message ?? "Restore failed")
+          return
+        }
+        toast.success(t.mUnarchive)
+        await loadProjects()
+      })()
+    },
+    [loadProjects, t.mUnarchive],
+  )
+
   // ---------- контекстное меню ----------
 
   const openMenu = useCallback(
@@ -1040,15 +1183,53 @@ export function WorkspaceProvider({
 
   const pasteClipboard = useCallback(
     (destFolderPath: string) => {
-      if (!clipboard) return
+      if (!clipboard || !selectedId) return
       if (clipboard.op === "cut") {
         void moveItems(clipboard.items, destFolderPath)
         return
       }
-      // Копирование требует серверного CopyObject — POST /copy пока нет.
-      notImplemented()
+      void (async () => {
+        const res = await fetch("/api/storage/v1/copy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: clipboard.projectId,
+            fileIds: clipboard.items.map((f) => f.id),
+            destProjectId: selectedId,
+            destFolderPath,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error(data.message ?? "Copy failed")
+          return
+        }
+        if (res.status === 202 && data.jobId) {
+          toast.message(`Copy started (${data.jobId.slice(0, 8)}…)`)
+          // Poll briefly then refresh.
+          for (let i = 0; i < 30; i++) {
+            await new Promise((r) => setTimeout(r, 1000))
+            const jobRes = await fetch(`/api/storage/v1/jobs/${data.jobId}`)
+            if (!jobRes.ok) break
+            const jobData = await jobRes.json()
+            const state = jobData.job?.state
+            if (state === "done") {
+              toast.success(t.clipboardPaste)
+              break
+            }
+            if (state === "failed") {
+              toast.error(jobData.job?.error ?? "Copy failed")
+              break
+            }
+          }
+        } else {
+          toast.success(t.clipboardPaste)
+        }
+        setClipboard(null)
+        await loadDrive(selectedId, true)
+      })()
     },
-    [clipboard, moveItems, notImplemented],
+    [clipboard, selectedId, moveItems, loadDrive, t.clipboardPaste],
   )
 
   const isCut = useCallback(
@@ -1112,6 +1293,12 @@ export function WorkspaceProvider({
     downloadItem,
     uploadFiles,
     triggerUpload,
+    createTextFile,
+    triggerFolderUpload,
+    shareProject,
+    shareTarget,
+    closeShareDialog,
+    restoreProject,
     moveTargets,
     openMoveDialog,
     closeMoveDialog,
@@ -1150,6 +1337,19 @@ export function WorkspaceProvider({
         onChange={(e) => {
           if (e.target.files) {
             void uploadFiles(e.target.files, uploadTargetRef.current)
+          }
+          e.target.value = ""
+        }}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+        onChange={(e) => {
+          if (e.target.files) {
+            void uploadFolderFiles(e.target.files, uploadTargetRef.current)
           }
           e.target.value = ""
         }}

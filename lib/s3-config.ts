@@ -17,6 +17,10 @@ export function projectObjectPrefix(userId: string, projectId: string): string {
   return `projects/${safeSegment(userId, "User ID")}/${safeSegment(projectId, "Project ID")}/`
 }
 
+export function userMetaObjectKey(userId: string): string {
+  return `projects/${safeSegment(userId, "User ID")}/user-meta.json`
+}
+
 export function buildProjectObjectKey(
   userId: string,
   projectId: string,

@@ -4,6 +4,8 @@ import {
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { getDelta } from "@/lib/storage/changes"
+import { serializeStorageChange } from "@/lib/storage/delta-format"
+import { loadDisplayContext } from "@/lib/storage/display-path"
 
 export const runtime = "nodejs"
 
@@ -26,23 +28,12 @@ export async function GET(request: NextRequest) {
   const access = await requireProjectAccess(auth, projectId)
   if (access instanceof NextResponse) return access
 
-  const delta = await getDelta({ projectId: access.projectId, since })
+  const [delta, display] = await Promise.all([
+    getDelta({ projectId: access.projectId, since }),
+    loadDisplayContext(access.projectId),
+  ])
   return NextResponse.json({
-    changes: delta.changes.map((c) => ({
-      seq: c.seq,
-      op: c.op,
-      key: c.key,
-      projectId: c.projectId,
-      name: c.payload.name ?? null,
-      folderPath: c.payload.folderPath ?? null,
-      isFolder: c.payload.isFolder ?? false,
-      size: c.size,
-      etag: c.etag,
-      contentHash: c.contentHash,
-      eventTime: c.eventTime,
-      fileId: c.payload.fileId ?? null,
-      contentType: c.payload.contentType ?? null,
-    })),
+    changes: delta.changes.map((c) => serializeStorageChange(c, display)),
     cursor: delta.cursor,
     truncated: delta.truncated,
   })

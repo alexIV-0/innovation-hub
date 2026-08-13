@@ -10,6 +10,7 @@ import {
   findUserByEmail,
   updateUser,
 } from "@/lib/repositories/users"
+import { syncUserMeta } from "@/lib/project-storage"
 
 export async function GET() {
   const user = await getCurrentUser()
@@ -91,6 +92,14 @@ export async function PATCH(request: Request) {
       { message: "Account no longer exists." },
       { status: 404 },
     )
+  }
+
+  if (emailChanged) {
+    void syncUserMeta({
+      userId: updated.id,
+      email: updated.email,
+      createdAt: updated.createdAt.toISOString(),
+    })
   }
 
   const response = NextResponse.json({

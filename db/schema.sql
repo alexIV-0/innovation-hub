@@ -211,6 +211,7 @@ CREATE TABLE IF NOT EXISTS project_files (
   content_hash  TEXT,
   origin_mtime  INTEGER,
   deleted_at    TIMESTAMPTZ,
+  deleted_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_seq      BIGINT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -225,7 +226,7 @@ CREATE TABLE IF NOT EXISTS storage_changes (
   seq          BIGSERIAL PRIMARY KEY,
   project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   key          TEXT NOT NULL,
-  op           TEXT NOT NULL CHECK (op IN ('put', 'delete')),
+  op           TEXT NOT NULL CHECK (op IN ('put', 'delete', 'move')),
   size         BIGINT,
   etag         TEXT,
   content_hash TEXT,
@@ -283,7 +284,12 @@ CREATE INDEX IF NOT EXISTS remote_computers_heartbeat_idx
   WHERE revoked_at IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS project_files_unique_name_idx
-  ON project_files (project_id, folder_path, name);
+  ON project_files (project_id, lower(folder_path), lower(name))
+  WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS project_files_trash_idx
+  ON project_files (project_id, deleted_at)
+  WHERE deleted_at IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS project_files_project_folder_idx
   ON project_files (project_id, folder_path);

@@ -21,7 +21,7 @@ export function useProjectCounts() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/projects")
+      const res = await fetch("/api/projects?archived=all")
       if (!res.ok) return
       const data = await res.json()
       const acc: Counts = { ...EMPTY }

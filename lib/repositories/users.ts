@@ -57,6 +57,16 @@ export async function listUsers(): Promise<UserRecord[]> {
   return result.rows
 }
 
+export async function listUsersByIds(ids: string[]): Promise<UserRecord[]> {
+  if (ids.length === 0) return []
+  const unique = [...new Set(ids)]
+  const result = await query<UserRecord>(
+    `SELECT ${PUBLIC_USER_FIELDS} FROM users WHERE id = ANY($1::text[])`,
+    [unique],
+  )
+  return result.rows
+}
+
 /** Counts active admins, optionally excluding a given user id. */
 export async function countActiveAdmins(excludeUserId?: string): Promise<number> {
   if (excludeUserId) {

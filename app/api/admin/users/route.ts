@@ -8,6 +8,7 @@ import {
   listUsers,
   updateUser,
 } from "@/lib/repositories/users"
+import { syncUserMeta } from "@/lib/project-storage"
 
 export async function GET(request: NextRequest) {
   const auth = await requireAdminApi(request)
@@ -47,6 +48,11 @@ export async function POST(request: NextRequest) {
       email,
       passwordHash,
       role: parsed.data.role,
+    })
+    void syncUserMeta({
+      userId: user.id,
+      email: user.email,
+      createdAt: user.createdAt.toISOString(),
     })
 
     // createUser doesn't take isActive (DB default = TRUE) — branch into a

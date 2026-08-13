@@ -9,7 +9,6 @@ import {
   StorageWriteError,
   writeNotifyUpload,
 } from "@/lib/storage/write-path"
-import { safeBaseFileName } from "@/lib/s3-upload-policy"
 
 export const runtime = "nodejs"
 
@@ -61,7 +60,7 @@ export async function POST(request: NextRequest) {
       projectId: access.projectId,
       s3Key: data.s3Key,
       folderPath: data.folderPath,
-      fileName: safeBaseFileName(data.fileName),
+      fileName: data.fileName,
       sizeBytes: data.sizeBytes,
       contentType: data.contentType,
       originMtime: data.originMtime,
@@ -71,7 +70,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ file }, { status: 201 })
   } catch (error) {
     if (error instanceof StorageWriteError) {
-      return NextResponse.json({ message: error.message }, { status: 409 })
+      return NextResponse.json({ message: error.message }, { status: error.status })
     }
     console.error("[storage] notify failed", error)
     return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireStorageApi } from "@/lib/storage/auth"
+import { STORAGE_CAPABILITIES } from "@/lib/storage/capabilities"
 
 export const runtime = "nodejs"
 
@@ -11,14 +12,5 @@ export async function GET(request: NextRequest) {
   const auth = await requireStorageApi(request)
   if (auth instanceof NextResponse) return auth
 
-  return NextResponse.json({
-    apiVersion: 1,
-    multipart: false,
-    rename: true,
-    copy: false,
-    sharing: false,
-    clients: true,
-    originMtime: true,
-    contentHash: true,
-  })
+  return NextResponse.json(STORAGE_CAPABILITIES)
 }

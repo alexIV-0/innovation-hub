@@ -13,11 +13,34 @@ import { isS3Configured } from "@/lib/s3-client"
 export const runtime = "nodejs"
 export const maxDuration = 60
 
+function parseArchivedParam(
+  raw: string | null,
+): { ok: true; value: boolean | "all" } | { ok: false } {
+  if (raw == null || raw === "") return { ok: true, value: false }
+  const value = raw.trim().toLowerCase()
+  if (value === "all") return { ok: true, value: "all" }
+  if (value === "true" || value === "1") return { ok: true, value: true }
+  if (value === "false" || value === "0") return { ok: true, value: false }
+  return { ok: false }
+}
+
 export async function GET(request: NextRequest) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
-  const projects = await listProjectsByUserId(auth.userId)
+  const archived = parseArchivedParam(
+    request.nextUrl.searchParams.get("archived"),
+  )
+  if (!archived.ok) {
+    return NextResponse.json(
+      { message: "archived must be true, false, or all." },
+      { status: 400 },
+    )
+  }
+
+  const projects = await listProjectsByUserId(auth.userId, {
+    archived: archived.value,
+  })
   const unread = await countUnreadForProjects(projects.map((p) => p.id))
 
   return NextResponse.json({
@@ -74,7 +97,9 @@ export async function POST(request: NextRequest) {
       name,
       description: description ?? "",
       ownerEmail: auth.email,
+      isArchived: project.isArchived,
       createdAt: project.createdAt.toISOString(),
+      updatedAt: project.updatedAt.toISOString(),
     })
   } catch (error) {
     console.error("[projects] failed to write project-meta.json to R2", error)

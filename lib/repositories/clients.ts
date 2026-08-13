@@ -22,6 +22,16 @@ export async function listClientsByUserId(
   return result.rows
 }
 
+export async function findClientById(
+  id: string,
+): Promise<ClientRecord | null> {
+  const result = await query<ClientRecord>(
+    `SELECT ${CLIENT_FIELDS} FROM clients WHERE id = $1`,
+    [id],
+  )
+  return result.rows[0] ?? null
+}
+
 export async function listClientsByIds(ids: string[]): Promise<ClientRecord[]> {
   if (ids.length === 0) return []
   const result = await query<ClientRecord>(

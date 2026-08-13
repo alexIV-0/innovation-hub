@@ -188,6 +188,9 @@ export const mkdirAction = defineAction(
       })
       return apiOk({ file }, 201)
     } catch (error) {
+      if (error instanceof StorageWriteError) {
+        return apiError(error.message, error.status)
+      }
       const msg =
         error instanceof Error ? error.message : "Could not create folder."
       if (msg.includes("unique") || msg.includes("duplicate")) {
@@ -230,6 +233,9 @@ export const renameAction = defineAction(
       if (!file) return apiError("File not found.", 404)
       return apiOk({ file })
     } catch (error) {
+      if (error instanceof StorageWriteError) {
+        return apiError(error.message, error.status)
+      }
       const msg = error instanceof Error ? error.message : "Could not rename."
       if (msg.includes("unique") || msg.includes("duplicate")) {
         return apiError("A file or folder with that name already exists.", 409)
@@ -261,6 +267,7 @@ export const deleteObjectAction = defineAction(
       userId: access.ownerId,
       projectId: access.projectId,
       fileId: data.fileId,
+      deletedBy: auth.userId,
       eventId: data.eventId,
     })
     return apiOk({ ok: true, ...result })

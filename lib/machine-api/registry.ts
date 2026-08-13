@@ -4,9 +4,14 @@ import {
   capabilitiesAction,
   deltaAction,
   getSidecarAction,
-  projectsAction,
   treeAction,
 } from "@/lib/machine-api/actions/storage-read"
+import {
+  createProjectAction,
+  projectRenameAction,
+  projectStateAction,
+  projectsAction,
+} from "@/lib/machine-api/actions/storage-projects"
 import {
   deleteObjectAction,
   mkdirAction,
@@ -22,6 +27,9 @@ export const ACTION_REGISTRY: Record<string, MachineActionHandler> = {
   heartbeat: heartbeatAction,
   capabilities: capabilitiesAction,
   projects: projectsAction,
+  createProject: createProjectAction,
+  projectRename: projectRenameAction,
+  projectState: projectStateAction,
   tree: treeAction,
   delta: deltaAction,
   presign: presignAction,

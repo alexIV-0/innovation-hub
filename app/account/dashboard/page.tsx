@@ -36,7 +36,7 @@ export default async function AccountDashboardPage() {
 
 async function DashboardProjectsData({ userId }: { userId: string }) {
   const [projects, mediaCount] = await Promise.all([
-    listProjectsByUserId(userId),
+    listProjectsByUserId(userId, { archived: false }),
     countMediaByUserId(userId),
   ])
   const unreadCounts = await countUnreadForProjects(projects.map((p) => p.id))

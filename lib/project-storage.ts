@@ -5,7 +5,7 @@ import {
 } from "@aws-sdk/client-s3"
 import type { ProjectFileRecord } from "@/lib/domain-types"
 import { listAllProjectFiles } from "@/lib/repositories/project-files"
-import { buildProjectObjectKey, getS3Bucket } from "@/lib/s3-config"
+import { buildProjectObjectKey, getS3Bucket, userMetaObjectKey } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
 
 /**
@@ -253,18 +253,55 @@ export async function writeProjectMeta(input: {
   name: string
   description: string
   ownerEmail: string
+  isArchived?: boolean
   createdAt?: string
+  updatedAt?: string
 }): Promise<void> {
+  const now = new Date().toISOString()
   const payload = {
+    schema: 1,
+    projectId: input.projectId,
     name: input.name,
     description: input.description,
+    ownerId: input.userId,
     ownerEmail: input.ownerEmail,
-    createdAt: input.createdAt ?? new Date().toISOString(),
+    isArchived: input.isArchived ?? false,
+    createdAt: input.createdAt ?? now,
+    updatedAt: input.updatedAt ?? now,
   }
   await putObjectText(
     projectMetaKey(input.userId, input.projectId),
     JSON.stringify(payload, null, 2),
   )
+}
+
+export async function writeUserMeta(input: {
+  userId: string
+  email: string
+  createdAt?: string
+}): Promise<void> {
+  const payload = {
+    schema: 1,
+    userId: input.userId,
+    email: input.email,
+    createdAt: input.createdAt ?? new Date().toISOString(),
+  }
+  await putObjectText(
+    userMetaObjectKey(input.userId),
+    JSON.stringify(payload, null, 2),
+  )
+}
+
+export async function syncUserMeta(input: {
+  userId: string
+  email: string
+  createdAt?: string
+}): Promise<void> {
+  try {
+    await writeUserMeta(input)
+  } catch (error) {
+    console.error("[storage] failed to write user-meta.json", error)
+  }
 }
 
 function isHiddenName(name: string): boolean {

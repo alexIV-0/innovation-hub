@@ -10,6 +10,7 @@ import {
   findOwnedProject,
   updateProject,
 } from "@/lib/repositories/projects"
+import { syncProjectMeta } from "@/lib/storage/project-catalog"
 
 export const runtime = "nodejs"
 
@@ -51,6 +52,13 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const project = await updateProject(id, auth.userId, parsed.data)
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  }
+  if (
+    parsed.data.name !== undefined ||
+    parsed.data.description !== undefined ||
+    parsed.data.isArchived !== undefined
+  ) {
+    await syncProjectMeta(project)
   }
   return NextResponse.json({ project })
 }

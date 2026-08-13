@@ -13,6 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
 import { useI18n, type Dictionary, type Lang } from "@/components/account/i18n"
+import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import {
   findChildByName,
   itemsAtPath,
@@ -210,34 +211,15 @@ export function useWorkspace() {
   return ctx
 }
 
-function uploadViaXhr(
+async function uploadViaXhr(
   projectId: string,
   file: File,
   target: UploadTarget,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const qs = new URLSearchParams({ fileName: file.name })
-    if (target.parentId) qs.set("parentId", target.parentId)
-    else qs.set("folderPath", target.folderPath ?? "")
-    const xhr = new XMLHttpRequest()
-    xhr.open("POST", `/api/projects/${projectId}/media?${qs.toString()}`)
-    xhr.withCredentials = true
-    if (file.type) xhr.setRequestHeader("Content-Type", file.type)
-    xhr.setRequestHeader("x-file-name", encodeURIComponent(file.name))
-    xhr.onload = () => {
-      try {
-        const data = JSON.parse(xhr.responseText) as { message?: string }
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve()
-          return
-        }
-        reject(new Error(data.message ?? `Upload failed (${xhr.status})`))
-      } catch {
-        reject(new Error(`Upload failed (${xhr.status})`))
-      }
-    }
-    xhr.onerror = () => reject(new Error("Network error during upload."))
-    xhr.send(file)
+  await uploadProjectFileDirect({
+    projectId,
+    file,
+    folderPath: target.folderPath ?? "",
   })
 }
 
@@ -385,7 +367,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const loadProjects = useCallback(async () => {
     setLoadingProjects(true)
     try {
-      const res = await fetch("/api/projects")
+      const res = await fetch("/api/projects?archived=all")
       if (!res.ok) return
       const data = await res.json()
       setProjects(

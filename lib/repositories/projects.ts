@@ -67,15 +67,32 @@ export async function listProjectsByOwner(
   return result.rows
 }
 
+export type ArchivedFilter = boolean | "all"
+
+function archivedClause(
+  filter: ArchivedFilter | undefined,
+  paramIndex: number,
+): { sql: string; params: unknown[] } {
+  if (filter === undefined || filter === "all") {
+    return { sql: "", params: [] }
+  }
+  return {
+    sql: ` AND COALESCE(is_archived, FALSE) = $${paramIndex}`,
+    params: [filter],
+  }
+}
+
 export async function listProjectsByUserId(
   userId: string,
+  options?: { archived?: ArchivedFilter },
 ): Promise<ProjectRecord[]> {
+  const archived = archivedClause(options?.archived, 2)
   const result = await query<ProjectRecord>(
     `SELECT ${PROJECT_FIELDS}
        FROM projects
-      WHERE user_id = $1
+      WHERE user_id = $1${archived.sql}
       ORDER BY created_at DESC`,
-    [userId],
+    [userId, ...archived.params],
   )
   return result.rows
 }
@@ -142,6 +159,7 @@ export async function createProject(input: {
   description?: string
   groupName?: ProjectGroupName
   driveFolderId?: string | null
+  clientId?: string | null
 }): Promise<ProjectRecord> {
   const ownerId = input.ownerId ?? input.userId
   if (!ownerId) {
@@ -151,9 +169,10 @@ export async function createProject(input: {
   const id = randomUUID()
   const result = await query<ProjectRecord>(
     `INSERT INTO projects (
-        id, user_id, name, description, group_name, is_paused, is_active, drive_folder_id
+        id, user_id, name, description, group_name, is_paused, is_active,
+        drive_folder_id, client_id
      )
-     VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, TRUE, $6)
+     VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, TRUE, $6, $7)
      RETURNING ${PROJECT_FIELDS}`,
     [
       id,
@@ -162,6 +181,7 @@ export async function createProject(input: {
       input.description ?? "",
       input.groupName ?? "personal",
       input.driveFolderId ?? null,
+      input.clientId ?? null,
     ],
   )
   // Папки IN / OUT намеренно не создаём: структуру проекта задаёт пользователь.

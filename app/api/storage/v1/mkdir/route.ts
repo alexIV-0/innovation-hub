@@ -5,7 +5,7 @@ import {
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
-import { writeFolderCreate } from "@/lib/storage/write-path"
+import { StorageWriteError, writeFolderCreate } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -60,6 +60,9 @@ export async function POST(request: NextRequest) {
     })
     return NextResponse.json({ file }, { status: 201 })
   } catch (error) {
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
     const msg = error instanceof Error ? error.message : "Could not create folder."
     if (msg.includes("unique") || msg.includes("duplicate")) {
       return NextResponse.json(

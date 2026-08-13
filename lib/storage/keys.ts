@@ -53,4 +53,14 @@ export function isOptionsKey(
   return key.startsWith(`${projectPrefix(userId, projectId)}options/`)
 }
 
+/** Physical object names are `{uuid}-{safeName}`. Strip the uuid for the catalog. */
+const OBJECT_NAME_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-(.+)$/i
+
+export function logicalNameFromObjectKey(keyOrBasename: string): string {
+  const basename = keyOrBasename.slice(keyOrBasename.lastIndexOf("/") + 1)
+  const match = basename.match(OBJECT_NAME_UUID_RE)
+  return match?.[1] && match[1].length > 0 ? match[1] : basename
+}
+
 export { PROJECT_KEY_RE }

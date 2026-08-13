@@ -55,6 +55,7 @@ export async function DELETE(request: NextRequest) {
     userId: access.ownerId,
     projectId: access.projectId,
     fileId: data.fileId,
+    deletedBy: auth.userId,
     eventId: data.eventId,
   })
   return NextResponse.json({ ok: true, ...result })

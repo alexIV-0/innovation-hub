@@ -196,10 +196,10 @@ export async function createProject(input: {
   const id = randomUUID()
   const result = await query<ProjectRecord>(
     `INSERT INTO projects (
-        id, user_id, name, description, group_name, is_paused, is_active,
+        id, user_id, name, description, group_name, is_paused,
         drive_folder_id, client_id
      )
-     VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, TRUE, $6, $7)
+     VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, $6, $7)
      RETURNING ${PROJECT_FIELDS}`,
     [
       id,

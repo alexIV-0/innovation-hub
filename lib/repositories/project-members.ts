@@ -109,7 +109,7 @@ export async function listSharedProjectsForUser(userId: string) {
             COALESCE(p.group_name, 'personal') AS "groupName",
             COALESCE(p.is_paused, FALSE) AS "isPaused",
             p.drive_folder_id AS "driveFolderId",
-            COALESCE(p.is_active, TRUE) AS "isActive",
+            NOT COALESCE(p.is_paused, FALSE) AS "isActive",
             COALESCE(p.is_archived, FALSE) AS "isArchived",
             p.archived_at AS "archivedAt",
             p.deleted_at AS "deletedAt",

@@ -17,7 +17,7 @@ const PROJECT_FIELDS = `
   COALESCE(group_name, 'personal') AS "groupName",
   COALESCE(is_paused, FALSE) AS "isPaused",
   drive_folder_id AS "driveFolderId",
-  COALESCE(is_active, TRUE) AS "isActive",
+  NOT COALESCE(is_paused, FALSE) AS "isActive",
   COALESCE(is_archived, FALSE) AS "isArchived",
   archived_at AS "archivedAt",
   client_id AS "clientId",

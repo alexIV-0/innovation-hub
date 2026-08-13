@@ -15,7 +15,8 @@ const PUBLIC_USER_FIELDS = `
   is_active AS "isActive",
   created_at AS "createdAt",
   COALESCE(balance_cents, 0) AS "balanceCents",
-  drive_folder_id AS "driveFolderId"
+  drive_folder_id AS "driveFolderId",
+  COALESCE(automation_enabled, FALSE) AS "automationEnabled"
 `
 
 const FULL_USER_FIELDS = `
@@ -29,7 +30,8 @@ const FULL_USER_FIELDS = `
   auth_provider AS "authProvider",
   provider_account_id AS "providerAccountId",
   COALESCE(balance_cents, 0) AS "balanceCents",
-  drive_folder_id AS "driveFolderId"
+  drive_folder_id AS "driveFolderId",
+  COALESCE(automation_enabled, FALSE) AS "automationEnabled"
 `
 
 export async function findUserById(id: string): Promise<UserRecord | null> {
@@ -184,6 +186,26 @@ export async function updateUser(
       input.role ?? null,
       input.isActive ?? null,
     ],
+  )
+  return result.rows[0] ?? null
+}
+
+/**
+ * Админский гейт конвейера. Отдельно от updateUser осознанно: это не свойство
+ * аккаунта, а решение администратора про обработку, и меняется оно из другого
+ * места интерфейса (/admin/pipeline, колонка пользователей).
+ */
+export async function setUserAutomationEnabled(
+  id: string,
+  enabled: boolean,
+): Promise<UserRecord | null> {
+  const result = await query<UserRecord>(
+    `UPDATE users
+        SET automation_enabled = $2,
+            updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${PUBLIC_USER_FIELDS}`,
+    [id, enabled],
   )
   return result.rows[0] ?? null
 }

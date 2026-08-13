@@ -17,6 +17,7 @@ import { useWorkspace } from "./workspace-context"
 export function ProjectsColumn() {
   const {
     t,
+    source,
     visibleProjects,
     counts,
     projectTab,
@@ -27,7 +28,8 @@ export function ProjectsColumn() {
     createProject,
   } = useWorkspace()
 
-  const isTrash = projectTab === "trash"
+  // «Корзина» — раздел кабинета; у источника без разделов его не существует.
+  const isTrash = source.splitByTab && projectTab === "trash"
 
   const { size, dragging, onPointerDown, onKeyDown } = useDragSize({
     initial: 300,
@@ -51,7 +53,7 @@ export function ProjectsColumn() {
             </span>
           </div>
           <span className="shrink-0 text-[12px] text-ws-4">
-            {counts[projectTab]}
+            {source.splitByTab ? counts[projectTab] : visibleProjects.length}
           </span>
         </div>
 
@@ -85,7 +87,11 @@ export function ProjectsColumn() {
           </div>
         ) : visibleProjects.length === 0 ? (
           <p className="px-3 py-8 text-center text-[13px] text-ws-4">
-            {sectionEmptyText(projectTab, t)}
+            {source.splitByTab
+              ? sectionEmptyText(projectTab, t)
+              : /* В админке проекты не создают — предлагать «создайте первый»
+                   неуместно, тут это просто отсутствие проектов у пользователя. */
+                "У пользователя нет проектов"}
           </p>
         ) : (
           <div className="pt-1">
@@ -96,7 +102,7 @@ export function ProjectsColumn() {
         )}
       </div>
 
-      {isTrash ? null : (
+      {isTrash || !source.can.createProject ? null : (
         <div className="shrink-0 border-t border-white/[0.07] p-3">
           <button
             type="button"

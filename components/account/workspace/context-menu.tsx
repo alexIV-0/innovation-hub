@@ -36,13 +36,32 @@ type MenuEntry =
     }
 
 /**
+ * Убирает разделители, оставшиеся без пунктов: состав меню зависит от прав
+ * источника (в админке нет загрузки и удаления), и после фильтрации иначе
+ * остаются висячие линии по краям и подряд.
+ */
+function tidySeparators(entries: MenuEntry[]): MenuEntry[] {
+  const out: MenuEntry[] = []
+  for (const entry of entries) {
+    if (entry.sep) {
+      if (out.length === 0) continue
+      if (out[out.length - 1]?.sep) continue
+    }
+    out.push(entry)
+  }
+  while (out.length > 0 && out[out.length - 1]?.sep) out.pop()
+  return out
+}
+
+/**
  * Контекстное меню рабочей области.
  * Состав пунктов повторяет макет; часть действий пока не подключена
  * к API и показывает тост «Пока не подключено».
  */
 export function WorkspaceContextMenu() {
   const ws = useWorkspace()
-  const { menu, t } = ws
+  const { menu, t, source } = ws
+  const can = source.can
 
   if (!menu) return null
 
@@ -67,7 +86,7 @@ export function WorkspaceContextMenu() {
             } as MenuEntry,
           ]
         : []),
-      ...(many
+      ...(many || !can.renameItem
         ? []
         : [
             {
@@ -77,48 +96,68 @@ export function WorkspaceContextMenu() {
             } as MenuEntry,
           ]),
       { sep: true },
-      {
-        icon: Scissors,
-        label: t.mCut + suffix,
-        onClick: () => ws.putToClipboard("cut", targets),
-      },
-      {
-        icon: Copy,
-        label: t.mCopy + suffix,
-        onClick: () => ws.putToClipboard("copy", targets),
-      },
-      {
-        icon: FolderInput,
-        label: t.mMove + suffix,
-        onClick: () => ws.openMoveDialog(targets),
-      },
+      ...(can.move
+        ? [
+            {
+              icon: Scissors,
+              label: t.mCut + suffix,
+              onClick: () => ws.putToClipboard("cut", targets),
+            } as MenuEntry,
+            {
+              icon: Copy,
+              label: t.mCopy + suffix,
+              onClick: () => ws.putToClipboard("copy", targets),
+            } as MenuEntry,
+            {
+              icon: FolderInput,
+              label: t.mMove + suffix,
+              onClick: () => ws.openMoveDialog(targets),
+            } as MenuEntry,
+          ]
+        : []),
       { sep: true },
-      {
-        icon: Trash2,
-        label: t.mDelete + suffix,
-        danger: true,
-        onClick: () => ws.deleteItems(targets),
-      },
+      ...(can.deleteItem
+        ? [
+            {
+              icon: Trash2,
+              label: t.mDelete + suffix,
+              danger: true,
+              onClick: () => ws.deleteItems(targets),
+            } as MenuEntry,
+          ]
+        : []),
     ]
   } else if (menu.kind === "empty") {
     const target = menu.target ?? ws.currentTarget
     entries = [
-      {
-        icon: FolderPlus,
-        label: t.mNewFolder,
-        onClick: () => ws.createFolder(target),
-      },
-      { icon: FilePlus, label: t.mNewText, onClick: soon },
+      ...(can.createFolder
+        ? [
+            {
+              icon: FolderPlus,
+              label: t.mNewFolder,
+              onClick: () => ws.createFolder(target),
+            } as MenuEntry,
+            { icon: FilePlus, label: t.mNewText, onClick: soon } as MenuEntry,
+          ]
+        : []),
       { sep: true },
-      {
-        icon: Upload,
-        label: t.mUploadFile,
-        onClick: () => ws.triggerUpload(target),
-      },
-      { icon: FolderUp, label: t.mUploadFolder, onClick: soon },
+      ...(can.upload
+        ? [
+            {
+              icon: Upload,
+              label: t.mUploadFile,
+              onClick: () => ws.triggerUpload(target),
+            } as MenuEntry,
+            {
+              icon: FolderUp,
+              label: t.mUploadFolder,
+              onClick: soon,
+            } as MenuEntry,
+          ]
+        : []),
       // «Вставить» показываем только когда в буфере что-то есть.
       // Перемещение работает уже сейчас, копирование ждёт POST /copy.
-      ...(ws.clipboard
+      ...(ws.clipboard && can.move
         ? [
             { sep: true } as MenuEntry,
             {
@@ -132,27 +171,35 @@ export function WorkspaceContextMenu() {
   } else if (menu.kind === "project" && menu.project) {
     const project = menu.project
     entries = [
-      {
-        icon: Pencil,
-        label: t.mRename,
-        onClick: () => ws.renameProject(project),
-      },
-      { icon: Share2, label: t.mShare, onClick: soon },
+      ...(can.renameProject
+        ? [
+            {
+              icon: Pencil,
+              label: t.mRename,
+              onClick: () => ws.renameProject(project),
+            } as MenuEntry,
+            { icon: Share2, label: t.mShare, onClick: soon } as MenuEntry,
+          ]
+        : []),
       {
         icon: ExternalLink,
         label: t.mOpenWindow,
         onClick: () =>
           window.open(
-            `/account/projects?id=${project.id}`,
+            source.pageUrl({ id: project.id, tab: "projects" }),
             "_blank",
             "noopener",
           ),
       },
-      {
-        icon: project.isArchived ? ArchiveRestore : Archive,
-        label: project.isArchived ? t.mUnarchive : t.mArchive,
-        onClick: () => ws.setArchived(project, !project.isArchived),
-      },
+      ...(can.archiveProject
+        ? [
+            {
+              icon: project.isArchived ? ArchiveRestore : Archive,
+              label: project.isArchived ? t.mUnarchive : t.mArchive,
+              onClick: () => ws.setArchived(project, !project.isArchived),
+            } as MenuEntry,
+          ]
+        : []),
       { sep: true },
       {
         icon: FileText,
@@ -177,6 +224,9 @@ export function WorkspaceContextMenu() {
       },
     ]
   }
+
+  entries = tidySeparators(entries)
+  if (entries.length === 0) return null
 
   return (
     <div

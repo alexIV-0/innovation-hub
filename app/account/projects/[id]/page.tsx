@@ -1,11 +1,11 @@
 import { notFound, redirect } from "next/navigation"
 import { ProjectDetailSection } from "@/components/account/sections/project-detail-section"
 import { getCurrentUser } from "@/lib/admin-auth"
+import { reconcileProjectPauseFromFolderState } from "@/lib/project-automation"
 import { loadProjectStorageState } from "@/lib/project-storage"
 import {
   findProjectForUser,
   listProjectMedia,
-  updateProject,
 } from "@/lib/repositories/projects"
 import {
   countUnreadForProjects,
@@ -48,15 +48,13 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
     countUnreadForProjects([project.id]),
   ])
 
-  if (storage?.folderState && storage.folderState.enabled !== project.isActive) {
-    const synced = await updateProject(project.id, user.id, {
-      isActive: storage.folderState.enabled,
-    }).catch((error) => {
-      console.error("[project-storage] isActive cache hydration failed", error)
-      return null
-    })
-    if (synced) project = synced
-  }
+  // Источник правды по тумблеру — options/folderState.json на R2, в Postgres
+  // лежит запрашиваемое зеркало. Если объект правили в обход setProjectPaused,
+  // подтягиваем кэш здесь.
+  project = await reconcileProjectPauseFromFolderState({
+    project,
+    folderState: storage?.folderState ?? null,
+  })
 
   const mediaRows = storage
     ? (await listAllProjectFiles(project.id))

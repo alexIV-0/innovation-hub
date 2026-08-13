@@ -7,10 +7,17 @@ export type UserRecord = {
   fullName: string
   email: string
   role: UserRole
+  /** Аккаунт не заблокирован — к автоматизации отношения не имеет. */
   isActive: boolean
   createdAt: Date
   balanceCents: number
   driveFolderId: string | null
+  /**
+   * Админский гейт конвейера (/admin/pipeline, колонка 1). Выключенный
+   * пользователь снимается со слежения целиком, флаги его проектов при этом
+   * не меняются. Расшаренные проекты гейтятся флагом владельца.
+   */
+  automationEnabled: boolean
 }
 
 export type ProjectGroupName = "personal" | "shared" | "tools" | "archive"

@@ -1,6 +1,6 @@
 "use client"
 
-import { Folder, MessageCircle, Pause, Play, Wrench } from "lucide-react"
+import { Archive, Folder, MessageCircle, Pause, Play, Wrench } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { Project } from "./types"
@@ -14,13 +14,27 @@ export function ProjectCard({
   project: Project
   groupName: string
 }) {
-  const { t, selectedId, selectProject, patchProject, openChat, openMenu, menu } =
-    useWorkspace()
+  const {
+    t,
+    source,
+    selectedId,
+    selectProject,
+    patchProject,
+    openChat,
+    openMenu,
+    menu,
+  } = useWorkspace()
 
   const selected = project.id === selectedId
   const isTool = groupName === "tools"
   const paused = project.isPaused
   const unread = project.unreadCount > 0
+  /**
+   * Архив показываем пометкой только там, где список не разделён по разделам:
+   * в кабинете архивные лежат в своём разделе, и подпись была бы шумом, а в
+   * админке они идут вперемешку с остальными и различать их нужно.
+   */
+  const showArchivedBadge = !source.splitByTab && project.isArchived
   const isMenuTarget = menu?.kind === "project" && menu.project?.id === project.id
   const Icon = isTool ? Wrench : Folder
 
@@ -99,23 +113,38 @@ export function ProjectCard({
 
       {isTool ? null : (
         <div className="relative flex items-stretch justify-between gap-2 px-[5px] pb-[9px]">
-          <button
-            type="button"
-            title={paused ? t.resumeProject : t.pauseProject}
-            onClick={(e) => {
-              e.stopPropagation()
-              void patchProject(project.id, { isPaused: !paused })
-            }}
-            className={cn(
-              "flex items-center gap-1 rounded-full border px-2.5 py-[3px] text-[11px] hover:brightness-125",
-              paused
-                ? "border-white/[0.12] text-ws-3"
-                : "border-ws-out/40 bg-ws-out/10 text-ws-out",
-            )}
-          >
-            {paused ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-            {paused ? t.statusPaused : t.statusActive}
-          </button>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <button
+              type="button"
+              title={paused ? t.resumeProject : t.pauseProject}
+              onClick={(e) => {
+                e.stopPropagation()
+                void patchProject(project.id, { isPaused: !paused })
+              }}
+              className={cn(
+                "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-[3px] text-[11px] hover:brightness-125",
+                paused
+                  ? "border-white/[0.12] text-ws-3"
+                  : "border-ws-out/40 bg-ws-out/10 text-ws-out",
+              )}
+            >
+              {paused ? (
+                <Pause className="h-3 w-3" />
+              ) : (
+                <Play className="h-3 w-3" />
+              )}
+              {paused ? t.statusPaused : t.statusActive}
+            </button>
+            {showArchivedBadge ? (
+              <span
+                title={t.archiveProject}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-white/[0.12] px-2 py-[3px] text-[11px] text-ws-4"
+              >
+                <Archive className="h-3 w-3" />
+                {t.archiveTab}
+              </span>
+            ) : null}
+          </div>
           {chatPill}
         </div>
       )}

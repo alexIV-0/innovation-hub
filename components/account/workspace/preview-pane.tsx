@@ -8,7 +8,7 @@ import { useWorkspace } from "./workspace-context"
 
 /** Правая колонка полного режима: превью выбранного файла. */
 export function PreviewPane({ className }: { className?: string }) {
-  const { t, lang, selectedFile, selection, selectedId } = useWorkspace()
+  const { t, lang, source, selectedFile, selection, selectedId } = useWorkspace()
 
   if (!selectedFile || selectedFile.isFolder || !selectedId) {
     return (
@@ -28,7 +28,7 @@ export function PreviewPane({ className }: { className?: string }) {
 
   const file = selectedFile
   const Icon = fileIcon(file)
-  const url = `/api/projects/${selectedId}/drive/files/${file.id}`
+  const url = source.fileUrl(selectedId, file.id)
   const isImage = file.mimeType.startsWith("image/")
   const isVideo = file.mimeType.startsWith("video/")
   const isAudio = file.mimeType.startsWith("audio/")

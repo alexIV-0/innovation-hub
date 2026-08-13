@@ -4,6 +4,7 @@ import {
   LayoutGrid,
   Monitor,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react"
 import type { DictKey } from "@/components/account/i18n"
@@ -36,6 +37,11 @@ export const adminNavItems: AdminNavItem[] = [
     labelKey: "adminVisitors",
     href: "/admin/visitors",
     icon: Activity,
+  },
+  {
+    labelKey: "adminPipeline",
+    href: "/admin/pipeline",
+    icon: Workflow,
   },
   {
     labelKey: "adminRemoteAccess",

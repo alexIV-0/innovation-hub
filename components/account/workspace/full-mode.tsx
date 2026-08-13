@@ -11,7 +11,7 @@ import { useWorkspace } from "./workspace-context"
 import { ViewSwitch } from "./workspace-topbar"
 
 function NoProjectSelected() {
-  const { t, createProject, creating } = useWorkspace()
+  const { t, source, createProject, creating } = useWorkspace()
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
       <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
@@ -21,15 +21,17 @@ function NoProjectSelected() {
         <p className="text-[20px] font-semibold text-ws-1">{t.pickProject}</p>
         <p className="max-w-[420px] text-[14px] text-ws-3">{t.pickProjectSub}</p>
       </div>
-      <button
-        type="button"
-        onClick={createProject}
-        disabled={creating}
-        className="flex h-10 items-center gap-2 rounded-[10px] bg-ws-action px-5 text-[14px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-60"
-      >
-        <Plus className="h-[18px] w-[18px]" />
-        {creating ? t.creatingProject : t.newProject}
-      </button>
+      {source.can.createProject ? (
+        <button
+          type="button"
+          onClick={createProject}
+          disabled={creating}
+          className="flex h-10 items-center gap-2 rounded-[10px] bg-ws-action px-5 text-[14px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-60"
+        >
+          <Plus className="h-[18px] w-[18px]" />
+          {creating ? t.creatingProject : t.newProject}
+        </button>
+      ) : null}
     </div>
   )
 }

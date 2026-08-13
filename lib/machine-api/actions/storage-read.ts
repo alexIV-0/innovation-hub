@@ -20,6 +20,7 @@ import { getDelta, getLatestCursor } from "@/lib/storage/changes"
 import { loadStorageTree } from "@/lib/storage/tree"
 import {
   getObjectText,
+  projectDescriptionKey,
   projectFolderStateKey,
   projectOptionsKey,
 } from "@/lib/project-storage"
@@ -148,7 +149,8 @@ export const deltaAction = defineAction(
 export const getSidecarAction = defineAction(
   z.object({
     projectId: z.string().min(1),
-    name: z.enum(["folder-state", "options"]),
+    // description — options/description.md, развёрнутое описание проекта.
+    name: z.enum(["folder-state", "options", "description"]),
   }),
   async (auth, props) => {
     const access = await requireProjectAccess(auth, props.projectId)
@@ -157,7 +159,9 @@ export const getSidecarAction = defineAction(
     const key =
       props.name === "folder-state"
         ? projectFolderStateKey(access.ownerId, access.projectId)
-        : projectOptionsKey(access.ownerId, access.projectId)
+        : props.name === "description"
+          ? projectDescriptionKey(access.ownerId, access.projectId)
+          : projectOptionsKey(access.ownerId, access.projectId)
 
     const text = await getObjectText(key)
     if (text == null) return apiError("Not found.", 404)

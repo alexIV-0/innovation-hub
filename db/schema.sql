@@ -125,9 +125,27 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS balance_cents INTEGER NOT NULL DEFAUL
 -- Client cabinet: each user gets a Google Drive folder (named by email).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS drive_folder_id TEXT;
 
+-- Конвейер: админский гейт уровня пользователя (/admin/pipeline, колонка 1).
+-- Гасит слежение за всеми проектами пользователя, не меняя флаги проектов.
+-- Расшаренный проект гейтится флагом владельца — projects.user_id это владелец.
+--
+-- По умолчанию TRUE: пользователь участвует в обработке, а гейт нужен, чтобы
+-- кого-то исключить. Так же устроено в десктопном приложении — папка
+-- отслеживается, пока её явно не выключили.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS automation_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ALTER COLUMN automation_enabled SET DEFAULT TRUE;
+
 -- ===== FF Works workspace: projects, files, chat =====
--- Legacy installs already have `projects` with user_id / is_active / drive_folder_id.
+-- Legacy installs already have `projects` with user_id / drive_folder_id.
 -- Fresh installs get the full CREATE; existing DBs pick up columns via ALTER.
+--
+-- Тумблер слежения один — is_paused. Он же зеркало options/folderState.json
+-- (enabled = NOT is_paused); обоими хранилищами владеет
+-- lib/project-automation.ts#setProjectPaused. Колонка is_active удалена
+-- миграцией 2026-08-13-pipeline-automation.sql: она дублировала смысл
+-- is_paused и была с ней сварена, из-за чего пауза и автоматизация меняли
+-- друг друга. Поле isActive в ответах машинам осталось и считается как
+-- NOT is_paused.
 CREATE TABLE IF NOT EXISTS projects (
   id           TEXT PRIMARY KEY,
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -135,7 +153,6 @@ CREATE TABLE IF NOT EXISTS projects (
   description  TEXT NOT NULL DEFAULT '',
   group_name   TEXT NOT NULL DEFAULT 'personal',
   is_paused    BOOLEAN NOT NULL DEFAULT FALSE,
-  is_active    BOOLEAN NOT NULL DEFAULT TRUE,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -143,7 +160,6 @@ CREATE TABLE IF NOT EXISTS projects (
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT 'personal';
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_paused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
-ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS drive_folder_id TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS yougile_chat_id TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS chat_last_read_at TIMESTAMPTZ;
@@ -171,18 +187,6 @@ ALTER TABLE projects
 CREATE INDEX IF NOT EXISTS projects_client_idx
   ON projects (client_id)
   WHERE client_id IS NOT NULL;
-
--- Keep is_paused in sync with legacy is_active when present.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-     WHERE table_name = 'projects' AND column_name = 'is_active'
-  ) THEN
-    UPDATE projects SET is_paused = NOT COALESCE(is_active, TRUE)
-     WHERE is_paused = FALSE AND is_active = FALSE;
-  END IF;
-END $$;
 
 CREATE INDEX IF NOT EXISTS projects_owner_idx
   ON projects (user_id, group_name, created_at DESC);
@@ -295,6 +299,68 @@ CREATE INDEX IF NOT EXISTS project_files_s3_key_idx
 CREATE INDEX IF NOT EXISTS project_files_created_at_idx
   ON project_files (project_id, created_at DESC)
   WHERE is_folder = FALSE;
+
+-- ===== Конвейер: сканер и очередь задач =====
+
+-- Состояние сканера. Watcher'ов и обхода папок нет: любая запись в хранилище уже
+-- журналируется в storage_changes (lib/storage/write-path.ts#journal), поэтому
+-- «что нового появилось в IN» — это выборка по seq > last_seq. Строка одна.
+--
+-- is_running — включено ли слежение. Живёт в базе, а не в памяти процесса:
+-- закрытая страница не должна останавливать конвейер, перезапуск процесса
+-- должен его возобновлять, и все админы должны видеть одно состояние.
+CREATE TABLE IF NOT EXISTS automation_scan_state (
+  id           TEXT PRIMARY KEY DEFAULT 'singleton',
+  last_seq     BIGINT NOT NULL DEFAULT 0,
+  is_running   BOOLEAN NOT NULL DEFAULT FALSE,
+  started_at   TIMESTAMPTZ,
+  started_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+  last_created INTEGER NOT NULL DEFAULT 0,
+  last_error   TEXT,
+  scanned_at   TIMESTAMPTZ,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT automation_scan_state_singleton_chk CHECK (id = 'singleton')
+);
+
+INSERT INTO automation_scan_state (id, last_seq)
+VALUES ('singleton', 0)
+ON CONFLICT (id) DO NOTHING;
+
+-- Очередь задач. payload — объект для обработки в форме десктопного движка
+-- (processingQueue + шаги по ключам + description). Внутри НЕТ presigned URL и
+-- локальных путей: только идентичность файлов, байты машина берёт экшеном
+-- presign — иначе задача, простоявшая час, приезжает с истёкшими ссылками.
+CREATE TABLE IF NOT EXISTS tasks (
+  id                TEXT PRIMARY KEY,
+  project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  source_file_id    TEXT REFERENCES project_files(id) ON DELETE SET NULL,
+  source_key        TEXT NOT NULL,
+  payload           JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status            TEXT NOT NULL DEFAULT 'queued'
+                      CHECK (status IN ('queued', 'claimed', 'running', 'done', 'failed')),
+  claimed_by        TEXT REFERENCES remote_computers(id) ON DELETE SET NULL,
+  claimed_at        TIMESTAMPTZ,
+  lease_expires_at  TIMESTAMPTZ,
+  attempts          INTEGER NOT NULL DEFAULT 0,
+  max_attempts      INTEGER NOT NULL DEFAULT 3,
+  error             TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS tasks_queue_idx
+  ON tasks (status, created_at)
+  WHERE status IN ('queued', 'claimed', 'running');
+
+CREATE INDEX IF NOT EXISTS tasks_project_idx
+  ON tasks (project_id, created_at DESC);
+
+-- Дедуп: повторные put-события по одному файлу (перезапись, reindex, повторный
+-- notify) не должны плодить вторую живую задачу. Завершённые и упавшие под
+-- ограничение не попадают — по файлу можно прогнать обработку заново.
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_active_source_idx
+  ON tasks (project_id, source_key)
+  WHERE status IN ('queued', 'claimed', 'running');
 
 CREATE TABLE IF NOT EXISTS project_messages (
   id            TEXT PRIMARY KEY,

@@ -1,0 +1,191 @@
+"use client"
+
+import { useCallback, useEffect, useState } from "react"
+import { Loader2, RefreshCw, X } from "lucide-react"
+
+import { cn } from "@/lib/utils"
+import type { PipelineTask, TaskCounts, TaskStatus } from "@/lib/pipeline/tasks"
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  queued: "в очереди",
+  claimed: "взята",
+  running: "в работе",
+  done: "готово",
+  failed: "ошибка",
+}
+
+const STATUS_CLASS: Record<TaskStatus, string> = {
+  queued: "border-white/[0.14] text-ws-3",
+  claimed: "border-ws-select/50 bg-ws-select/[0.12] text-primary",
+  running: "border-ws-out/40 bg-ws-out/10 text-ws-out",
+  done: "border-white/[0.12] text-ws-4",
+  failed: "border-destructive/40 bg-destructive/10 text-destructive",
+}
+
+function fmtTime(iso: string | null): string {
+  if (!iso) return "—"
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+/**
+ * Окно очереди: что нашлось, какая машина взяла задачу и её текущее состояние.
+ *
+ * Модальное окно, а не отдельный раздел меню: очередь смотрят по ходу работы с
+ * конвейером, уходить с страницы для этого не нужно.
+ */
+export function TasksDialog({ onClose }: { onClose: () => void }) {
+  const [tasks, setTasks] = useState<PipelineTask[]>([])
+  const [counts, setCounts] = useState<TaskCounts | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch("/api/admin/pipeline/tasks")
+      if (!res.ok) return
+      const data = await res.json()
+      setTasks(data.tasks ?? [])
+      setCounts(data.counts ?? null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-label="Очередь задач"
+        className="flex max-h-[80vh] w-full max-w-[1000px] flex-col overflow-hidden rounded-xl border border-white/10 bg-ws-panel shadow-ws-menu"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.07] px-5 py-3.5">
+          <h2 className="text-[16px] font-semibold text-ws-1">Очередь задач</h2>
+          {counts ? (
+            <span className="text-[12.5px] text-ws-4">
+              всего {counts.total} · в очереди {counts.queued} · в работе{" "}
+              {counts.claimed + counts.running} · готово {counts.done} · ошибок{" "}
+              {counts.failed}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void load()}
+            title="Обновить"
+            className="ml-auto flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
+          >
+            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          {loading && tasks.length === 0 ? (
+            <div className="flex justify-center py-12 text-ws-4">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : tasks.length === 0 ? (
+            <p className="px-5 py-12 text-center text-[13.5px] text-ws-4">
+              Задач пока нет. Включите слежение — задачи появятся, когда в папке
+              IN отслеживаемого проекта окажется подходящий файл.
+            </p>
+          ) : (
+            <table className="w-full border-collapse text-[13px]">
+              <thead className="sticky top-0 bg-ws-panel">
+                <tr className="text-left text-[11.5px] uppercase tracking-[1px] text-ws-4">
+                  <th className="px-5 py-2.5 font-medium">Файл</th>
+                  <th className="px-3 py-2.5 font-medium">Проект</th>
+                  <th className="px-3 py-2.5 font-medium">Шагов</th>
+                  <th className="px-3 py-2.5 font-medium">Машина</th>
+                  <th className="px-3 py-2.5 font-medium">Состояние</th>
+                  <th className="px-5 py-2.5 font-medium">Создана</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((task) => (
+                  <tr
+                    key={task.id}
+                    className="border-t border-white/[0.06] align-top"
+                  >
+                    <td className="max-w-[260px] px-5 py-2.5 text-ws-1">
+                      <span className="block truncate">{task.sourceName}</span>
+                      {task.error ? (
+                        <span className="mt-0.5 block text-[11.5px] text-destructive">
+                          {task.error}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="max-w-[200px] px-3 py-2.5 text-ws-2">
+                      <span className="block truncate">{task.projectName}</span>
+                      <span className="block truncate text-[11.5px] text-ws-4">
+                        {task.ownerEmail}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 tabular-nums text-ws-3">
+                      {task.stepCount}
+                    </td>
+                    <td className="px-3 py-2.5 text-ws-3">
+                      {task.machineName ?? "—"}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full border px-2.5 py-[3px] text-[11.5px]",
+                          STATUS_CLASS[task.status],
+                        )}
+                      >
+                        {STATUS_LABEL[task.status]}
+                      </span>
+                      {task.attempts > 0 ? (
+                        <span className="ml-1.5 text-[11.5px] text-ws-4">
+                          попыток {task.attempts}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-2.5 text-ws-4">
+                      {fmtTime(task.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Выдача задач машинам ещё не подключена, поэтому «Машина» пока всегда
+            пустая. Честнее сказать это здесь, чем оставлять админа гадать. */}
+        <p className="shrink-0 border-t border-white/[0.07] px-5 py-2.5 text-[11.5px] text-ws-5">
+          Выдача задач машинам пока не подключена — столбец «Машина» заполнится,
+          когда появятся экшены claimTask в POST /api/v1.
+        </p>
+      </div>
+    </div>
+  )
+}

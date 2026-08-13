@@ -5,12 +5,13 @@ import {
   requireProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
+import { setProjectPaused } from "@/lib/project-automation"
 import {
   getObjectText,
+  projectDescriptionKey,
   projectFolderStateKey,
   projectOptionsKey,
   ProjectStorageError,
-  setProjectAutomationEnabled,
   siteUpdatedBy,
   updateProjectExposedOptions,
 } from "@/lib/project-storage"
@@ -19,9 +20,20 @@ import {
   StorageWriteError,
   writeSidecarPut,
 } from "@/lib/storage/write-path"
-import { updateProject } from "@/lib/repositories/projects"
 
 export const runtime = "nodejs"
+
+/** Имя сайдкара → ключ в объектном хранилище. null — имя неизвестно. */
+function sidecarKey(
+  name: string,
+  ownerId: string,
+  projectId: string,
+): string | null {
+  if (name === "folder-state") return projectFolderStateKey(ownerId, projectId)
+  if (name === "options") return projectOptionsKey(ownerId, projectId)
+  if (name === "description") return projectDescriptionKey(ownerId, projectId)
+  return null
+}
 
 const putSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -42,13 +54,15 @@ const putSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("raw"),
     projectId: z.string().min(1),
-    sidecar: z.enum(["folder-state", "options"]),
+    // description — развёрнутое описание проекта в markdown (options/description.md).
+    // Десктоп читает и пишет его тем же путём, что folderState и options.
+    sidecar: z.enum(["folder-state", "options", "description"]),
     body: z.string().min(1),
     ifMatch: z.string().optional(),
   }),
 ])
 
-/** GET /api/storage/v1/sidecars?projectId=&name=folder-state|options */
+/** GET /api/storage/v1/sidecars?projectId=&name=folder-state|options|description */
 export async function GET(request: NextRequest) {
   const auth = await requireStorageApi(request)
   if (auth instanceof NextResponse) return auth
@@ -65,12 +79,7 @@ export async function GET(request: NextRequest) {
   const access = await requireProjectAccess(auth, projectId)
   if (access instanceof NextResponse) return access
 
-  const key =
-    name === "folder-state"
-      ? projectFolderStateKey(access.ownerId, access.projectId)
-      : name === "options"
-        ? projectOptionsKey(access.ownerId, access.projectId)
-        : null
+  const key = sidecarKey(name, access.ownerId, access.projectId)
   if (!key) {
     return NextResponse.json({ message: "Unknown sidecar." }, { status: 400 })
   }
@@ -108,22 +117,12 @@ export async function PUT(request: NextRequest) {
 
   try {
     if (data.kind === "folder-state") {
-      const folderState = await setProjectAutomationEnabled({
-        userId: access.ownerId,
+      const { folderState } = await setProjectPaused({
         projectId: access.projectId,
-        enabled: data.enabled,
+        ownerId: access.ownerId,
+        paused: !data.enabled,
         updatedBy: siteUpdatedBy(auth.email),
       })
-      const key = projectFolderStateKey(access.ownerId, access.projectId)
-      await journalStorageEvent({
-        projectId: access.projectId,
-        key,
-        op: "put",
-        payload: { name: "folderState.json", folderPath: "options" },
-      })
-      await updateProject(access.projectId, auth.userId, {
-        isActive: folderState.enabled,
-      }).catch(() => undefined)
       return NextResponse.json({ folderState })
     }
 
@@ -142,10 +141,10 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ options: result })
     }
 
-    const key =
-      data.sidecar === "folder-state"
-        ? projectFolderStateKey(access.ownerId, access.projectId)
-        : projectOptionsKey(access.ownerId, access.projectId)
+    const key = sidecarKey(data.sidecar, access.ownerId, access.projectId)
+    if (!key) {
+      return NextResponse.json({ message: "Unknown sidecar." }, { status: 400 })
+    }
     const { etag } = await writeSidecarPut({
       projectId: access.projectId,
       key,

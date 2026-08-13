@@ -17,6 +17,12 @@ export const createProjectSchema = z.object({
   groupName: projectGroupSchema.optional().default("personal"),
 })
 
+/**
+ * `isActive` принимается только ради обратной совместимости со старыми
+ * клиентами: колонки с таким именем больше нет, тумблер слежения один —
+ * `isPaused`. Схема сводит одно к другому на входе, чтобы дальше по коду
+ * гулял ровно один флаг. Если пришли оба, побеждает `isPaused`.
+ */
 export const updateProjectSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
@@ -36,6 +42,10 @@ export const updateProjectSchema = z
       data.isArchived !== undefined,
     { message: "Nothing to update." },
   )
+  .transform(({ isActive, isPaused, ...rest }) => ({
+    ...rest,
+    isPaused: isPaused ?? (isActive === undefined ? undefined : !isActive),
+  }))
 
 export const createFolderSchema = z.object({
   folderPath: z.string().max(500).default(""),

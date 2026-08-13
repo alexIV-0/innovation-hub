@@ -74,5 +74,7 @@ export async function requireAdminApi(request: NextRequest) {
     return NextResponse.json({ message: "Admin access required." }, { status: 403 })
   }
 
-  return { userId: user.id }
+  // email нужен там, где запись помечается автором — siteUpdatedBy() в сайдкарах
+  // проекта пишет, кто именно менял состояние.
+  return { userId: user.id, email: user.email }
 }

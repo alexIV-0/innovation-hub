@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { DescriptionMdEditor } from "./description-md-editor"
 import { fmtDate, fmtTime } from "./format"
 import type { BottomTab } from "./types"
 import { useWorkspace } from "./workspace-context"
@@ -52,13 +53,19 @@ export function DescriptionTab() {
           {t.saveDescription}
         </button>
       </div>
+
+      {/* Короткая подпись выше живёт в БД и нужна на карточке в списке.
+          Развёрнутое описание — файл в папке проекта, редактируется отдельно. */}
+      <DescriptionMdEditor projectId={selected.id} />
     </div>
   )
 }
 
 export function SettingsTab() {
-  const { t, selected, patchProject, setArchived, deleteProject } = useWorkspace()
+  const { t, source, selected, patchProject, setArchived, deleteProject } =
+    useWorkspace()
   if (!selected) return null
+  const can = source.can
   return (
     <div className="max-w-[640px]">
       <div className="flex items-center justify-between gap-4 py-3.5">
@@ -87,34 +94,40 @@ export function SettingsTab() {
           />
         </button>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2 border-t border-white/[0.07] pt-4">
-        <button
-          type="button"
-          onClick={() => setArchived(selected, !selected.isArchived)}
-          className="flex items-center gap-2 rounded-[9px] border border-white/10 px-4 py-2 text-[13px] text-ws-2 hover:bg-white/5"
-        >
-          {selected.isArchived ? (
-            <ArchiveRestore className="h-4 w-4" />
-          ) : (
-            <Archive className="h-4 w-4" />
-          )}
-          {selected.isArchived ? t.mUnarchive : t.archiveProject}
-        </button>
-        <button
-          type="button"
-          onClick={() => deleteProject(selected.id)}
-          className="flex items-center gap-2 rounded-[9px] border border-destructive/40 px-4 py-2 text-[13px] text-destructive hover:bg-destructive/10"
-        >
-          <Trash2 className="h-4 w-4" />
-          {t.deleteProject}
-        </button>
-      </div>
+      {can.archiveProject || can.deleteProject ? (
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-white/[0.07] pt-4">
+          {can.archiveProject ? (
+            <button
+              type="button"
+              onClick={() => setArchived(selected, !selected.isArchived)}
+              className="flex items-center gap-2 rounded-[9px] border border-white/10 px-4 py-2 text-[13px] text-ws-2 hover:bg-white/5"
+            >
+              {selected.isArchived ? (
+                <ArchiveRestore className="h-4 w-4" />
+              ) : (
+                <Archive className="h-4 w-4" />
+              )}
+              {selected.isArchived ? t.mUnarchive : t.archiveProject}
+            </button>
+          ) : null}
+          {can.deleteProject ? (
+            <button
+              type="button"
+              onClick={() => deleteProject(selected.id)}
+              className="flex items-center gap-2 rounded-[9px] border border-destructive/40 px-4 py-2 text-[13px] text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              {t.deleteProject}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
 
 export function ChatTab() {
-  const { t, messages, draft, setDraft, sendMessage } = useWorkspace()
+  const { t, source, messages, draft, setDraft, sendMessage } = useWorkspace()
   return (
     <div className="flex h-full min-h-[160px] flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
@@ -124,7 +137,9 @@ export function ChatTab() {
           </p>
         ) : (
           messages.map((m) => {
-            const mine = m.senderType === "client"
+            // Один и тот же чат смотрят с двух сторон: в кабинете «свои» —
+            // сообщения клиента, в админке — сообщения команды.
+            const mine = m.senderType === source.chatPerspective
             const system = m.senderType === "system"
             return (
               <div

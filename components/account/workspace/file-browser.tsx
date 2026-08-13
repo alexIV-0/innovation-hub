@@ -36,29 +36,34 @@ function targetFor(
  * Каждая зона независима: в колоночном виде своя у каждой колонки.
  */
 function useDropZone(target: UploadTarget) {
-  const { uploadFiles } = useWorkspace()
+  const { source, uploadFiles } = useWorkspace()
+  const canUpload = source.can.upload
   const [active, setActive] = useState(false)
   const depth = useRef(0)
 
   const handlers = {
     onDragEnter: (e: React.DragEvent) => {
+      if (!canUpload) return
       if (!e.dataTransfer.types.includes("Files")) return
       e.stopPropagation()
       depth.current += 1
       setActive(true)
     },
     onDragOver: (e: React.DragEvent) => {
+      if (!canUpload) return
       if (!e.dataTransfer.types.includes("Files")) return
       e.preventDefault()
       e.stopPropagation()
       e.dataTransfer.dropEffect = "copy" as const
     },
     onDragLeave: (e: React.DragEvent) => {
+      if (!canUpload) return
       e.stopPropagation()
       depth.current = Math.max(0, depth.current - 1)
       if (depth.current === 0) setActive(false)
     },
     onDrop: (e: React.DragEvent) => {
+      if (!canUpload) return
       e.preventDefault()
       e.stopPropagation()
       depth.current = 0

@@ -4,7 +4,6 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { findFileById } from "@/lib/repositories/project-files"
-import { updateProject } from "@/lib/repositories/projects"
 import { apiError, apiOk } from "@/lib/machine-api/http"
 import { defineAction } from "@/lib/machine-api/types"
 import {
@@ -23,13 +22,14 @@ import {
   writeRename,
   writeSidecarPut,
 } from "@/lib/storage/write-path"
+import { setProjectPaused } from "@/lib/project-automation"
 import {
   OPTIONS_FOLDER_NAME,
   ProjectStorageError,
+  projectDescriptionKey,
   projectFolderStateKey,
   projectOptionsKey,
   projectUploadObjectKey,
-  setProjectAutomationEnabled,
   siteUpdatedBy,
   updateProjectExposedOptions,
 } from "@/lib/project-storage"
@@ -318,7 +318,8 @@ const putSidecarSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("raw"),
     projectId: z.string().min(1),
-    sidecar: z.enum(["folder-state", "options"]),
+    // description — options/description.md, развёрнутое описание проекта.
+    sidecar: z.enum(["folder-state", "options", "description"]),
     body: z.string().min(1),
     ifMatch: z.string().optional(),
   }),
@@ -330,22 +331,12 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
 
   try {
     if (data.kind === "folder-state") {
-      const folderState = await setProjectAutomationEnabled({
-        userId: access.ownerId,
+      const { folderState } = await setProjectPaused({
         projectId: access.projectId,
-        enabled: data.enabled,
+        ownerId: access.ownerId,
+        paused: !data.enabled,
         updatedBy: siteUpdatedBy(auth.email),
       })
-      const key = projectFolderStateKey(access.ownerId, access.projectId)
-      await journalStorageEvent({
-        projectId: access.projectId,
-        key,
-        op: "put",
-        payload: { name: "folderState.json", folderPath: "options" },
-      })
-      await updateProject(access.projectId, auth.userId, {
-        isActive: folderState.enabled,
-      }).catch(() => undefined)
       return apiOk({ folderState })
     }
 
@@ -367,7 +358,9 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
     const key =
       data.sidecar === "folder-state"
         ? projectFolderStateKey(access.ownerId, access.projectId)
-        : projectOptionsKey(access.ownerId, access.projectId)
+        : data.sidecar === "description"
+          ? projectDescriptionKey(access.ownerId, access.projectId)
+          : projectOptionsKey(access.ownerId, access.projectId)
     const { etag } = await writeSidecarPut({
       projectId: access.projectId,
       key,

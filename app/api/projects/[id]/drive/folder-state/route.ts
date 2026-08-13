@@ -1,15 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import {
-  ProjectStorageError,
-  projectFolderStateKey,
-  setProjectAutomationEnabled,
-  siteUpdatedBy,
-} from "@/lib/project-storage"
+import { setProjectPaused } from "@/lib/project-automation"
+import { ProjectStorageError, siteUpdatedBy } from "@/lib/project-storage"
 import { updateFolderStateSchema } from "@/lib/project-schemas"
-import { findProjectForUser, updateProject } from "@/lib/repositories/projects"
+import { findProjectForUser } from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
-import { journalStorageEvent } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -42,24 +37,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const folderState = await setProjectAutomationEnabled({
-      userId: project.ownerId,
+    // Тумблер живёт в двух хранилищах (R2 + Postgres) — записью владеет
+    // setProjectPaused, здесь только перевод enabled → paused.
+    const { folderState } = await setProjectPaused({
       projectId: project.id,
-      enabled: parsed.data.enabled,
+      ownerId: project.ownerId,
+      paused: !parsed.data.enabled,
       updatedBy: siteUpdatedBy(auth.email),
-    })
-
-    await journalStorageEvent({
-      projectId: project.id,
-      key: projectFolderStateKey(project.ownerId, project.id),
-      op: "put",
-      payload: { name: "folderState.json", folderPath: "options" },
-    })
-
-    await updateProject(id, auth.userId, {
-      isActive: folderState.enabled,
-    }).catch((cacheError) => {
-      console.error("[project-storage] isActive cache sync failed", cacheError)
     })
 
     return NextResponse.json({ folderState })

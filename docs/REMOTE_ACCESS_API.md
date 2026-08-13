@@ -8,6 +8,9 @@
 
 - Файловый CRUD / sync: [STORAGE_API.md](./STORAGE_API.md)
 - Контракт sync: [STORAGE_SYNC_CONTRACT.md](./STORAGE_SYNC_CONTRACT.md)
+- Как машина будет получать задачи на обработку: [PIPELINE.md](./PIPELINE.md).
+  Экшенов `claimTask` / `taskProgress` / `taskDone` в списке ниже **ещё нет** —
+  они спроектированы, но не реализованы; см. PIPELINE.md §11.
 
 ---
 

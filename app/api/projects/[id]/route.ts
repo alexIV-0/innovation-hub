@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
+import { setProjectPaused } from "@/lib/project-automation"
+import { ProjectStorageError, siteUpdatedBy } from "@/lib/project-storage"
 import { updateProjectSchema } from "@/lib/project-schemas"
 import {
   findOwnedProject,
@@ -49,7 +51,43 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     )
   }
 
-  const project = await updateProject(id, auth.userId, parsed.data)
+  const { isPaused, ...rest } = parsed.data
+
+  // Пауза — не обычное поле: тумблер слежения живёт и в Postgres, и в
+  // options/folderState.json на R2, иначе локальная машина не узнает, что
+  // пользователь поставил проект на паузу. Записью владеет setProjectPaused.
+  if (isPaused !== undefined) {
+    const existing = await findOwnedProject(id, auth.userId)
+    if (!existing) {
+      return NextResponse.json(
+        { message: "Project not found." },
+        { status: 404 },
+      )
+    }
+    try {
+      await setProjectPaused({
+        projectId: existing.id,
+        ownerId: existing.ownerId,
+        paused: isPaused,
+        updatedBy: siteUpdatedBy(auth.email),
+      })
+    } catch (error) {
+      if (error instanceof ProjectStorageError) {
+        return NextResponse.json({ message: error.message }, { status: 409 })
+      }
+      console.error("[projects] pause update failed", error)
+      return NextResponse.json(
+        { message: "Failed to update project pause state." },
+        { status: 503 },
+      )
+    }
+  }
+
+  const hasOtherChanges = Object.values(rest).some((v) => v !== undefined)
+  const project = hasOtherChanges
+    ? await updateProject(id, auth.userId, rest)
+    : await findOwnedProject(id, auth.userId)
+
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }

@@ -15,7 +15,11 @@ const PROJECT_FIELDS = `
   COALESCE(group_name, 'personal') AS "groupName",
   COALESCE(is_paused, FALSE) AS "isPaused",
   drive_folder_id AS "driveFolderId",
-  COALESCE(is_active, TRUE) AS "isActive",
+  -- Колонки is_active больше нет: она дублировала смысл is_paused и была с ней
+  -- сварена. Поле остаётся вычисляемым, потому что его отдают машинам в ответе
+  -- экшена projects (lib/machine-api/actions/storage-read.ts) — контракт
+  -- POST /api/v1 ломать нельзя.
+  NOT COALESCE(is_paused, FALSE) AS "isActive",
   COALESCE(is_archived, FALSE) AS "isArchived",
   archived_at AS "archivedAt",
   deleted_at AS "deletedAt",
@@ -262,6 +266,17 @@ export async function setProjectYougileChatId(
   return result.rows[0] ?? null
 }
 
+/**
+ * Пауза проекта пишется ТОЛЬКО через lib/project-automation.ts#setProjectPaused:
+ * тумблер слежения живёт в двух хранилищах (is_paused в Postgres и
+ * options/folderState.json на R2), и разъезжаются они мгновенно, если писать
+ * их по отдельности. Прямой вызов updateProject с isPaused обновит Postgres и
+ * оставит сайдкар прежним — локальная машина не узнает об изменении.
+ *
+ * Устаревшего `isActive` здесь больше нет: он был инверсией isPaused и
+ * присваивался ей перекрёстно, из-за чего выключение автоматизации ставило
+ * проекту «Приостановлен», а пауза гасила автоматизацию в обход R2.
+ */
 export async function updateProject(
   id: string,
   ownerId: string,
@@ -270,30 +285,19 @@ export async function updateProject(
     description?: string
     groupName?: ProjectGroupName
     isPaused?: boolean
-    isActive?: boolean
     isArchived?: boolean
   },
 ): Promise<ProjectRecord | null> {
-  let isPaused = input.isPaused
-  let isActive = input.isActive
-
-  if (input.isPaused !== undefined && input.isActive === undefined) {
-    isActive = !input.isPaused
-  } else if (input.isActive !== undefined && input.isPaused === undefined) {
-    isPaused = !input.isActive
-  }
-
   const result = await query<ProjectRecord>(
     `UPDATE projects
         SET name        = COALESCE($3, name),
             description = COALESCE($4, description),
             group_name  = COALESCE($5, group_name),
             is_paused   = COALESCE($6, is_paused),
-            is_active   = COALESCE($7, is_active),
-            is_archived = COALESCE($8, is_archived),
+            is_archived = COALESCE($7, is_archived),
             archived_at = CASE
-                            WHEN $8 IS NULL THEN archived_at
-                            WHEN $8 = TRUE  THEN COALESCE(archived_at, NOW())
+                            WHEN $7 IS NULL THEN archived_at
+                            WHEN $7 = TRUE  THEN COALESCE(archived_at, NOW())
                             ELSE NULL
                           END,
             updated_at  = NOW()
@@ -305,8 +309,7 @@ export async function updateProject(
       input.name ?? null,
       input.description ?? null,
       input.groupName ?? null,
-      isPaused ?? null,
-      isActive ?? null,
+      input.isPaused ?? null,
       input.isArchived ?? null,
     ],
   )
@@ -428,7 +431,9 @@ export async function listProjectsWithYougileChat(): Promise<ProjectRecord[]> {
   const result = await query<ProjectRecord>(
     `SELECT ${PROJECT_FIELDS}
        FROM projects
-      WHERE yougile_chat_id IS NOT NULL AND is_active = TRUE AND deleted_at IS NULL`,
+      WHERE yougile_chat_id IS NOT NULL
+        AND COALESCE(is_paused, FALSE) = FALSE
+        AND deleted_at IS NULL`,
   )
   return result.rows
 }

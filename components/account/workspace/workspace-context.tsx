@@ -21,6 +21,7 @@ import {
   pathToFolderPath,
   resolvePath,
 } from "./format"
+import { CABINET_SOURCE } from "./source"
 import type {
   BottomTab,
   ChatMessage,
@@ -33,6 +34,7 @@ import type {
   Project,
   UploadTarget,
   ViewMode,
+  WorkspaceSource,
 } from "./types"
 
 const DENSITY_KEY = "ffworks-ws-density"
@@ -85,6 +87,13 @@ type ConfirmRequest = {
 type WorkspaceValue = {
   t: Dictionary
   lang: Lang
+
+  /**
+   * Откуда пришли данные и что разрешено. Компоненты смотрят сюда, чтобы
+   * решить, рисовать ли кнопку («создать проект» есть в кабинете и нет в
+   * админке) и с какой стороны показывать сообщения чата.
+   */
+  source: WorkspaceSource
 
   // проекты
   projects: Project[]
@@ -216,18 +225,58 @@ export function useWorkspace() {
 }
 
 async function uploadViaXhr(
+  source: WorkspaceSource,
   projectId: string,
   file: File,
   target: UploadTarget,
 ): Promise<void> {
-  await uploadProjectFileDirect({
-    projectId,
-    file,
-    folderPath: target.folderPath ?? "",
+  // Кабинет — через storage v1 (presign → PUT → notify). Админский конвейер
+  // и другие источники ходят на свой uploadUrl (прокси байтов через Next).
+  if (source.scopeKey === "cabinet") {
+    await uploadProjectFileDirect({
+      projectId,
+      file,
+      folderPath: target.folderPath ?? "",
+    })
+    return
+  }
+  return new Promise((resolve, reject) => {
+    const qs = new URLSearchParams({ fileName: file.name })
+    if (target.parentId) qs.set("parentId", target.parentId)
+    else qs.set("folderPath", target.folderPath ?? "")
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", source.uploadUrl(projectId, qs))
+    xhr.withCredentials = true
+    if (file.type) xhr.setRequestHeader("Content-Type", file.type)
+    xhr.setRequestHeader("x-file-name", encodeURIComponent(file.name))
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText) as { message?: string }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve()
+          return
+        }
+        reject(new Error(data.message ?? `Upload failed (${xhr.status})`))
+      } catch {
+        reject(new Error(`Upload failed (${xhr.status})`))
+      }
+    }
+    xhr.onerror = () => reject(new Error("Network error during upload."))
+    xhr.send(file)
   })
 }
 
-export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+export function WorkspaceProvider({
+  children,
+  source = CABINET_SOURCE,
+}: {
+  children: React.ReactNode
+  /**
+   * Откуда брать данные и что разрешено. По умолчанию кабинет, поэтому
+   * /account/projects работает как раньше; админский «Конвейер» передаёт свой.
+   */
+  source?: WorkspaceSource
+}) {
   const { t, lang } = useI18n()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -245,6 +294,15 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const tRef = useRef(t)
   tRef.current = t
 
+  /**
+   * Источник тоже в ref, и по той же причине: загрузчики объявлены с пустым
+   * списком зависимостей, а объект-источник может пересоздаваться на каждый
+   * рендер родителя. Через ref его смена не перезапускает эффекты и не
+   * перечитывает дерево файлов.
+   */
+  const sourceRef = useRef(source)
+  sourceRef.current = source
+
   const [projects, setProjects] = useState<Project[]>([])
   const [loadingProjects, setLoadingProjects] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -261,13 +319,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const projectTab: ProjectTab = parseTab(searchParams.get("tab"))
 
   const buildUrl = useCallback(
-    (id: string | null, tab: ProjectTab) => {
-      const params = new URLSearchParams()
-      if (id) params.set("id", id)
-      if (tab !== "projects") params.set("tab", tab)
-      const qs = params.toString()
-      return qs ? `/account/projects?${qs}` : "/account/projects"
-    },
+    (id: string | null, tab: ProjectTab) =>
+      sourceRef.current.pageUrl({ id, tab }),
     [],
   )
 
@@ -372,7 +425,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const loadProjects = useCallback(async () => {
     setLoadingProjects(true)
     try {
-      const res = await fetch("/api/projects?archived=all")
+      const res = await fetch(sourceRef.current.projectsUrl())
       if (!res.ok) return
       const data = await res.json()
       setProjects(
@@ -388,7 +441,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     async (projectId: string, keepPath = true) => {
       setLoadingFiles(true)
       try {
-        const res = await fetch(`/api/projects/${projectId}/drive`)
+        const res = await fetch(sourceRef.current.driveUrl(projectId))
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
           toast.error(data.message ?? "Failed")
@@ -408,9 +461,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setPath((prev) => (keepPath ? resolvePath(files, prev) : []))
         setSelectedFile(null)
 
-        const cursorRes = await fetch(
-          `/api/storage/v1/tree?projectId=${encodeURIComponent(projectId)}`,
-        )
+        const cursorRes = await fetch(sourceRef.current.treeCursorUrl(projectId))
         if (cursorRes.ok) {
           const cursorData = await cursorRes.json()
           if (typeof cursorData.cursor === "number") {
@@ -425,7 +476,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   )
 
   const loadMessages = useCallback(async (projectId: string) => {
-    const res = await fetch(`/api/projects/${projectId}/chat`)
+    const res = await fetch(sourceRef.current.chatUrl(projectId))
     if (!res.ok) return
     const data = await res.json()
     const list: ChatMessage[] = (data.messages ?? []).map(
@@ -445,17 +496,25 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       }),
     )
     setMessages(list)
-    void fetch(`/api/projects/${projectId}/chat/read`, { method: "POST" }).catch(
-      () => undefined,
-    )
-    setProjects((prev) =>
-      prev.map((p) => (p.id === projectId ? { ...p, unreadCount: 0 } : p)),
-    )
+    // Отметка «прочитано» есть только у пользователя: со стороны команды такого
+    // признака в схеме нет, поэтому в админке шаг просто пропускается.
+    const chatReadUrl = sourceRef.current.chatReadUrl
+    if (chatReadUrl) {
+      void fetch(chatReadUrl(projectId), { method: "POST" }).catch(
+        () => undefined,
+      )
+      setProjects((prev) =>
+        prev.map((p) => (p.id === projectId ? { ...p, unreadCount: 0 } : p)),
+      )
+    }
   }, [])
 
+  // scopeKey в зависимостях обязателен: loadProjects объявлен с пустым списком
+  // и берёт адреса из sourceRef, поэтому сам по себе он не пересоздаётся. Без
+  // ключа смена выбранного пользователя в админке не перечитывала бы список.
   useEffect(() => {
     void loadProjects()
-  }, [loadProjects])
+  }, [loadProjects, source.scopeKey])
 
   useEffect(() => {
     const id = searchParams.get("id")
@@ -555,10 +614,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     return acc
   }, [projects, tabOf])
 
-  const visibleProjects = useMemo(
-    () => projects.filter((p) => tabOf(p) === projectTab && matchesQuery(p)),
-    [projects, projectTab, tabOf, matchesQuery],
-  )
+  const visibleProjects = useMemo(() => {
+    // Источник без разделов (админский «Конвейер») показывает список целиком,
+    // вместе с архивными: администратору нужно видеть все проекты пользователя
+    // и понимать, какие из них не обрабатываются. Порядок задаёт запрос —
+    // архивные идут последними.
+    if (!source.splitByTab) return projects.filter(matchesQuery)
+    return projects.filter((p) => tabOf(p) === projectTab && matchesQuery(p))
+  }, [projects, projectTab, tabOf, matchesQuery, source.splitByTab])
 
   const selectProject = useCallback(
     (id: string) => {
@@ -578,7 +641,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const patchProject = useCallback(
     async (id: string, body: Record<string, unknown>) => {
-      const res = await fetch(`/api/projects/${id}`, {
+      const res = await fetch(sourceRef.current.projectUrl(id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -612,7 +675,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         void (async () => {
           setCreating(true)
           try {
-            const res = await fetch("/api/projects", {
+            const res = await fetch(sourceRef.current.projectsUrl(), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ name }),
@@ -667,7 +730,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         destructive: true,
         onConfirm: () => {
           void (async () => {
-            const res = await fetch(`/api/projects/${id}`, { method: "DELETE" })
+            const res = await fetch(sourceRef.current.projectUrl(id), {
+              method: "DELETE",
+            })
             if (!res.ok) {
               toast.error("Failed")
               return
@@ -702,7 +767,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     const text = draft.trim()
     setDraft("")
     void (async () => {
-      const res = await fetch(`/api/projects/${selectedId}/chat`, {
+      const res = await fetch(sourceRef.current.chatUrl(selectedId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
@@ -777,7 +842,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         confirmLabel: t.create,
         onSubmit: (name) => {
           void (async () => {
-            const res = await fetch(`/api/projects/${selectedId}/drive`, {
+            const res = await fetch(sourceRef.current.folderUrl(selectedId), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ name, folderPath: target.folderPath }),
@@ -807,7 +872,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           if (name === file.name) return
           void (async () => {
             const res = await fetch(
-              `/api/projects/${selectedId}/drive/files/${file.id}`,
+              sourceRef.current.fileUrl(selectedId, file.id),
               {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -844,7 +909,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             let failed = 0
             for (const file of files) {
               const res = await fetch(
-                `/api/projects/${selectedId}/drive/files/${file.id}`,
+                sourceRef.current.fileUrl(selectedId, file.id),
                 { method: "DELETE" },
               )
               if (!res.ok) failed += 1
@@ -869,7 +934,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     (file: DriveFile) => {
       if (!selectedId || file.isFolder) return
       window.open(
-        `/api/projects/${selectedId}/drive/files/${file.id}`,
+        sourceRef.current.fileUrl(selectedId, file.id),
         "_blank",
         "noopener",
       )
@@ -886,7 +951,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       try {
         for (const file of files) {
           try {
-            await uploadViaXhr(selectedId, file, target)
+            await uploadViaXhr(sourceRef.current, selectedId, file, target)
           } catch (err) {
             toast.error(
               err instanceof Error ? err.message : `Upload failed: ${file.name}`,
@@ -959,7 +1024,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
               : base
           }
           try {
-            await uploadViaXhr(selectedId, file, {
+            await uploadViaXhr(sourceRef.current, selectedId, file, {
               parentId: null,
               folderPath,
             })
@@ -992,7 +1057,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             const blob = new Blob([""], { type: "text/plain" })
             const file = new File([blob], name, { type: "text/plain" })
             try {
-              await uploadViaXhr(selectedId, file, target)
+              await uploadViaXhr(sourceRef.current, selectedId, file, target)
               await loadDrive(selectedId, true)
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Failed")
@@ -1098,7 +1163,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (!selectedId || items.length === 0) return
       let failed = 0
       for (const file of items) {
-        const res = await fetch("/api/storage/v1/rename", {
+        const res = await fetch(sourceRef.current.moveUrl(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1202,6 +1267,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const value: WorkspaceValue = {
     t,
     lang,
+    source,
     projects,
     visibleProjects,
     counts,

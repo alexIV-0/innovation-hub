@@ -209,7 +209,11 @@ export async function createProject(input: {
   )
   // Папки IN / OUT намеренно не создаём: структуру проекта задаёт пользователь.
   // Упрощённый режим работает и с плоским корнем, и с парой IN / OUT.
-  return result.rows[0]
+  const row = result.rows[0]
+  if (!row) {
+    throw new Error("Project insert returned no row.")
+  }
+  return row
 }
 
 export async function setProjectDriveFolderId(

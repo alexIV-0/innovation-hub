@@ -21,6 +21,7 @@ import {
 } from "@/lib/storage/file-names"
 import {
   folderPathFromKey,
+  isCatalogKey,
   isOptionsKey,
   logicalKeyForFile,
   logicalNameFromObjectKey,
@@ -179,6 +180,62 @@ export async function writeFolderCreate(input: {
     ])
     return file
   })
+}
+
+/**
+ * Ensure every segment of `folderPath` exists (a/b/c). Returns the deepest folder row.
+ * Creates missing parents; returns the last existing/created folder, or null for root.
+ */
+export async function writeEnsureFolderPath(input: {
+  userId: string
+  projectId: string
+  folderPath: string
+  eventId?: string
+}): Promise<{ folderIds: string[]; folderPath: string }> {
+  const cleaned = input.folderPath.replace(/^\/+|\/+$/g, "")
+  if (!cleaned) return { folderIds: [], folderPath: "" }
+
+  const segments = cleaned.split("/").filter(Boolean)
+  const folderIds: string[] = []
+  let parent = ""
+
+  for (let i = 0; i < segments.length; i++) {
+    const name = validateLogicalName(segments[i]!)
+    const existing = await withTransaction(async (client) => {
+      const found = await client.query<ProjectFileRecord>(
+        `SELECT ${FILE_FIELDS}
+           FROM project_files
+          WHERE project_id = $1
+            AND lower(folder_path) = lower($2)
+            AND lower(name) = lower($3)
+            AND is_folder = TRUE
+            AND deleted_at IS NULL
+          LIMIT 1`,
+        [input.projectId, parent, name],
+      )
+      return found.rows[0] ?? null
+    })
+
+    if (existing) {
+      folderIds.push(existing.id)
+      parent = parent ? `${parent}/${existing.name}` : existing.name
+      continue
+    }
+
+    const created = await writeFolderCreate({
+      userId: input.userId,
+      projectId: input.projectId,
+      folderPath: parent,
+      name,
+      eventId: input.eventId
+        ? `${input.eventId}:mkdir:${i}`
+        : undefined,
+    })
+    folderIds.push(created.id)
+    parent = parent ? `${parent}/${created.name}` : created.name
+  }
+
+  return { folderIds, folderPath: parent }
 }
 
 export async function writeFilePut(input: {
@@ -654,6 +711,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
     for (const obj of page.Contents ?? []) {
       if (!obj.Key || obj.Key.endsWith("/")) continue
       if (obj.Key.includes("/options/")) continue
+      if (obj.Key.includes("/_catalog/")) continue
       if (obj.Key.endsWith("project-meta.json")) continue
       remoteKeys.set(obj.Key, {
         etag: obj.ETag?.replace(/"/g, "") ?? null,
@@ -754,6 +812,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
       // options/* is listed out of remoteKeys (sidecars + processing stats).
       // Do not treat those catalog rows as missing objects.
       if (isOptionsKey(row.s3Key, userId, projectId)) continue
+      if (isCatalogKey(row.s3Key, userId, projectId)) continue
       await journal(db, {
         projectId,
         key: row.s3Key,

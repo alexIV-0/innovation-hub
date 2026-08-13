@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { listTrash, purgeExpiredTrash } from "@/lib/storage/trash"
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "projectId is required." }, { status: 400 })
   }
 
-  const access = await requireOwnedProjectAccess(auth, projectId)
+  const access = await requireEditableProjectAccess(auth, projectId)
   if (access instanceof NextResponse) return access
 
   await purgeExpiredTrash().catch((error) => {

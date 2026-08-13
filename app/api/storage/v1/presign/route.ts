@@ -3,7 +3,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   const data = parsed.data
   const access =
     data.method === "PUT"
-      ? await requireOwnedProjectAccess(auth, data.projectId)
+      ? await requireEditableProjectAccess(auth, data.projectId)
       : await requireProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 

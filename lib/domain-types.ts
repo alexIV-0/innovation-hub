@@ -11,6 +11,7 @@ export type UserRecord = {
   createdAt: Date
   balanceCents: number
   driveFolderId: string | null
+  mustChangePassword: boolean
 }
 
 export type ProjectGroupName = "personal" | "shared" | "tools" | "archive"
@@ -30,6 +31,8 @@ export type ProjectRecord = {
   /** Проект в архиве: скрыт из рабочего списка, обработки по нему не запускаются. */
   isArchived: boolean
   archivedAt: Date | null
+  /** Soft-deleted into project trash; purged after retention. */
+  deletedAt: Date | null
   /** Optional client grouping (UI hierarchy; not part of R2 keys). */
   clientId: string | null
   createdAt: Date

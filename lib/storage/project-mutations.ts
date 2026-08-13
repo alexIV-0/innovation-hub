@@ -4,6 +4,8 @@ import { findClientById } from "@/lib/repositories/clients"
 import {
   createProject,
   deleteProject,
+  findOwnedProject,
+  findProjectById,
   updateProject,
 } from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
@@ -12,6 +14,10 @@ import {
   type StorageApiAuth,
 } from "@/lib/storage/auth"
 import { syncProjectMeta } from "@/lib/storage/project-catalog"
+import {
+  restoreDeletedProject,
+  softDeleteProject,
+} from "@/lib/storage/project-trash"
 import { NextResponse } from "next/server"
 
 export type MutationError = { error: string; status: number }
@@ -126,5 +132,50 @@ export async function setOwnedProjectState(
     await syncProjectMeta(project)
   }
   return { data: project }
+}
+
+export async function softDeleteOwnedProject(
+  auth: StorageApiAuth,
+  input: { projectId: string },
+): Promise<MutationResult<{ ok: true }> | NextResponse> {
+  if (auth.scopedProjectId) {
+    return {
+      error: "Scoped machine tokens cannot delete projects.",
+      status: 403,
+    }
+  }
+  const access = await requireOwnedProjectAccess(auth, input.projectId)
+  if (access instanceof NextResponse) return access
+
+  const project = await softDeleteProject(access.projectId, access.ownerId)
+  if (!project) return { error: "Project not found.", status: 404 }
+  return { data: { ok: true } }
+}
+
+export async function restoreOwnedProject(
+  auth: StorageApiAuth,
+  input: { projectId: string },
+): Promise<MutationResult<ProjectRecord> | NextResponse> {
+  if (auth.scopedProjectId) {
+    return {
+      error: "Scoped machine tokens cannot restore projects.",
+      status: 403,
+    }
+  }
+
+  const existing =
+    auth.role === "ADMIN"
+      ? await findProjectById(input.projectId, { includeDeleted: true })
+      : await findOwnedProject(input.projectId, auth.userId, {
+          includeDeleted: true,
+        })
+
+  if (!existing?.deletedAt) {
+    return { error: "Project not found.", status: 404 }
+  }
+
+  const restored = await restoreDeletedProject(existing.id, existing.userId)
+  if (!restored) return { error: "Project not found.", status: 404 }
+  return { data: restored }
 }
 

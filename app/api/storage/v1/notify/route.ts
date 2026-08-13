@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { projectPrefix } from "@/lib/storage/keys"
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   }
 
   const data = parsed.data
-  const access = await requireOwnedProjectAccess(auth, data.projectId)
+  const access = await requireEditableProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
   const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       contentHash: data.contentHash,
       eventId: data.eventId,
     })
-    return NextResponse.json({ file }, { status: 201 })
+    return NextResponse.json({ file, fileIds: [file.id] }, { status: 201 })
   } catch (error) {
     if (error instanceof StorageWriteError) {
       return NextResponse.json({ message: error.message }, { status: error.status })

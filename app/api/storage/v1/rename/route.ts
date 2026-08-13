@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { StorageWriteError, writeRename } from "@/lib/storage/write-path"
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Invalid name." }, { status: 400 })
   }
 
-  const access = await requireOwnedProjectAccess(auth, data.projectId)
+  const access = await requireEditableProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
   try {
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     if (!file) {
       return NextResponse.json({ message: "File not found." }, { status: 404 })
     }
-    return NextResponse.json({ file })
+    return NextResponse.json({ file, fileIds: [file.id] })
   } catch (error) {
     if (error instanceof StorageWriteError) {
       return NextResponse.json({ message: error.message }, { status: error.status })

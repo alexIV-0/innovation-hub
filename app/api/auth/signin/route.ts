@@ -73,6 +73,7 @@ export async function POST(request: Request) {
       {
         message: `Welcome back, ${user.fullName}.`,
         role: user.role,
+        mustChangePassword: user.mustChangePassword === true,
       },
       { status: 200 },
     )

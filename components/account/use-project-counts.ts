@@ -26,9 +26,15 @@ export function useProjectCounts() {
       const data = await res.json()
       const acc: Counts = { ...EMPTY }
       for (const raw of data.projects ?? []) {
-        const p = raw as { isArchived?: boolean; groupName?: string }
-        if (p.isArchived) acc.archive += 1
-        else if (p.groupName === "shared") acc.shared += 1
+        const p = raw as {
+          isArchived?: boolean
+          groupName?: string
+          sharedWithMe?: boolean
+          deletedAt?: string | null
+        }
+        if (p.deletedAt) acc.trash += 1
+        else if (p.sharedWithMe) acc.shared += 1
+        else if (p.isArchived) acc.archive += 1
         else if (p.groupName === "tools") acc.tools += 1
         else acc.projects += 1
       }

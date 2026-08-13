@@ -18,7 +18,8 @@ export function ClipboardPanel() {
     removeFromClipboard,
     clearClipboard,
     openMoveDialog,
-    notImplemented,
+    pasteClipboard,
+    currentTarget,
   } = useWorkspace()
 
   if (!clipboard) return null
@@ -89,11 +90,12 @@ export function ClipboardPanel() {
       </ul>
 
       <footer className="border-t border-white/[0.07] p-2">
-        {/* Для «вырезать» открываем выбор папки, копирование ждёт POST /copy. */}
         <button
           type="button"
           onClick={() =>
-            isCut ? openMoveDialog(clipboard.items) : notImplemented()
+            isCut
+              ? openMoveDialog(clipboard.items)
+              : pasteClipboard(currentTarget.folderPath)
           }
           className="h-8 w-full rounded-lg bg-ws-action text-[13px] font-medium text-white hover:bg-ws-action-hover"
         >

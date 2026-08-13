@@ -18,6 +18,7 @@ const PROJECT_FIELDS = `
   COALESCE(is_active, TRUE) AS "isActive",
   COALESCE(is_archived, FALSE) AS "isArchived",
   archived_at AS "archivedAt",
+  deleted_at AS "deletedAt",
   client_id AS "clientId",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
@@ -52,6 +53,7 @@ export async function listProjectsByOwner(
             ), 0) AS "unreadCount"
        FROM projects
       WHERE user_id = $1
+        AND deleted_at IS NULL
       ORDER BY
         COALESCE(is_archived, FALSE),
         CASE COALESCE(group_name, 'personal')
@@ -84,13 +86,16 @@ function archivedClause(
 
 export async function listProjectsByUserId(
   userId: string,
-  options?: { archived?: ArchivedFilter },
+  options?: { archived?: ArchivedFilter; includeDeleted?: boolean },
 ): Promise<ProjectRecord[]> {
   const archived = archivedClause(options?.archived, 2)
+  const deletedSql = options?.includeDeleted
+    ? ""
+    : " AND deleted_at IS NULL"
   const result = await query<ProjectRecord>(
     `SELECT ${PROJECT_FIELDS}
        FROM projects
-      WHERE user_id = $1${archived.sql}
+      WHERE user_id = $1${deletedSql}${archived.sql}
       ORDER BY created_at DESC`,
     [userId, ...archived.params],
   )
@@ -98,10 +103,13 @@ export async function listProjectsByUserId(
 }
 
 /** All projects (admin / storage listing). */
-export async function listAllProjects(): Promise<ProjectRecord[]> {
+export async function listAllProjects(options?: {
+  includeDeleted?: boolean
+}): Promise<ProjectRecord[]> {
+  const deletedSql = options?.includeDeleted ? "" : " WHERE deleted_at IS NULL"
   const result = await query<ProjectRecord>(
     `SELECT ${PROJECT_FIELDS}
-       FROM projects
+       FROM projects${deletedSql}
       ORDER BY created_at DESC`,
   )
   return result.rows
@@ -109,9 +117,11 @@ export async function listAllProjects(): Promise<ProjectRecord[]> {
 
 export async function findProjectById(
   id: string,
+  options?: { includeDeleted?: boolean },
 ): Promise<ProjectRecord | null> {
+  const deletedSql = options?.includeDeleted ? "" : " AND deleted_at IS NULL"
   const result = await query<ProjectRecord>(
-    `SELECT ${PROJECT_FIELDS} FROM projects WHERE id = $1`,
+    `SELECT ${PROJECT_FIELDS} FROM projects WHERE id = $1${deletedSql}`,
     [id],
   )
   return result.rows[0] ?? null
@@ -120,11 +130,13 @@ export async function findProjectById(
 export async function findOwnedProject(
   id: string,
   ownerId: string,
+  options?: { includeDeleted?: boolean },
 ): Promise<ProjectRecord | null> {
+  const deletedSql = options?.includeDeleted ? "" : " AND deleted_at IS NULL"
   const result = await query<ProjectRecord>(
     `SELECT ${PROJECT_FIELDS}
        FROM projects
-      WHERE id = $1 AND user_id = $2`,
+      WHERE id = $1 AND user_id = $2${deletedSql}`,
     [id, ownerId],
   )
   return result.rows[0] ?? null
@@ -134,7 +146,18 @@ export async function findProjectForUser(
   id: string,
   userId: string,
 ): Promise<ProjectRecord | null> {
-  return findOwnedProject(id, userId)
+  const owned = await findOwnedProject(id, userId)
+  if (owned) return owned
+  const member = await query<ProjectRecord>(
+    `SELECT ${PROJECT_FIELDS}
+       FROM projects p
+       JOIN project_members pm ON pm.project_id = p.id
+      WHERE p.id = $1
+        AND pm.user_id = $2
+        AND p.deleted_at IS NULL`,
+    [id, userId],
+  )
+  return member.rows[0] ?? null
 }
 
 /**
@@ -270,7 +293,7 @@ export async function updateProject(
                             ELSE NULL
                           END,
             updated_at  = NOW()
-      WHERE id = $1 AND user_id = $2
+      WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
       RETURNING ${PROJECT_FIELDS}`,
     [
       id,
@@ -286,6 +309,7 @@ export async function updateProject(
   return result.rows[0] ?? null
 }
 
+/** Hard-delete (used by purge). Prefer softDeleteProject for user actions. */
 export async function deleteProject(
   id: string,
   ownerId: string,
@@ -400,14 +424,14 @@ export async function listProjectsWithYougileChat(): Promise<ProjectRecord[]> {
   const result = await query<ProjectRecord>(
     `SELECT ${PROJECT_FIELDS}
        FROM projects
-      WHERE yougile_chat_id IS NOT NULL AND is_active = TRUE`,
+      WHERE yougile_chat_id IS NOT NULL AND is_active = TRUE AND deleted_at IS NULL`,
   )
   return result.rows
 }
 
 export async function countProjectsByOwner(ownerId: string): Promise<number> {
   const result = await query<{ count: number }>(
-    `SELECT COUNT(*)::int AS count FROM projects WHERE user_id = $1`,
+    `SELECT COUNT(*)::int AS count FROM projects WHERE user_id = $1 AND deleted_at IS NULL`,
     [ownerId],
   )
   return result.rows[0]?.count ?? 0

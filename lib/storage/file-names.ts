@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg"
 import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
+import { CATALOG_FOLDER_NAME } from "@/lib/storage/keys"
 import { StorageWriteError } from "@/lib/storage/errors"
 
 const ILLEGAL_CHARS = /[\\/:*?"<>|\u0000-\u001f]/
@@ -40,6 +41,9 @@ export function validateLogicalName(name: string): string {
     )
   }
   if (trimmed.toLowerCase() === OPTIONS_FOLDER_NAME) {
+    throw new StorageWriteError("This folder name is reserved.", 403)
+  }
+  if (trimmed.toLowerCase() === CATALOG_FOLDER_NAME) {
     throw new StorageWriteError("This folder name is reserved.", 403)
   }
   return trimmed

@@ -11,7 +11,9 @@ import {
   createOwnedProject,
   isMutationError,
   renameOwnedProject,
+  restoreOwnedProject,
   setOwnedProjectState,
+  softDeleteOwnedProject,
 } from "@/lib/storage/project-mutations"
 
 async function projectResult(
@@ -67,4 +69,26 @@ export const projectStateAction = defineAction(
       message: "Provide paused and/or archived.",
     }),
   async (auth, props) => projectResult(await setOwnedProjectState(auth, props)),
+)
+
+export const deleteProjectAction = defineAction(
+  z.object({ projectId: z.string().uuid() }),
+  async (auth, props) => {
+    const result = await softDeleteOwnedProject(auth, props)
+    if (result instanceof NextResponse) return result
+    if (isMutationError(result)) return apiError(result.error, result.status)
+    return apiOk(result.data)
+  },
+)
+
+export const restoreProjectAction = defineAction(
+  z.object({ projectId: z.string().uuid() }),
+  async (auth, props) => {
+    const result = await restoreOwnedProject(auth, props)
+    if (result instanceof NextResponse) return result
+    if (isMutationError(result)) return apiError(result.error, result.status)
+    return apiOk({
+      project: await serializeStorageProjectWithOwner(result.data),
+    })
+  },
 )

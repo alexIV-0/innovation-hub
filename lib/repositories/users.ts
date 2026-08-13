@@ -15,7 +15,8 @@ const PUBLIC_USER_FIELDS = `
   is_active AS "isActive",
   created_at AS "createdAt",
   COALESCE(balance_cents, 0) AS "balanceCents",
-  drive_folder_id AS "driveFolderId"
+  drive_folder_id AS "driveFolderId",
+  COALESCE(must_change_password, FALSE) AS "mustChangePassword"
 `
 
 const FULL_USER_FIELDS = `
@@ -29,7 +30,8 @@ const FULL_USER_FIELDS = `
   auth_provider AS "authProvider",
   provider_account_id AS "providerAccountId",
   COALESCE(balance_cents, 0) AS "balanceCents",
-  drive_folder_id AS "driveFolderId"
+  drive_folder_id AS "driveFolderId",
+  COALESCE(must_change_password, FALSE) AS "mustChangePassword"
 `
 
 export async function findUserById(id: string): Promise<UserRecord | null> {
@@ -174,6 +176,7 @@ export async function updateUser(
     passwordHash?: string
     role?: UserRole
     isActive?: boolean
+    mustChangePassword?: boolean
   },
 ): Promise<UserRecord | null> {
   const result = await query<UserRecord>(
@@ -183,6 +186,7 @@ export async function updateUser(
             password_hash = COALESCE($4, password_hash),
             role          = COALESCE($5, role),
             is_active     = COALESCE($6, is_active),
+            must_change_password = COALESCE($7, must_change_password),
             updated_at    = NOW()
       WHERE id = $1
       RETURNING ${PUBLIC_USER_FIELDS}`,
@@ -193,6 +197,7 @@ export async function updateUser(
       input.passwordHash ?? null,
       input.role ?? null,
       input.isActive ?? null,
+      input.mustChangePassword ?? null,
     ],
   )
   return result.rows[0] ?? null

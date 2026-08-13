@@ -8,6 +8,8 @@ import {
   deleteProject,
   listProjectsByUserId,
 } from "@/lib/repositories/projects"
+import { listSharedProjectsForUser } from "@/lib/repositories/project-members"
+import { listDeletedProjects } from "@/lib/storage/project-trash"
 import { isS3Configured } from "@/lib/s3-client"
 
 export const runtime = "nodejs"
@@ -38,18 +40,50 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const projects = await listProjectsByUserId(auth.userId, {
-    archived: archived.value,
-  })
-  const unread = await countUnreadForProjects(projects.map((p) => p.id))
+  const [owned, shared, deleted] = await Promise.all([
+    listProjectsByUserId(auth.userId, { archived: archived.value }),
+    listSharedProjectsForUser(auth.userId),
+    listDeletedProjects(auth.userId),
+  ])
 
-  return NextResponse.json({
-    projects: projects.map((p) => ({
+  const allIds = [
+    ...owned.map((p) => p.id),
+    ...shared.map((p) => p.id),
+  ]
+  const unread = await countUnreadForProjects(allIds)
+
+  const projects = [
+    ...owned.map((p) => ({
       ...p,
       ownerId: p.userId,
       isPaused: !p.isActive,
       unreadCount: unread[p.id] ?? 0,
+      sharedWithMe: false,
+      memberRole: null as null,
+      deletedAt: p.deletedAt ? p.deletedAt.toISOString() : null,
     })),
+    ...shared.map((p) => ({
+      ...p,
+      ownerId: p.userId,
+      isPaused: !p.isActive,
+      unreadCount: unread[p.id] ?? 0,
+      sharedWithMe: true,
+      memberRole: p.memberRole,
+      deletedAt: null as string | null,
+    })),
+    ...deleted.map((p) => ({
+      ...p,
+      ownerId: p.userId,
+      isPaused: !p.isActive,
+      unreadCount: 0,
+      sharedWithMe: false,
+      memberRole: null as null,
+      deletedAt: p.deletedAt ? p.deletedAt.toISOString() : null,
+    })),
+  ]
+
+  return NextResponse.json({
+    projects,
     storageConfigured: isS3Configured(),
     driveConfigured: false,
   })

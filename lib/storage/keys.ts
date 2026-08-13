@@ -1,10 +1,22 @@
 import { buildProjectObjectKey, projectObjectPrefix } from "@/lib/s3-config"
 
+export const CATALOG_FOLDER_NAME = "_catalog"
+
 const PROJECT_KEY_RE =
   /^projects\/([^/]+)\/([^/]+)\/(?:options\/(.+)|([^/]+)\/(.+)|([^/]+))$/
 
 export function projectPrefix(userId: string, projectId: string): string {
   return projectObjectPrefix(userId, projectId)
+}
+
+export function isCatalogKey(
+  key: string,
+  userId: string,
+  projectId: string,
+): boolean {
+  return key.startsWith(
+    `${projectPrefix(userId, projectId)}${CATALOG_FOLDER_NAME}/`,
+  )
 }
 
 export function parseProjectIdFromKey(key: string): string | null {

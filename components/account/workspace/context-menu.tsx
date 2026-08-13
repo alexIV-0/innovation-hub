@@ -108,16 +108,19 @@ export function WorkspaceContextMenu() {
         label: t.mNewFolder,
         onClick: () => ws.createFolder(target),
       },
-      { icon: FilePlus, label: t.mNewText, onClick: soon },
+      { icon: FilePlus, label: t.mNewText, onClick: () => ws.createTextFile(target) },
       { sep: true },
       {
         icon: Upload,
         label: t.mUploadFile,
         onClick: () => ws.triggerUpload(target),
       },
-      { icon: FolderUp, label: t.mUploadFolder, onClick: soon },
+      {
+        icon: FolderUp,
+        label: t.mUploadFolder,
+        onClick: () => ws.triggerFolderUpload(target),
+      },
       // «Вставить» показываем только когда в буфере что-то есть.
-      // Перемещение работает уже сейчас, копирование ждёт POST /copy.
       ...(ws.clipboard
         ? [
             { sep: true } as MenuEntry,
@@ -137,7 +140,23 @@ export function WorkspaceContextMenu() {
         label: t.mRename,
         onClick: () => ws.renameProject(project),
       },
-      { icon: Share2, label: t.mShare, onClick: soon },
+      ...(project.deletedAt
+        ? [
+            {
+              icon: ArchiveRestore,
+              label: t.mUnarchive,
+              onClick: () => ws.restoreProject(project),
+            } as MenuEntry,
+          ]
+        : project.sharedWithMe
+          ? []
+          : [
+              {
+                icon: Share2,
+                label: t.mShare,
+                onClick: () => ws.shareProject(project),
+              } as MenuEntry,
+            ]),
       {
         icon: ExternalLink,
         label: t.mOpenWindow,
@@ -148,11 +167,15 @@ export function WorkspaceContextMenu() {
             "noopener",
           ),
       },
-      {
-        icon: project.isArchived ? ArchiveRestore : Archive,
-        label: project.isArchived ? t.mUnarchive : t.mArchive,
-        onClick: () => ws.setArchived(project, !project.isArchived),
-      },
+      ...(project.deletedAt || project.sharedWithMe
+        ? []
+        : [
+            {
+              icon: project.isArchived ? ArchiveRestore : Archive,
+              label: project.isArchived ? t.mUnarchive : t.mArchive,
+              onClick: () => ws.setArchived(project, !project.isArchived),
+            } as MenuEntry,
+          ]),
       { sep: true },
       {
         icon: FileText,

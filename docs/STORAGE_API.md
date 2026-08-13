@@ -177,11 +177,11 @@ Feature flags for storage clients. Authenticated via session, machine token, or 
 {
   "apiVersion": 1,
   "protocol": 2,
-  "multipart": false,
+  "multipart": true,
   "rename": true,
   "move": true,
-  "copy": false,
-  "sharing": false,
+  "copy": true,
+  "sharing": true,
   "clients": true,
   "originMtime": true,
   "contentHash": true,
@@ -191,6 +191,9 @@ Feature flags for storage clients. Authenticated via session, machine token, or 
 
 `protocol: 2` means `/delta` may include `op: "move"`. Clients that do not understand `move` must treat unknown ops as a signal to refetch `/tree`.
 
+`sharing: true` applies to the **website** only. Machine tokens never see shared projects — they continue to list ownership only.
+
+Configure the R2 bucket with a lifecycle rule to **abort incomplete multipart uploads** (e.g. after 7 days), otherwise abandoned parts accumulate and are billed.
 ---
 
 ## `GET /api/storage/v1/projects`
@@ -280,6 +283,81 @@ Pause / resume or archive / unarchive. Fields are independent; at least one is r
 | `archived` | boolean | no | Writes `is_archived` / `archived_at`; workers must skip archived projects |
 
 **Response `200`:** `{ "project": { … } }`
+
+### `DELETE /api/storage/v1/projects`
+
+Soft-delete a project into trash (30 days). R2 objects are **not** deleted immediately. Scoped tokens → `403`.
+
+**Body:** `{ "projectId": "uuid" }`  
+**Response `200`:** `{ "ok": true }`
+
+### `POST /api/storage/v1/project-restore`
+
+Restore a soft-deleted project.
+
+**Body:** `{ "projectId": "uuid" }`  
+**Response `200`:** `{ "project": { … } }`
+
+---
+
+## `POST /api/storage/v1/copy`
+
+Server-side `CopyObject` into the destination owner's prefix. Colliding names get ` (2)`, ` (3)`, …
+
+**Body**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `projectId` | string | yes | Source project |
+| `fileIds` | string[] | yes | Roots to copy (files and/or folders) |
+| `destProjectId` | string | no | Defaults to `projectId` |
+| `destFolderPath` | string | no | Logical destination folder |
+| `eventId` | string | no | Idempotency key for the job |
+
+**Response `200`** (single file): `{ "files": […], "fileIds": ["…"] }`  
+**Response `202`** (folder / batch): `{ "jobId": "uuid" }` — poll `GET /jobs/:id`; completed payload includes `fileIds`.
+
+Cross-project copy is allowed when the actor can read the source and write the destination. Machine tokens only see owned projects.
+
+---
+
+## `GET /api/storage/v1/jobs/:id`
+
+Progress for long-running storage jobs (`copy`, `move`, `purge`, `recatalog`).
+
+**Response `200`**
+
+```json
+{
+  "job": {
+    "id": "uuid",
+    "kind": "copy",
+    "state": "running",
+    "total": 12,
+    "done": 4,
+    "error": null,
+    "projectId": "uuid",
+    "payload": { "fileIds": ["…"] },
+    "createdAt": "…",
+    "updatedAt": "…"
+  }
+}
+```
+
+---
+
+## Multipart upload
+
+For objects larger than ~5 GiB or resumable uploads. After `complete`, the catalog is updated the same way as `/notify`.
+
+| Endpoint | Body (summary) | Response |
+|---|---|---|
+| `POST /multipart/create` | `{ projectId, folderPath, fileName, contentType? }` | `{ uploadId, s3Key, fileName, folderPath, contentType }` |
+| `POST /multipart/presign-part` | `{ projectId, s3Key, uploadId, partNumber, ttlSec? }` | `{ url, method: "PUT", partNumber, expiresIn }` |
+| `POST /multipart/complete` | `{ projectId, s3Key, uploadId, folderPath, fileName, parts: [{ partNumber, etag }], … }` | `{ file, fileIds }` |
+| `POST /multipart/abort` | `{ projectId, s3Key, uploadId }` | `{ ok: true }` |
+
+Machine-api actions: `multipartCreate`, `multipartPresignPart`, `multipartComplete`, `multipartAbort`, `copy`, `getJob`, `deleteProject`, `restoreProject`.
 
 ---
 

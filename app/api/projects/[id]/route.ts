@@ -1,16 +1,16 @@
-import { DeleteObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { updateProjectSchema } from "@/lib/project-schemas"
-import { getS3Bucket } from "@/lib/s3-config"
-import { getS3Client } from "@/lib/s3-client"
-import { listAllS3KeysForProject } from "@/lib/repositories/project-files"
 import {
-  deleteProject,
   findOwnedProject,
   updateProject,
 } from "@/lib/repositories/projects"
 import { syncProjectMeta } from "@/lib/storage/project-catalog"
+import {
+  isMutationError,
+  softDeleteOwnedProject,
+} from "@/lib/storage/project-mutations"
+import type { StorageApiAuth } from "@/lib/storage/auth"
 
 export const runtime = "nodejs"
 
@@ -68,31 +68,18 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const existing = await findOwnedProject(id, auth.userId)
-  if (!existing) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  const storageAuth: StorageApiAuth = {
+    userId: auth.userId,
+    email: auth.email,
+    role: auth.role,
+    machineTokenId: null,
+    computerId: null,
+    scopedProjectId: null,
   }
-
-  const keys = await listAllS3KeysForProject(id)
-  const ok = await deleteProject(id, auth.userId)
-  if (!ok) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  const result = await softDeleteOwnedProject(storageAuth, { projectId: id })
+  if (result instanceof NextResponse) return result
+  if (isMutationError(result)) {
+    return NextResponse.json({ message: result.error }, { status: result.status })
   }
-
-  // Best-effort S3 cleanup after DB delete.
-  if (keys.length > 0) {
-    try {
-      const client = getS3Client()
-      const bucket = getS3Bucket()
-      await Promise.allSettled(
-        keys.map((key) =>
-          client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
-        ),
-      )
-    } catch {
-      // Ignore S3 errors — DB row is already gone.
-    }
-  }
-
-  return NextResponse.json({ ok: true })
+  return NextResponse.json(result.data)
 }

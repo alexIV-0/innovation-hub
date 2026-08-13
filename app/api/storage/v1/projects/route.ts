@@ -9,12 +9,17 @@ import {
 import {
   createOwnedProject,
   isMutationError,
+  softDeleteOwnedProject,
 } from "@/lib/storage/project-mutations"
 
 export const runtime = "nodejs"
 
 const createSchema = createProjectSchema.extend({
   clientId: z.string().uuid().nullable().optional(),
+})
+
+const deleteSchema = z.object({
+  projectId: z.string().uuid(),
 })
 
 /**
@@ -63,4 +68,35 @@ export async function POST(request: NextRequest) {
     { project: await serializeStorageProjectWithOwner(result.data) },
     { status: 201 },
   )
+}
+
+/**
+ * DELETE /api/storage/v1/projects
+ * Soft-delete a project into trash (30 days). Does not wipe R2 immediately.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireStorageApi(request)
+  if (auth instanceof NextResponse) return auth
+
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ message: "Invalid JSON." }, { status: 400 })
+  }
+
+  const parsed = deleteSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { message: parsed.error.issues[0]?.message ?? "Invalid input." },
+      { status: 400 },
+    )
+  }
+
+  const result = await softDeleteOwnedProject(auth, parsed.data)
+  if (result instanceof NextResponse) return result
+  if (isMutationError(result)) {
+    return NextResponse.json({ message: result.error }, { status: result.status })
+  }
+  return NextResponse.json(result.data)
 }

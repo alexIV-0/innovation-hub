@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
-  requireOwnedProjectAccess,
+  requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
 import { StorageWriteError } from "@/lib/storage/errors"
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const access = await requireOwnedProjectAccess(auth, parsed.data.projectId)
+  const access = await requireEditableProjectAccess(auth, parsed.data.projectId)
   if (access instanceof NextResponse) return access
 
   try {

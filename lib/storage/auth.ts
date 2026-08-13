@@ -9,8 +9,8 @@ import { query } from "@/lib/db"
 import {
   findOwnedProject,
   findProjectById,
-  findProjectForUser,
 } from "@/lib/repositories/projects"
+import { findProjectMembership } from "@/lib/repositories/project-members"
 import { hashMachineToken } from "@/lib/storage/write-path"
 import type { UserRole } from "@/lib/domain-types"
 
@@ -23,13 +23,39 @@ export type StorageApiAuth = {
   scopedProjectId: string | null
 }
 
+export type ProjectAccessRole = "owner" | "editor" | "viewer"
+
 export type StorageProjectAccess = {
   projectId: string
   ownerId: string
+  accessRole: ProjectAccessRole
 }
 
 function unauthorized(message = "Unauthorized.") {
   return NextResponse.json({ message }, { status: 401 })
+}
+
+/** Resolve site-user access: owner, shared member, or null. Machine tokens never use this. */
+export async function resolveProjectAccess(
+  projectId: string,
+  userId: string,
+): Promise<{ role: ProjectAccessRole; ownerId: string } | null> {
+  const project = await findProjectById(projectId)
+  if (!project || project.deletedAt) return null
+  if (project.userId === userId) {
+    return { role: "owner", ownerId: project.userId }
+  }
+  const membership = await findProjectMembership(projectId, userId)
+  if (!membership) return null
+  return { role: membership.role, ownerId: project.userId }
+}
+
+function roleAtLeast(
+  role: ProjectAccessRole,
+  minimum: ProjectAccessRole,
+): boolean {
+  const rank = { viewer: 1, editor: 2, owner: 3 }
+  return rank[role] >= rank[minimum]
 }
 
 async function authFromRemoteComputerToken(
@@ -145,6 +171,7 @@ export async function authenticateComputerToken(
 export async function requireProjectAccess(
   auth: StorageApiAuth,
   projectId: string,
+  minimum: ProjectAccessRole = "viewer",
 ): Promise<NextResponse | StorageProjectAccess> {
   if (
     auth.scopedProjectId != null &&
@@ -155,14 +182,52 @@ export async function requireProjectAccess(
       { status: 403 },
     )
   }
-  const project =
-    auth.role === "ADMIN"
-      ? await findProjectById(projectId)
-      : await findProjectForUser(projectId, auth.userId)
-  if (!project) {
+
+  // Machine / computer tokens: ownership only (no sharing).
+  if (auth.machineTokenId || auth.computerId) {
+    const project =
+      auth.role === "ADMIN"
+        ? await findProjectById(projectId)
+        : await findOwnedProject(projectId, auth.userId)
+    if (!project) {
+      return NextResponse.json({ message: "Project not found." }, { status: 404 })
+    }
+    return {
+      projectId: project.id,
+      ownerId: project.ownerId,
+      accessRole: "owner",
+    }
+  }
+
+  if (auth.role === "ADMIN") {
+    const project = await findProjectById(projectId)
+    if (!project) {
+      return NextResponse.json({ message: "Project not found." }, { status: 404 })
+    }
+    return {
+      projectId: project.id,
+      ownerId: project.ownerId,
+      accessRole: "owner",
+    }
+  }
+
+  const resolved = await resolveProjectAccess(projectId, auth.userId)
+  if (!resolved || !roleAtLeast(resolved.role, minimum)) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
-  return { projectId: project.id, ownerId: project.ownerId }
+  return {
+    projectId,
+    ownerId: resolved.ownerId,
+    accessRole: resolved.role,
+  }
+}
+
+/** File writes: editor+ on the site; ownership for machine tokens. */
+export async function requireEditableProjectAccess(
+  auth: StorageApiAuth,
+  projectId: string,
+): Promise<NextResponse | StorageProjectAccess> {
+  return requireProjectAccess(auth, projectId, "editor")
 }
 
 export async function requireOwnedProjectAccess(
@@ -185,7 +250,11 @@ export async function requireOwnedProjectAccess(
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
-  return { projectId: project.id, ownerId: project.ownerId }
+  return {
+    projectId: project.id,
+    ownerId: project.ownerId,
+    accessRole: "owner",
+  }
 }
 
 export async function createMachineToken(input: {

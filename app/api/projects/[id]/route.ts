@@ -5,6 +5,7 @@ import { ProjectStorageError, siteUpdatedBy } from "@/lib/project-storage"
 import { updateProjectSchema } from "@/lib/project-schemas"
 import {
   findOwnedProject,
+  findProjectForUser,
   updateProject,
 } from "@/lib/repositories/projects"
 import { syncProjectMeta } from "@/lib/storage/project-catalog"
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const project = await findOwnedProject(id, auth.userId)
+  const project = await findProjectForUser(id, auth.userId)
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }

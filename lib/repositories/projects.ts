@@ -152,13 +152,20 @@ export async function findProjectForUser(
 ): Promise<ProjectRecord | null> {
   const owned = await findOwnedProject(id, userId)
   if (owned) return owned
+  // EXISTS, not JOIN: project_members also has user_id and created_at, so a
+  // JOIN with unqualified PROJECT_FIELDS blows up with "column reference is
+  // ambiguous" — that's the HTTP 500 on shared projects.
   const member = await query<ProjectRecord>(
     `SELECT ${PROJECT_FIELDS}
-       FROM projects p
-       JOIN project_members pm ON pm.project_id = p.id
-      WHERE p.id = $1
-        AND pm.user_id = $2
-        AND p.deleted_at IS NULL`,
+       FROM projects
+      WHERE id = $1
+        AND deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1
+            FROM project_members pm
+           WHERE pm.project_id = projects.id
+             AND pm.user_id = $2
+        )`,
     [id, userId],
   )
   return member.rows[0] ?? null

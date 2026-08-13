@@ -22,12 +22,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
 
   try {
+    const project = await findProjectForUser(id, auth.userId)
+    if (!project) {
+      return NextResponse.json({ message: "Project not found." }, { status: 404 })
+    }
     const state = await loadProjectStorageState(project.ownerId, project.id)
     return NextResponse.json({
       ...state,

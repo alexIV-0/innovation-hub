@@ -13,3 +13,7 @@ node_modules/
 # Local backup of the original (uncompressed) promo video
 promo_video_original_backup.mp4
 public/promo_video_compressed.mp4
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

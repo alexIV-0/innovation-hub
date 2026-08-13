@@ -24,6 +24,11 @@ export type Project = {
   createdAt: string
   updatedAt: string
   unreadCount: number
+  /**
+   * Скольким людям расшарен проект, не считая владельца. 0 — не расшарен.
+   * Считается по project_members (функция расшаривания из upstream/main).
+   */
+  memberCount: number
 }
 
 export type ChatMessage = {

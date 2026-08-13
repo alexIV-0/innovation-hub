@@ -3,6 +3,7 @@ import { requireUserApi } from "@/lib/admin-auth"
 import { createProjectSchema } from "@/lib/project-schemas"
 import { writeProjectMeta } from "@/lib/project-storage"
 import { countUnreadForProjects } from "@/lib/repositories/project-chat"
+import { countProjectMembers } from "@/lib/repositories/project-member-counts"
 import {
   createProject,
   deleteProject,
@@ -18,7 +19,11 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth
 
   const projects = await listProjectsByUserId(auth.userId)
-  const unread = await countUnreadForProjects(projects.map((p) => p.id))
+  const ids = projects.map((p) => p.id)
+  const [unread, memberCounts] = await Promise.all([
+    countUnreadForProjects(ids),
+    countProjectMembers(ids),
+  ])
 
   return NextResponse.json({
     projects: projects.map((p) => ({
@@ -26,6 +31,8 @@ export async function GET(request: NextRequest) {
       ownerId: p.userId,
       isPaused: !p.isActive,
       unreadCount: unread[p.id] ?? 0,
+      // Скольким людям расшарен проект — число в углу карточки.
+      memberCount: memberCounts[p.id] ?? 0,
     })),
     storageConfigured: isS3Configured(),
     driveConfigured: false,

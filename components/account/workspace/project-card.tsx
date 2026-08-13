@@ -1,6 +1,14 @@
 "use client"
 
-import { Archive, Folder, MessageCircle, Pause, Play, Wrench } from "lucide-react"
+import {
+  Archive,
+  Folder,
+  MessageCircle,
+  Pause,
+  Play,
+  Users,
+  Wrench,
+} from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { Project } from "./types"
@@ -35,6 +43,8 @@ export function ProjectCard({
    * админке они идут вперемешку с остальными и различать их нужно.
    */
   const showArchivedBadge = !source.splitByTab && project.isArchived
+  /** Скольким расшарен. Ноль не показываем — большинство проектов личные. */
+  const sharedWith = project.memberCount > 0 ? project.memberCount : null
   const isMenuTarget = menu?.kind === "project" && menu.project?.id === project.id
   const Icon = isTool ? Wrench : Folder
 
@@ -91,7 +101,8 @@ export function ProjectCard({
       <div
         className={cn(
           "relative flex items-center gap-2.5 px-[5px] pt-2.5 leading-tight",
-          isTool ? "pb-2.5" : "pb-[3px]",
+          // Нижняя строка не должна прилегать к верхней вплотную.
+          isTool ? "pb-2.5" : "pb-[7px]",
         )}
       >
         <Icon
@@ -108,6 +119,15 @@ export function ProjectCard({
         >
           {project.name}
         </span>
+        {sharedWith ? (
+          <span
+            title={`Проект расшарен: ${sharedWith}`}
+            className="flex shrink-0 items-center gap-1 text-[11.5px] tabular-nums text-ws-5"
+          >
+            <Users className="h-3 w-3" />
+            {sharedWith}
+          </span>
+        ) : null}
         {isTool ? chatPill : null}
       </div>
 

@@ -75,6 +75,30 @@ export function resolvePgSsl(host) {
       }
     })(),
   )
+  const fromUrl = sslModeFromConnectionString()
+  const mode =
+    process.env.PGSSLMODE ??
+    fromUrl ??
+    (!local && process.env.VERCEL ? "require" : undefined)
+
+  if (mode === "disable" || process.env.DATABASE_SSL === "false") {
+    return undefined
+  }
+
+  if (mode === "no-verify" || process.env.PGSSL_NO_VERIFY === "1") {
+    return { rejectUnauthorized: false }
+  }
+
+  if (
+    local &&
+    process.env.DATABASE_SSL !== "true" &&
+    mode !== "require" &&
+    mode !== "verify-ca" &&
+    mode !== "verify-full"
+  ) {
+    return undefined
+  }
+
   const explicitPath = process.env.PGSSLROOTCERT
   const defaultCloudPath = join(homedir(), ".cloud-certs", "root.crt")
 
@@ -100,35 +124,6 @@ export function resolvePgSsl(host) {
   const caPem = readCaFromEnv()
   if (caPem) {
     return { ca: caPem, rejectUnauthorized: true }
-  }
-
-  const fromUrl = sslModeFromConnectionString()
-  const mode =
-    process.env.PGSSLMODE ??
-    fromUrl ??
-    (!local && process.env.VERCEL ? "require" : undefined)
-
-  if (mode === "disable" || process.env.DATABASE_SSL === "false") {
-    return undefined
-  }
-
-  if (
-    local &&
-    process.env.DATABASE_SSL !== "true" &&
-    mode !== "require" &&
-    mode !== "verify-ca" &&
-    mode !== "verify-full" &&
-    mode !== "no-verify"
-  ) {
-    return undefined
-  }
-
-  if (
-    mode === "no-verify" ||
-    process.env.PGSSL_NO_VERIFY === "1" ||
-    process.env.PGSSLMODE === "no-verify"
-  ) {
-    return { rejectUnauthorized: false }
   }
 
   const strictVerify =

@@ -1,7 +1,9 @@
 # Storage API reference
 
 Base path: `/api/storage/v1`  
-Auth tokens: `/api/account/machine-tokens` (user) · admin computers via [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md)
+Auth: session cookie (web UI) · `/api/account/machine-tokens` (`mch_…`, per-user)
+
+**Remote computers (fleet)** use a separate contract: `POST /api/v1` with `{ action, props, token }`. See [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md) and **Admin → Remote access → API**.
 
 Architecture and sync rules: [STORAGE_SYNC_CONTRACT.md](./STORAGE_SYNC_CONTRACT.md).
 
@@ -15,7 +17,7 @@ All `/api/storage/v1/*` endpoints accept either:
 |---|---|
 | Web UI | Session cookie `inhub_session` |
 | Processing app (per-user) | `Authorization: Bearer mch_…` |
-| Remote computer (fleet) | `Authorization: Bearer rc_…` |
+| Remote computer (fleet) | Prefer `POST /api/v1`. Bearer `rc_…` still accepted here for compatibility. |
 
 Errors:
 
@@ -27,7 +29,7 @@ Errors:
 
 Admin role and remote computer tokens (`rc_…`) can access any project. Machine tokens with `projectId` set may only touch that project.
 
-Remote computer presence / heartbeat: [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md).
+Remote computer presence / heartbeat: [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md) (`action: "heartbeat"` on `/api/v1`).
 
 ---
 
@@ -551,7 +553,7 @@ projects/{userId}/{projectId}/{folderPath}/{uuid}-{safeName}
 
 ## Legacy routes
 
-Cabinet UI still calls `/api/projects/[id]/drive/*` and `/files/*`. Those mutate through the same write-path and journal. **New clients (desktop app) should use only `/api/storage/v1`.**
+Cabinet UI still calls `/api/projects/[id]/drive/*` and `/files/*`. Those mutate through the same write-path and journal. **Fleet agents should use only `POST /api/v1`.** Per-user processing apps may keep `/api/storage/v1`.
 
 | Legacy | Prefer |
 |---|---|

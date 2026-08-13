@@ -71,16 +71,45 @@ function readCaFromEnv(): string | undefined {
 
 /**
  * SSL for `pg`:
+ * - Opt out first: PGSSLMODE=no-verify / PGSSL_NO_VERIFY=1 (self-signed Timeweb etc.)
+ *   or PGSSLMODE=disable / DATABASE_SSL=false. These win over leftover CAs.
  * - Custom CA file: PGSSLROOTCERT or ~/.cloud-certs/root.crt (e.g. Yandex Cloud).
  *   Auto cloud-cert is skipped for localhost / 127.0.0.1 so local Postgres
  *   without TLS does not fail with "server does not support SSL".
  * - Custom CA PEM on Vercel: PGSSL_CA or DATABASE_SSL_CA (paste root bundle).
  * - Encrypted without CA (self-signed chain): PGSSLMODE=require / VERCEL / sslmode=require
  *   uses TLS with rejectUnauthorized:false unless PGSSL_REJECT_UNAUTHORIZED=1 or sslmode=verify-full.
- * - Opt out: PGSSL_NO_VERIFY=1, PGSSLMODE=no-verify, or DATABASE_SSL=false.
  */
 function resolveSsl(host: string): PoolConfig["ssl"] | undefined {
   const local = isLocalPgHost(host)
+  const fromUrl = sslModeFromConnectionString()
+  const mode =
+    process.env.PGSSLMODE ??
+    fromUrl ??
+    (!local && process.env.VERCEL ? "require" : undefined)
+
+  if (mode === "disable" || process.env.DATABASE_SSL === "false") {
+    return undefined
+  }
+
+  if (
+    mode === "no-verify" ||
+    process.env.PGSSL_NO_VERIFY === "1"
+  ) {
+    return { rejectUnauthorized: false }
+  }
+
+  // Local Postgres typically has no TLS. Skip SSL unless explicitly requested.
+  if (
+    local &&
+    process.env.DATABASE_SSL !== "true" &&
+    mode !== "require" &&
+    mode !== "verify-ca" &&
+    mode !== "verify-full"
+  ) {
+    return undefined
+  }
+
   const explicitPath = process.env.PGSSLROOTCERT
   const defaultCloudPath = join(homedir(), ".cloud-certs", "root.crt")
 
@@ -107,36 +136,6 @@ function resolveSsl(host: string): PoolConfig["ssl"] | undefined {
   const caPem = readCaFromEnv()
   if (caPem) {
     return { ca: caPem, rejectUnauthorized: true }
-  }
-
-  const fromUrl = sslModeFromConnectionString()
-  const mode =
-    process.env.PGSSLMODE ??
-    fromUrl ??
-    (!local && process.env.VERCEL ? "require" : undefined)
-
-  if (mode === "disable" || process.env.DATABASE_SSL === "false") {
-    return undefined
-  }
-
-  // Local Postgres typically has no TLS. Skip SSL unless explicitly requested.
-  if (
-    local &&
-    process.env.DATABASE_SSL !== "true" &&
-    mode !== "require" &&
-    mode !== "verify-ca" &&
-    mode !== "verify-full" &&
-    mode !== "no-verify"
-  ) {
-    return undefined
-  }
-
-  if (
-    mode === "no-verify" ||
-    process.env.PGSSL_NO_VERIFY === "1" ||
-    process.env.PGSSLMODE === "no-verify"
-  ) {
-    return { rejectUnauthorized: false }
   }
 
   const strictVerify =

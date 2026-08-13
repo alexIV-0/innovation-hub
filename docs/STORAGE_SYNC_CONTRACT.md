@@ -8,7 +8,7 @@ R2 is the source of truth for object bytes. Postgres (`project_files` + `storage
 
 - **Web UI:** session cookie (`inhub_session`), same as other account APIs.
 - **Processing app (per-user):** `Authorization: Bearer mch_…` machine token.
-- **Remote computer (fleet):** `Authorization: Bearer rc_…` — see [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md).
+- **Remote computer (fleet):** `POST /api/v1` with `{ action, props, token: "rc_…" }` — see [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md).
 
 Create a user machine token (session required):
 
@@ -78,7 +78,7 @@ Revoke: `DELETE /api/account/machine-tokens` with `{ "id": "…" }`.
 2. Poll `GET /delta?since=<cursor>` every few seconds while project is open
 3. Apply `put`/`delete`; advance `cursor`
 
-Legacy cabinet routes under `/api/projects/[id]/drive/*` remain as thin wrappers; new clients should use `/api/storage/v1`.
+Legacy cabinet routes under `/api/projects/[id]/drive/*` remain as thin wrappers. Fleet agents should use `POST /api/v1`. Per-user apps may keep `/api/storage/v1`.
 
 ## Key layout
 

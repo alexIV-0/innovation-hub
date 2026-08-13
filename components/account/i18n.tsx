@@ -184,6 +184,11 @@ export const dict = {
     adminRemoteTitle: "Удалённый доступ",
     adminRemoteDesc:
       "Подключайте компьютеры агента: токен для API, статус online и проект в работе.",
+    adminRemoteApiTitle: "API для машин",
+    adminRemoteApiDesc:
+      "Закрытый контракт: один POST /api/v1, токен из этого раздела, action + props.",
+    adminRemoteApiIntro:
+      "Каждая машина получает свой токен в этом разделе. Все запросы — POST /api/v1. Сначала проверяется token, затем props выбранного action, и только после этого выполняется операция.",
     adminRemoteConnect: "Подключить компьютер",
     adminRemoteEmptyTitle: "Нет подключённых компьютеров",
     adminRemoteEmptyDesc:
@@ -368,6 +373,11 @@ export const dict = {
     adminRemoteTitle: "Remote access",
     adminRemoteDesc:
       "Connect agent computers: API token, online status, and active project.",
+    adminRemoteApiTitle: "Machine API",
+    adminRemoteApiDesc:
+      "Private contract: a single POST /api/v1, token from this section, action + props.",
+    adminRemoteApiIntro:
+      "Each machine gets its own token in this section. Every request is POST /api/v1. The token is checked first, then the action’s props, and only then the operation runs.",
     adminRemoteConnect: "Connect computer",
     adminRemoteEmptyTitle: "No computers connected",
     adminRemoteEmptyDesc:

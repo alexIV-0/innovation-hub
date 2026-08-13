@@ -28,13 +28,6 @@ export type StorageProjectAccess = {
   ownerId: string
 }
 
-export type RemoteComputerApiAuth = {
-  computerId: string
-  name: string
-  userId: string
-  email: string
-}
-
 function unauthorized(message = "Unauthorized.") {
   return NextResponse.json({ message }, { status: 401 })
 }
@@ -140,25 +133,13 @@ export async function requireStorageApi(
   return session
 }
 
-/** Only `Authorization: Bearer rc_…` remote computer tokens. */
-export async function requireRemoteComputerApi(
-  request: NextRequest,
-): Promise<RemoteComputerApiAuth | NextResponse> {
-  const authHeader = request.headers.get("authorization")
-  if (!authHeader?.startsWith("Bearer ")) {
-    return unauthorized("Computer token required.")
-  }
-  const token = authHeader.slice(7).trim()
-  const computer = await authFromRemoteComputerToken(token)
-  if (!computer || !computer.computerId) {
-    return unauthorized("Invalid computer token.")
-  }
-  return {
-    computerId: computer.computerId,
-    name: computer.computerName,
-    userId: computer.userId,
-    email: computer.email,
-  }
+/** Authenticate a raw `rc_…` token from the machine API body. */
+export async function authenticateComputerToken(
+  token: string,
+): Promise<StorageApiAuth | null> {
+  const computer = await authFromRemoteComputerToken(token.trim())
+  if (!computer?.computerId) return null
+  return computer
 }
 
 export async function requireProjectAccess(

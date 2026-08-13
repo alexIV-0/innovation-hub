@@ -2,7 +2,9 @@
 
 Документация для приложения автоматизации (удалённый компьютер).
 
-Связанные документы:
+Каноническая спецификация живёт в админке: **Удалённый доступ → API** (`/admin/remote-access/api`). Этот файл — краткий обзор.
+
+Связанные документы (веб-кабинет и user machine tokens `mch_…`):
 
 - Файловый CRUD / sync: [STORAGE_API.md](./STORAGE_API.md)
 - Контракт sync: [STORAGE_SYNC_CONTRACT.md](./STORAGE_SYNC_CONTRACT.md)
@@ -11,11 +13,9 @@
 
 ## Назначение
 
-1. Админ в панели **Удалённый доступ** создаёт сущность **Компьютер** и получает Bearer-токен `rc_…`.
-2. Агент на машине использует токен для:
-   - heartbeat / статуса (online, idle|busy|error, текущий проект);
-   - работы с файлами проектов через `/api/storage/v1`.
-3. Позже планировщик задач будет распределять проекты между online-машинами, опираясь на эти статусы.
+1. Админ в панели **Удалённый доступ** создаёт сущность **Компьютер** и получает токен `rc_…`.
+2. Агент на машине шлёт **только** `POST /api/v1` с этим токеном в теле запроса.
+3. Позже планировщик задач будет распределять проекты между online-машинами, опираясь на heartbeat.
 
 ---
 
@@ -41,158 +41,79 @@
 
 ---
 
-## Authentication
+## Контракт: `POST /api/v1`
 
-Все запросы агента:
-
-```http
-Authorization: Bearer rc_…
-```
-
-| Префикс | Кто | Доступ к проектам |
-|---|---|---|
-| `rc_…` | Remote computer (флот) | Все проекты (как ADMIN) |
-| `mch_…` | User machine token | Проекты владельца / scope |  
-| cookie | Web UI | По роли пользователя |
-
-Ошибки auth:
-
-| Status | Meaning |
-|---|---|
-| `401` | Нет / неверный токен |
-| `403` | Аккаунт создателя неактивен (для `rc_` — создавший админ) |
-| `404` | Ресурс не найден |
-
----
-
-## Online и статусы
-
-| Понятие | Правило |
-|---|---|
-| **online** | `lastHeartbeatAt` не старше **90 секунд** и токен не отозван |
-| **offline** | Нет heartbeat или heartbeat старше 90s |
-| `status` | Сообщает агент: `idle` \| `busy` \| `error` |
-| `currentProjectId` | Проект «в работе»; `null` — сброс |
-| `currentTask` | Короткая метка операции (опционально) |
-| `meta` | Произвольный JSON для планировщика |
-
-Рекомендация: слать `POST /heartbeat` каждые **20–30 секунд** (и при смене статуса/проекта).
-
----
-
-## Remote API
-
-Base path: `/api/remote/v1`  
-Только `Authorization: Bearer rc_…`.
-
-### `GET /api/remote/v1/me`
-
-Идентичность и текущее состояние компьютера.
-
-**Response `200`**
-
-```json
-{
-  "id": "uuid",
-  "name": "render-box-1",
-  "description": "",
-  "status": "idle",
-  "online": true,
-  "currentProjectId": null,
-  "currentTask": null,
-  "lastHeartbeatAt": "2026-08-10T12:00:00.000Z",
-  "meta": {},
-  "createdAt": "2026-08-10T10:00:00.000Z"
-}
-```
-
-### `POST /api/remote/v1/heartbeat`
-
-Обновляет `lastHeartbeatAt` и опционально поля статуса.
-
-**Body** (все поля опциональны; пустое тело = только heartbeat)
-
-| Field | Type | Notes |
-|---|---|---|
-| `status` | `"idle"` \| `"busy"` \| `"error"` | |
-| `currentProjectId` | string \| null | `null` сбрасывает проект; иначе должен существовать |
-| `currentTask` | string \| null | до 500 символов |
-| `meta` | object | заменяет предыдущий `meta` целиком, если передано |
-
-**Example**
+Единственная точка входа для внешних машин. Другие методы → `405`.  
+Старые `/api/remote/v1/*` отвечают `410`.
 
 ```http
-POST /api/remote/v1/heartbeat
-Authorization: Bearer rc_…
+POST /api/v1
 Content-Type: application/json
 
 {
-  "status": "busy",
-  "currentProjectId": "project-uuid",
-  "currentTask": "export-preview",
-  "meta": { "progress": 0.4 }
+  "action": "heartbeat",
+  "props": { "status": "idle" },
+  "token": "rc_…"
 }
 ```
 
-**Response `200`**
+| Поле | Тип | Обязательно |
+|---|---|---|
+| `action` | string | да |
+| `props` | object | нет (по умолчанию `{}`) |
+| `token` | string (`rc_…`) | да — ключ машины из админки |
 
-```json
-{
-  "id": "uuid",
-  "name": "render-box-1",
-  "status": "busy",
-  "online": true,
-  "currentProjectId": "project-uuid",
-  "currentTask": "export-preview",
-  "lastHeartbeatAt": "2026-08-10T12:00:30.000Z",
-  "meta": { "progress": 0.4 }
-}
-```
+### Порядок проверок
 
-**Errors**
+1. **Auth** — `token` есть и валиден (иначе `401`, props не смотрятся).
+2. **Props valid** — `action` известен, `props` проходит схему этого action (иначе `400`).
+3. **Execute** — вызывается функция action, результат возвращается как JSON.
+
+Ошибки:
 
 | Status | Meaning |
 |---|---|
-| `400` | Невалидный JSON / поля |
-| `401` | Неверный токен |
-| `404` | Компьютер отозван или `currentProjectId` не найден |
-
-Сброс проекта:
-
-```json
-{ "status": "idle", "currentProjectId": null, "currentTask": null }
-```
+| `400` | Невалидный JSON / неизвестный action / неверные props |
+| `401` | Нет / неверный / отозванный токен |
+| `403` | Аккаунт создателя неактивен или операция запрещена |
+| `404` | Компьютер, проект или файл не найден |
+| `409` | Конфликт (дубликат имени, нет объекта в R2, ETag) |
+| `503` | Хранилище не настроено / сбой R2 |
 
 ---
 
-## Файлы проектов (Storage API)
+## Actions
 
-Тот же Bearer `rc_…` принимается на `/api/storage/v1/*`. Полная спецификация: [STORAGE_API.md](./STORAGE_API.md).
+Полные схемы props, примеры и ответы — в админке.
 
-Краткий workflow:
+### Компьютер
 
-### Upload
+| action | Назначение |
+|---|---|
+| `me` | Идентичность и состояние |
+| `heartbeat` | Присутствие; опционально `status`, `currentProjectId`, `currentTask`, `meta` |
 
-1. `POST /api/storage/v1/presign` — `{ "projectId", "folderPath", "name", "contentType", "method": "PUT", ... }`
-2. `PUT` байты на `uploadUrl` из ответа (напрямую в R2)
-3. `POST /api/storage/v1/notify` — подтверждение; запись попадает в кэш и journal
+**online** = `lastHeartbeatAt` не старше **90 секунд** и токен не отозван.  
+Рекомендация: `heartbeat` каждые **20–30 секунд**.
 
-### Download
+### Файлы
 
-1. `POST /api/storage/v1/presign` — `{ "method": "GET", "s3Key": "…" }` (или через tree)
-2. `GET` по signed URL
+| action | Назначение |
+|---|---|
+| `capabilities` | Флаги возможностей |
+| `projects` | Каталог клиентов и проектов |
+| `tree` | Полное дерево + `cursor` |
+| `delta` | Инкремент после `since` |
+| `presign` | Signed PUT/GET URL (байты напрямую в R2) |
+| `notify` | Подтверждение после PUT |
+| `mkdir` | Создать папку |
+| `rename` | Переименовать / переместить |
+| `deleteObject` | Удалить файл/папку |
+| `reindex` | Полный LIST R2 vs кэш |
+| `getSidecar` | Читать folder-state / options |
+| `putSidecar` | Писать sidecar (`kind`: folder-state \| options \| raw) |
 
-### Дерево / delta / папки
-
-| Method | Path | Назначение |
-|---|---|---|
-| `GET` | `/api/storage/v1/projects` | Каталог клиентов и проектов |
-| `GET` | `/api/storage/v1/tree?projectId=` | Полное дерево + cursor |
-| `GET` | `/api/storage/v1/delta?projectId=&since=` | Инкремент |
-| `POST` | `/api/storage/v1/mkdir` | Создать папку |
-| `POST` | `/api/storage/v1/rename` | Переименовать / переместить |
-| `DELETE` | `/api/storage/v1/object` | Удалить файл/папку |
-| `GET`/`PUT` | `/api/storage/v1/sidecars` | folder-state / options |
+Токен компьютера видит все проекты (как ADMIN).
 
 ---
 
@@ -201,47 +122,18 @@ Content-Type: application/json
 ```text
 1. Сохранить rc_… токен в конфиге агента
 2. Каждые 20–30s:
-     POST /api/remote/v1/heartbeat  { status: "idle" }   // или busy + project
-3. При получении работы (от планировщика / локально):
-     POST /heartbeat { status: "busy", currentProjectId, currentTask }
-     GET  /api/storage/v1/tree?projectId=…
-     // download IN / upload OUT через presign → PUT/GET → notify
-     POST /heartbeat { status: "idle", currentProjectId: null, currentTask: null }
+     POST /api/v1  { action: "heartbeat", props: { status: "idle" }, token }
+3. При получении работы:
+     { action: "heartbeat", props: { status: "busy", currentProjectId, currentTask }, token }
+     { action: "tree", props: { projectId }, token }
+     // download IN / upload OUT: presign → PUT/GET на url → notify
+     { action: "heartbeat", props: { status: "idle", currentProjectId: null, currentTask: null }, token }
 4. При сбое:
-     POST /heartbeat { status: "error", currentTask: "reason…" }
-```
-
-Пример заголовка для всех вызовов:
-
-```http
-Authorization: Bearer rc_xxxxxxxx
+     { action: "heartbeat", props: { status: "error", currentTask: "reason…" }, token }
 ```
 
 ---
 
 ## Admin list shape (для UI / мониторинга)
 
-`GET /api/admin/computers` (session admin):
-
-```json
-{
-  "computers": [
-    {
-      "id": "uuid",
-      "name": "render-box-1",
-      "description": "",
-      "status": "busy",
-      "online": true,
-      "currentProjectId": "uuid",
-      "currentProjectName": "Client / Spot",
-      "currentTask": "export-preview",
-      "lastHeartbeatAt": "2026-08-10T12:00:30.000Z",
-      "meta": {},
-      "createdBy": "admin-user-uuid",
-      "createdAt": "2026-08-10T10:00:00.000Z"
-    }
-  ]
-}
-```
-
-Поле `online` вычисляется на сервере по правилу 90 секунд.
+`GET /api/admin/computers` (session admin) без изменений. Поле `online` вычисляется на сервере по правилу 90 секунд.

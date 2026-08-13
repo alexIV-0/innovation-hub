@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/admin/shared/empty-state"
 import { LoadingBlock } from "@/components/admin/shared/loading-block"
 import { ComputerRow } from "./computer-row"
 import { ConnectComputerDialog } from "./connect-computer-dialog"
+import { RemoteAccessSubnav } from "./remote-access-subnav"
 import { RotateTokenDialog } from "./rotate-token-dialog"
 import type { RemoteComputerDto } from "./types"
 
@@ -84,13 +85,16 @@ export function RemoteAccessContent() {
         title={accountT.adminRemoteTitle}
         description={accountT.adminRemoteDesc}
         actions={
-          <Button
-            onClick={() => setConnectOpen(true)}
-            className="gap-2 rounded-full"
-          >
-            <Plus className="h-4 w-4" />
-            {accountT.adminRemoteConnect}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <RemoteAccessSubnav />
+            <Button
+              onClick={() => setConnectOpen(true)}
+              className="gap-2 rounded-full"
+            >
+              <Plus className="h-4 w-4" />
+              {accountT.adminRemoteConnect}
+            </Button>
+          </div>
         }
       />
 

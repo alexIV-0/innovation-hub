@@ -3,6 +3,7 @@ import { requireUserApi } from "@/lib/admin-auth"
 import { createProjectSchema } from "@/lib/project-schemas"
 import { writeProjectMeta } from "@/lib/project-storage"
 import { countUnreadForProjects } from "@/lib/repositories/project-chat"
+import { countProjectMembers } from "@/lib/repositories/project-member-counts"
 import {
   createProject,
   deleteProject,
@@ -75,6 +76,7 @@ function serializeProject(
   },
   extra: {
     unreadCount: number
+    memberCount: number
     sharedWithMe: boolean
     memberRole: "viewer" | "editor" | null
     deletedAt: string | null
@@ -99,6 +101,8 @@ function serializeProject(
     createdAt: toIso(p.createdAt) ?? new Date(0).toISOString(),
     updatedAt: toIso(p.updatedAt) ?? new Date(0).toISOString(),
     unreadCount: extra.unreadCount,
+    // Скольким людям расшарен проект — число в углу карточки.
+    memberCount: extra.memberCount,
     yougileChatId: p.yougileChatId,
   }
 }
@@ -170,10 +174,20 @@ export async function GET(request: NextRequest) {
       unread = Object.fromEntries(allIds.map((id) => [id, 0]))
     }
 
+    let memberCounts: Record<string, number> = {}
+    try {
+      memberCounts = await countProjectMembers(allIds)
+    } catch (error) {
+      console.error("[projects] member counts failed", error)
+      // Non-fatal: badges can be zero.
+      memberCounts = {}
+    }
+
     const projects = [
       ...owned.map((p) =>
         serializeProject(p, {
           unreadCount: unread[p.id] ?? 0,
+          memberCount: memberCounts[p.id] ?? 0,
           sharedWithMe: false,
           memberRole: null,
           deletedAt: toIso(p.deletedAt),
@@ -182,6 +196,7 @@ export async function GET(request: NextRequest) {
       ...shared.map((p) =>
         serializeProject(p, {
           unreadCount: unread[p.id] ?? 0,
+          memberCount: memberCounts[p.id] ?? 0,
           sharedWithMe: true,
           memberRole:
             p.memberRole === "viewer" || p.memberRole === "editor"
@@ -193,6 +208,7 @@ export async function GET(request: NextRequest) {
       ...deleted.map((p) =>
         serializeProject(p, {
           unreadCount: 0,
+          memberCount: 0,
           sharedWithMe: false,
           memberRole: null,
           deletedAt: toIso(p.deletedAt),
@@ -288,6 +304,7 @@ export async function POST(request: NextRequest) {
       {
         project: serializeProject(project, {
           unreadCount: 0,
+          memberCount: 0,
           sharedWithMe: false,
           memberRole: null,
           deletedAt: toIso(project.deletedAt),

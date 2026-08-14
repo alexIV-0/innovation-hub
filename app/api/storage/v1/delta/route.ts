@@ -6,6 +6,7 @@ import {
 import { getDelta } from "@/lib/storage/changes"
 import { serializeStorageChange } from "@/lib/storage/delta-format"
 import { loadDisplayContext } from "@/lib/storage/display-path"
+import { readSettingsRevision } from "@/lib/repositories/automation-settings"
 
 export const runtime = "nodejs"
 
@@ -28,13 +29,19 @@ export async function GET(request: NextRequest) {
   const access = await requireProjectAccess(auth, projectId)
   if (access instanceof NextResponse) return access
 
-  const [delta, display] = await Promise.all([
+  const [delta, display, settingsRevision] = await Promise.all([
     getDelta({ projectId: access.projectId, since }),
     loadDisplayContext(access.projectId),
+    readSettingsRevision(),
   ])
   return NextResponse.json({
     changes: delta.changes.map((c) => serializeStorageChange(c, display)),
     cursor: delta.cursor,
     truncated: delta.truncated,
+    // Ревизия общих словарей (docs/SETTINGS_SYNC.md §7). Едет здесь, а не
+    // отдельным поллингом: демон десктопа дёргает delta каждые 3 секунды, и
+    // сравнение счётчика — это ноль дополнительных запросов. Счётчик глобальный,
+    // от проекта не зависит.
+    settingsRevision,
   })
 }

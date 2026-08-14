@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "i18n:check": "node scripts/i18n-check.mjs",
     "db:init": "node scripts/db-init.mjs",
     "db:reset": "node scripts/db-init.mjs --reset",
     "db:migrate": "node scripts/db-migrate.mjs",

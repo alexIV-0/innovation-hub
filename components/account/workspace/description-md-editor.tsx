@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { FileText, Loader2, Pencil, X } from "lucide-react"
 import { toast } from "sonner"
 
+import { useI18n } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
 import { useWorkspace } from "./workspace-context"
 
@@ -18,6 +19,7 @@ import { useWorkspace } from "./workspace-context"
  * виде: он читаемый, а поведение честное — видно ровно то, что лежит в файле.
  */
 export function DescriptionMdEditor({ projectId }: { projectId: string }) {
+  const { t } = useI18n()
   const { source } = useWorkspace()
   const buildUrl = source.descriptionMdUrl
 
@@ -63,14 +65,14 @@ export function DescriptionMdEditor({ projectId }: { projectId: string }) {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        toast.error(data?.message ?? "Не удалось сохранить описание.")
+        toast.error(data?.message ?? t.descSaveError)
         return
       }
       setBody(draft)
       setEditing(false)
-      toast.success("Описание сохранено в options/description.md")
+      toast.success(t.descSaved)
     } catch {
-      toast.error("Сервер недоступен.")
+      toast.error(t.descServerUnavailable)
     } finally {
       setSaving(false)
     }
@@ -92,7 +94,7 @@ export function DescriptionMdEditor({ projectId }: { projectId: string }) {
               className="flex items-center gap-1.5 rounded-[9px] border border-white/10 px-3 py-1.5 text-[12.5px] text-ws-3 hover:bg-white/5 disabled:opacity-60"
             >
               <X className="h-3.5 w-3.5" />
-              Отмена
+              {t.cancel}
             </button>
             <button
               type="button"
@@ -101,7 +103,7 @@ export function DescriptionMdEditor({ projectId }: { projectId: string }) {
               className="flex items-center gap-1.5 rounded-[9px] bg-ws-action px-3.5 py-1.5 text-[12.5px] text-white hover:bg-ws-action-hover disabled:opacity-60"
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              Сохранить
+              {t.saveChanges}
             </button>
           </div>
         ) : (
@@ -115,7 +117,7 @@ export function DescriptionMdEditor({ projectId }: { projectId: string }) {
             className="flex items-center gap-1.5 rounded-[9px] border border-white/10 px-3 py-1.5 text-[12.5px] text-ws-2 hover:bg-white/5 disabled:opacity-60"
           >
             <Pencil className="h-3.5 w-3.5" />
-            {body ? "Редактировать" : "Создать описание"}
+            {body ? t.descEdit : t.descCreate}
           </button>
         )}
       </div>
@@ -130,7 +132,7 @@ export function DescriptionMdEditor({ projectId }: { projectId: string }) {
           onChange={(e) => setDraft(e.target.value)}
           rows={14}
           spellCheck={false}
-          placeholder={"# Заголовок\n\nТекст, **жирный**, таблицы, ссылки на картинки."}
+          placeholder={t.descPlaceholder}
           className={cn(
             "mt-3 w-full resize-y rounded-[10px] border border-white/10 bg-ws-control p-3",
             "font-mono text-[13px] leading-relaxed text-ws-2 outline-none focus:border-ws-select",
@@ -142,7 +144,7 @@ export function DescriptionMdEditor({ projectId }: { projectId: string }) {
         </pre>
       ) : (
         <p className="mt-3 text-[13px] text-ws-4">
-          Описания ещё нет. Оно сохранится в папку options проекта.
+          {t.descMdEmpty}
         </p>
       )}
     </section>

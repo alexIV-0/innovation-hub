@@ -70,6 +70,8 @@ export type PipelineProject = ProjectRecord & {
    * появится сразу.
    */
   unreadCount: number
+  /** Скольким людям расшарен проект, не считая владельца. */
+  memberCount: number
 }
 
 /**
@@ -108,7 +110,17 @@ export async function listPipelineProjectsByOwner(
                         WHERE a.project_id = p.id
                           AND a.sender_type = 'team'
                      ), '-infinity'::timestamptz)
-            ), 0) AS "unreadCount"
+            ), 0) AS "unreadCount",
+            -- Расшаренность показываем числом, но НЕ раскрываем, кому именно:
+            -- проект принадлежит владельцу, а с кем он им делится — не вопрос
+            -- конвейера. Владельца из счёта исключаем, чтобы число означало
+            -- «скольким расшарили» (см. countProjectMembers).
+            COALESCE((
+              SELECT COUNT(*)::int
+                FROM project_members pm
+               WHERE pm.project_id = p.id
+                 AND pm.user_id <> p.user_id
+            ), 0) AS "memberCount"
        FROM projects p
        JOIN users u ON u.id = p.user_id
       WHERE p.user_id = $1

@@ -18,6 +18,7 @@ import {
   MACHINE_API_ERRORS,
   MACHINE_API_PATH,
   type ActionDoc,
+  type ActionGroup,
   type LocaleText,
 } from "@/lib/machine-api/catalog"
 import { cn } from "@/lib/utils"
@@ -174,7 +175,7 @@ function ActionCard({
 export function RemoteApiDocs() {
   const { lang, t: accountT } = useI18n()
   const t = useAdminI18n()
-  const [group, setGroup] = useState<"all" | "computer" | "storage">("all")
+  const [group, setGroup] = useState<"all" | ActionGroup>("all")
 
   const envelope = useMemo(
     () =>
@@ -292,6 +293,8 @@ export function RemoteApiDocs() {
                 ["all", t.all],
                 ["computer", t.remoteApiGroupComputer],
                 ["storage", t.remoteApiGroupStorage],
+                ["settings", t.remoteApiGroupSettings],
+                ["queue", t.remoteApiGroupQueue],
               ] as const
             ).map(([id, label]) => (
               <button

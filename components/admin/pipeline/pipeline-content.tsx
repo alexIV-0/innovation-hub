@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { ClipboardPanel } from "@/components/account/workspace/clipboard-panel"
 import { WorkspaceContextMenu } from "@/components/account/workspace/context-menu"
 import { FullMode } from "@/components/account/workspace/full-mode"
@@ -37,6 +38,8 @@ function PipelineLayout({
   onSelectUser: (userId: string) => void
   onToggleUser: (userId: string, enabled: boolean) => void
 }) {
+  const t = useAdminI18n()
+
   return (
     // Колонки сверху, полоса запуска снизу на всю ширину страницы — она
     // управляет слежением по всем пользователям, а не тем, что выбрано в
@@ -59,7 +62,7 @@ function PipelineLayout({
       {/* Три колонки на телефоне не помещаются, а урезанный вид админке не
           нужен: обработкой управляют с рабочего места. */}
       <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-[14px] text-ws-4 lg:hidden">
-        Конвейер доступен на экране шириной от 1024 пикселей.
+        {t.pipelineNarrowScreen}
       </div>
 
       <PipelineRunBar />
@@ -73,6 +76,7 @@ function PipelineLayout({
 }
 
 export function PipelineContent() {
+  const t = useAdminI18n()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -92,7 +96,7 @@ export function PipelineContent() {
       try {
         const res = await fetch("/api/admin/pipeline/users")
         if (!res.ok) {
-          toast.error("Не удалось загрузить список пользователей.")
+          toast.error(t.pipelineUsersLoadError)
           return
         }
         const data = await res.json()

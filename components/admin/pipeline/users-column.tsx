@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { Loader2, Search, UserX } from "lucide-react"
 import { toast } from "sonner"
 
+import { tf, useAdminI18n } from "@/components/admin/admin-dict"
 import { ResizeGrip } from "@/components/account/resize-grip"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { cn } from "@/lib/utils"
@@ -43,6 +44,7 @@ export function UsersColumn({
   onSelectUser,
   onToggle,
 }: Props) {
+  const t = useAdminI18n()
   const [query, setQuery] = useState("")
   const [pending, setPending] = useState<string | null>(null)
 
@@ -79,12 +81,12 @@ export function UsersColumn({
       })
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        toast.error(data?.message ?? "Не удалось изменить состояние.")
+        toast.error(data?.message ?? t.pipelineUserToggleError)
         return
       }
       onToggle(user.id, !user.automationEnabled)
     } catch {
-      toast.error("Сервер недоступен.")
+      toast.error(t.pipelineServerUnavailable)
     } finally {
       setPending(null)
     }
@@ -100,7 +102,7 @@ export function UsersColumn({
           <div className="flex min-w-0 items-center gap-2">
             <span className="h-0.5 w-4 shrink-0 rounded bg-ws-accent" />
             <span className="truncate text-[14px] font-semibold uppercase tracking-[1.6px] text-ws-accent">
-              Пользователи
+              {t.pipelineUsers}
             </span>
           </div>
           <span className="shrink-0 text-[12px] text-ws-4">
@@ -116,7 +118,7 @@ export function UsersColumn({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поиск по имени или почте"
+            placeholder={t.pipelineUserSearch}
             className="h-[38px] w-full rounded-[9px] border border-white/10 bg-ws-control pl-[34px] pr-3 text-[13px] text-ws-1 outline-none placeholder:text-ws-4 focus:border-ws-select"
           />
         </div>
@@ -129,7 +131,7 @@ export function UsersColumn({
           </div>
         ) : visible.length === 0 ? (
           <p className="px-3 py-8 text-center text-[13px] text-ws-4">
-            Ничего не найдено
+            {t.pipelineNothingFound}
           </p>
         ) : (
           <ul className="pt-1">
@@ -153,7 +155,7 @@ export function UsersColumn({
                       type="button"
                       role="switch"
                       aria-checked={user.automationEnabled}
-                      aria-label={`Слежение за проектами ${user.email}`}
+                      aria-label={tf(t.pipelineWatchAria, { email: user.email })}
                       disabled={busy || !user.isActive}
                       onClick={() => void toggle(user)}
                       className={cn(
@@ -186,7 +188,7 @@ export function UsersColumn({
                         {user.isActive ? null : (
                           <UserX
                             className="h-3.5 w-3.5 shrink-0 text-ws-5"
-                            aria-label="Аккаунт заблокирован"
+                            aria-label={t.pipelineSuspendedAria}
                           />
                         )}
                       </span>
@@ -197,11 +199,16 @@ export function UsersColumn({
                       ) : null}
                       <span className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-ws-4">
                         <span>
-                          {user.watchedCount} из {user.projectCount}
+                          {tf(t.pipelineWatchedOf, {
+                            watched: user.watchedCount,
+                            total: user.projectCount,
+                          })}
                         </span>
                         {user.archivedCount > 0 ? (
                           <span className="text-ws-5">
-                            архив {user.archivedCount}
+                            {tf(t.pipelineArchived, {
+                              count: user.archivedCount,
+                            })}
                           </span>
                         ) : null}
                       </span>
@@ -217,7 +224,7 @@ export function UsersColumn({
       <ResizeGrip
         orientation="vertical"
         side="right"
-        label="Пользователи"
+        label={t.pipelineUsers}
         dragging={dragging}
         onPointerDown={onPointerDown}
         onKeyDown={onKeyDown}

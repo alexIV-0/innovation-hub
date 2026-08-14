@@ -129,5 +129,6 @@ export function mapProject(raw: Record<string, unknown>): Project {
     createdAt: String(raw.createdAt ?? ""),
     updatedAt: String(raw.updatedAt ?? ""),
     unreadCount: Number(raw.unreadCount ?? 0),
+    memberCount: Number(raw.memberCount ?? 0),
   }
 }

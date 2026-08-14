@@ -44,6 +44,16 @@ export type ExposedOptionDto = {
   description: string | null
   type: "boolean" | "number" | "string"
   value: string | number | boolean
+  /**
+   * Тип контрола и его границы — как их задал автор графа в программе.
+   * Пока панель рисует всё generic-полем и использует только границы; полный
+   * набор контролов — docs/PROJECT_OPTIONS_PANEL.md §5.
+   */
+  controlType: string | null
+  minValue: number | null
+  maxValue: number | null
+  step: number | null
+  options: string[] | null
 }
 
 export type ProjectDriveDto = {
@@ -174,7 +184,14 @@ export function ProjectAutomationPanel({ projectId, options: initialOptions }: P
                   <Input
                     value={typeof value === "string" ? value : ""}
                     disabled={saving}
+                    // Границы из графа: сервер всё равно зажмёт значение, но
+                    // подсказать их в поле дешевле, чем объяснять потом,
+                    // почему сохранилось не то, что ввели.
+                    type={option.type === "number" ? "number" : undefined}
                     inputMode={option.type === "number" ? "decimal" : "text"}
+                    min={option.minValue ?? undefined}
+                    max={option.maxValue ?? undefined}
+                    step={option.step ?? undefined}
                     className="sm:w-56"
                     onChange={(e) =>
                       setDraft((prev) => ({

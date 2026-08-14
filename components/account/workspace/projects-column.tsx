@@ -91,7 +91,7 @@ export function ProjectsColumn() {
               ? sectionEmptyText(projectTab, t)
               : /* В админке проекты не создают — предлагать «создайте первый»
                    неуместно, тут это просто отсутствие проектов у пользователя. */
-                "У пользователя нет проектов"}
+                t.userHasNoProjects}
           </p>
         ) : (
           <div className="pt-1">

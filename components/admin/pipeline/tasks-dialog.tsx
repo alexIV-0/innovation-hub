@@ -1,17 +1,27 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { Loader2, RefreshCw, X } from "lucide-react"
+import { Fragment, useCallback, useEffect, useState } from "react"
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  Loader2,
+  RefreshCw,
+  X,
+} from "lucide-react"
 
+import { tf, useAdminI18n, type AdminDict } from "@/components/admin/admin-dict"
+import { useI18n, type Lang } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
 import type { PipelineTask, TaskCounts, TaskStatus } from "@/lib/pipeline/tasks"
+import { StepList, StepStrip, stepProgress } from "./task-steps"
 
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  queued: "в очереди",
-  claimed: "взята",
-  running: "в работе",
-  done: "готово",
-  failed: "ошибка",
+const STATUS_KEY: Record<TaskStatus, keyof AdminDict> = {
+  queued: "taskQueued",
+  claimed: "taskClaimed",
+  running: "taskRunning",
+  done: "taskDone",
+  failed: "taskFailed",
 }
 
 const STATUS_CLASS: Record<TaskStatus, string> = {
@@ -22,9 +32,9 @@ const STATUS_CLASS: Record<TaskStatus, string> = {
   failed: "border-destructive/40 bg-destructive/10 text-destructive",
 }
 
-function fmtTime(iso: string | null): string {
+function fmtTime(iso: string | null, lang: Lang): string {
   if (!iso) return "—"
-  return new Date(iso).toLocaleString("ru-RU", {
+  return new Date(iso).toLocaleString(lang === "ru" ? "ru-RU" : "en-GB", {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -39,9 +49,14 @@ function fmtTime(iso: string | null): string {
  * конвейером, уходить с страницы для этого не нужно.
  */
 export function TasksDialog({ onClose }: { onClose: () => void }) {
+  const t = useAdminI18n()
+  const { lang } = useI18n()
   const [tasks, setTasks] = useState<PipelineTask[]>([])
   const [counts, setCounts] = useState<TaskCounts | null>(null)
   const [loading, setLoading] = useState(true)
+  /** Раскрытые задачи. Свёрнутая не держит список шагов в DOM — тот же приём,
+   *  что unmountOnExit у аккордеона лог-окна. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,23 +90,29 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
     >
       <div
         role="dialog"
-        aria-label="Очередь задач"
+        aria-label={t.pipelineQueueTitle}
         className="flex max-h-[80vh] w-full max-w-[1000px] flex-col overflow-hidden rounded-xl border border-white/10 bg-ws-panel shadow-ws-menu"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.07] px-5 py-3.5">
-          <h2 className="text-[16px] font-semibold text-ws-1">Очередь задач</h2>
+          <h2 className="text-[16px] font-semibold text-ws-1">
+            {t.pipelineQueueTitle}
+          </h2>
           {counts ? (
             <span className="text-[12.5px] text-ws-4">
-              всего {counts.total} · в очереди {counts.queued} · в работе{" "}
-              {counts.claimed + counts.running} · готово {counts.done} · ошибок{" "}
-              {counts.failed}
+              {tf(t.pipelineQueueCounts, {
+                total: counts.total,
+                queued: counts.queued,
+                inFlight: counts.claimed + counts.running,
+                done: counts.done,
+                failed: counts.failed,
+              })}
             </span>
           ) : null}
           <button
             type="button"
             onClick={() => void load()}
-            title="Обновить"
+            title={t.refresh}
             className="ml-auto flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
           >
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
@@ -99,7 +120,7 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Закрыть"
+            aria-label={t.close}
             className="flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
           >
             <X className="h-4 w-4" />
@@ -113,29 +134,63 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
             </div>
           ) : tasks.length === 0 ? (
             <p className="px-5 py-12 text-center text-[13.5px] text-ws-4">
-              Задач пока нет. Включите слежение — задачи появятся, когда в папке
-              IN отслеживаемого проекта окажется подходящий файл.
+              {t.pipelineQueueEmpty}
             </p>
           ) : (
             <table className="w-full border-collapse text-[13px]">
               <thead className="sticky top-0 bg-ws-panel">
                 <tr className="text-left text-[11.5px] uppercase tracking-[1px] text-ws-4">
-                  <th className="px-5 py-2.5 font-medium">Файл</th>
-                  <th className="px-3 py-2.5 font-medium">Проект</th>
-                  <th className="px-3 py-2.5 font-medium">Шагов</th>
-                  <th className="px-3 py-2.5 font-medium">Машина</th>
-                  <th className="px-3 py-2.5 font-medium">Состояние</th>
-                  <th className="px-5 py-2.5 font-medium">Создана</th>
+                  <th className="px-5 py-2.5 font-medium">{t.pipelineColFile}</th>
+                  <th className="px-3 py-2.5 font-medium">{t.pipelineColProject}</th>
+                  <th className="px-3 py-2.5 font-medium">{t.pipelineColSteps}</th>
+                  <th className="px-3 py-2.5 font-medium">{t.pipelineColMachine}</th>
+                  <th className="px-3 py-2.5 font-medium">{t.pipelineColState}</th>
+                  <th className="px-5 py-2.5 font-medium">{t.pipelineColCreated}</th>
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task) => (
+                {tasks.map((task) => {
+                  const isOpen = expanded.has(task.id)
+                  const hasSteps = task.steps.length > 0
+                  const pct = stepProgress(task.steps)
+                  return (
+                  <Fragment key={task.id}>
                   <tr
-                    key={task.id}
-                    className="border-t border-white/[0.06] align-top"
+                    className={cn(
+                      "border-t border-white/[0.06] align-top",
+                      hasSteps && "cursor-pointer hover:bg-white/[0.02]",
+                    )}
+                    onClick={() => {
+                      if (!hasSteps) return
+                      setExpanded((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(task.id)) next.delete(task.id)
+                        else next.add(task.id)
+                        return next
+                      })
+                    }}
                   >
                     <td className="max-w-[260px] px-5 py-2.5 text-ws-1">
-                      <span className="block truncate">{task.sourceName}</span>
+                      <span className="flex items-center gap-1.5">
+                        {hasSteps ? (
+                          isOpen ? (
+                            <ChevronDown className="h-3 w-3 shrink-0 text-ws-4" />
+                          ) : (
+                            <ChevronRight className="h-3 w-3 shrink-0 text-ws-4" />
+                          )
+                        ) : (
+                          <span className="w-3 shrink-0" />
+                        )}
+                        {task.isFolder ? (
+                          <span
+                            title={t.pipelineFolderSource}
+                            className="flex shrink-0 items-center"
+                          >
+                            <Folder className="h-3.5 w-3.5 text-ws-4" />
+                          </span>
+                        ) : null}
+                        <span className="truncate">{task.sourceName}</span>
+                      </span>
                       {task.error ? (
                         <span className="mt-0.5 block text-[11.5px] text-destructive">
                           {task.error}
@@ -148,8 +203,25 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
                         {task.ownerEmail}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 tabular-nums text-ws-3">
-                      {task.stepCount}
+                    <td className="px-3 py-2.5 text-ws-3">
+                      {hasSteps ? (
+                        <span className="flex flex-col gap-1">
+                          <StepStrip steps={task.steps} />
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-[3px] w-16 overflow-hidden rounded-full bg-white/[0.08]">
+                              <span
+                                className="block h-full rounded-full bg-ws-out"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </span>
+                            <span className="text-[11px] tabular-nums text-ws-5">
+                              {pct}%
+                            </span>
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="tabular-nums">{task.stepCount}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-ws-3">
                       {task.machineName ?? "—"}
@@ -161,29 +233,37 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
                           STATUS_CLASS[task.status],
                         )}
                       >
-                        {STATUS_LABEL[task.status]}
+                        {t[STATUS_KEY[task.status]]}
                       </span>
                       {task.attempts > 0 ? (
                         <span className="ml-1.5 text-[11.5px] text-ws-4">
-                          попыток {task.attempts}
+                          {tf(t.pipelineAttempts, { count: task.attempts })}
                         </span>
                       ) : null}
                     </td>
                     <td className="whitespace-nowrap px-5 py-2.5 text-ws-4">
-                      {fmtTime(task.createdAt)}
+                      {fmtTime(task.createdAt, lang)}
                     </td>
                   </tr>
-                ))}
+                  {isOpen && hasSteps ? (
+                    <tr className="border-t border-white/[0.04] bg-black/20">
+                      <td colSpan={6} className="px-5 py-1">
+                        <StepList steps={task.steps} />
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* Выдача задач машинам ещё не подключена, поэтому «Машина» пока всегда
-            пустая. Честнее сказать это здесь, чем оставлять админа гадать. */}
+        {/* Что логов не будет — стоит сказать сразу: раскрыв шаг, админ по опыту
+            лог-окна ждёт поток сообщений от плагина, а сюда они не приезжают. */}
         <p className="shrink-0 border-t border-white/[0.07] px-5 py-2.5 text-[11.5px] text-ws-5">
-          Выдача задач машинам пока не подключена — столбец «Машина» заполнится,
-          когда появятся экшены claimTask в POST /api/v1.
+          {t.pipelineQueueFootnote}
         </p>
       </div>
     </div>

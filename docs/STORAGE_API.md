@@ -402,7 +402,8 @@ Incremental changes after a cursor.
 {
   "changes": [ /* Change[] */ ],
   "cursor": 1900,
-  "truncated": false
+  "truncated": false,
+  "settingsRevision": 42
 }
 ```
 
@@ -411,6 +412,7 @@ Incremental changes after a cursor.
 | `changes` | Up to 5000 events, ordered by `seq` ascending |
 | `cursor` | Advance local cursor to this value (even if `changes` is empty) |
 | `truncated` | `true` if `since` is older than retained journal (~90 days) → discard local index and call `/tree` |
+| `settingsRevision` | Current revision of the shared dictionaries. Global, not per project — differs from your local one → call `GET /settings`. Rides along here so clients need no separate polling loop. |
 
 ---
 
@@ -650,6 +652,122 @@ Replace entire sidecar body (optional conditional write).
 
 **Response `200`:** `{ "ok": true, "etag": "…" }`  
 **`409`:** precondition failed / business rule violation
+
+---
+
+## `POST /api/storage/v1/queue`
+
+Task queue for the worker. One route with an `action` field rather than five paths —
+the daemon calls `claim` on every pulse, and keeping five near-identical files for that
+buys nothing. The same operations exist as actions on `POST /api/v1` for machines
+holding an `rc_…` token; see [REMOTE_ACCESS_API.md](./REMOTE_ACCESS_API.md).
+
+**No second token needed.** This surface accepts the `mch_…` token the client already
+uses. The machine is identified by `machineUuid` — a UUID it generates once on first
+launch and keeps in its own settings; the site registers the `remote_computers` row
+itself on first contact. Hostname is only a human-readable label.
+
+| `action` | Body (beyond `machineUuid` / `hostname`) | Response |
+|---|---|---|
+| `claim` | `capabilities?: string[]` | `{ task }` or `{ task: null }` when the queue is empty |
+| `progress` | `taskId`, `stepId`, `status: "running"\|"done"\|"error"`, `message?` | `{ ok: true }` |
+| `done` | `taskId`, `outFiles?: string[]`, `totalCost?: number` | `{ ok: true }` |
+| `failed` | `taskId`, `error` | `{ ok: true }` |
+| `release` | `taskId` | `{ ok: true }` |
+
+**Claimed task**
+
+```json
+{
+  "task": {
+    "id": "uuid",
+    "projectId": "uuid",
+    "projectName": "Project",
+    "ownerEmail": "client@example.com",
+    "payload": { "schemaVersion": 1, "processingQueue": ["mainSearch"] },
+    "attempts": 1,
+    "maxAttempts": 3,
+    "leaseExpiresAt": "2026-08-14T10:15:00.000Z"
+  }
+}
+```
+
+The lease lasts 15 minutes and is extended by every `progress` call — a long step must
+keep reporting or the task returns to the queue. `done` is idempotent by `taskId`: a
+repeat answers `ok` rather than failing. `failed` keeps the payload; `done` replaces it
+with the outcome. `release` is for an emergency stop and does not count an attempt.
+
+Visibility follows the token's role: an admin token works the shared queue, a regular
+one only its owner's projects.
+
+**Response `409`** — the task is held by another machine (its lease expired and it was
+re-claimed). **`404`** — no such task.
+
+---
+
+## `GET /api/storage/v1/settings`
+
+Shared dictionaries: file types with extensions, node/data type colors, user path
+masks. Installation-wide, **not** per project. Rationale and sync rules —
+[SETTINGS_SYNC.md](./SETTINGS_SYNC.md).
+
+**Query**
+
+| Param | Required | Notes |
+|---|---|---|
+| `domains` | no | Comma-separated subset of `fileType,nodeType,dataType,pathPattern`. Omit for all. |
+
+**Response `200`**
+
+```json
+{
+  "revision": 42,
+  "domains": {
+    "fileType": [
+      { "name": "video", "path": ["avi", "mov", "mp4"], "color": "#0a84fe", "isDefault": true }
+    ]
+  }
+}
+```
+
+`path` means different things per domain: extensions for `fileType`, mask segments
+for `pathPattern`, empty elsewhere. Entry order matters — an extension present in
+two types belongs to the upper one. Entries are keyed by `name`; there is no `id`.
+
+Program paths (ffmpeg, After Effects) and material folders are machine-local and
+have no domain here — see [PIPELINE.md](./PIPELINE.md) §5.
+
+---
+
+## `PUT /api/storage/v1/settings`
+
+**Body**
+
+```json
+{
+  "baseRevision": 42,
+  "domains": { "fileType": [ /* full domain */ ] }
+}
+```
+
+Domains absent from `domains` are left untouched — send `fileType` alone without
+knowing the rest. Extensions are lowercased and a leading dot is stripped; colors
+are normalized to `#rrggbb` / `#rrggbbaa`.
+
+**Response `200`** — same shape as `GET`, with the new `revision`.
+
+**Response `409`** — `baseRevision` is stale. The body carries the whole current
+document, so the client merges and retries without a second round trip:
+
+```json
+{
+  "error": "revision-conflict",
+  "revision": 47,
+  "domains": { /* … */ }
+}
+```
+
+Writing requires an `ADMIN` session, a machine token, or a computer token.
 
 ---
 

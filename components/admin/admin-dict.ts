@@ -30,6 +30,7 @@ export const adminDict = {
     actions: "Действия",
     confirm: "Подтвердить",
     cancel: "Отмена",
+    close: "Закрыть",
     saveChanges: "Сохранить",
     search: "Поиск…",
     loading: "Загрузка…",
@@ -223,6 +224,8 @@ export const adminDict = {
     remoteApiErrors: "Ошибки",
     remoteApiGroupComputer: "Компьютер",
     remoteApiGroupStorage: "Файлы",
+    remoteApiGroupSettings: "Настройки",
+    remoteApiGroupQueue: "Очередь",
     remoteApiProp: "Поле",
     remoteApiRequired: "Обяз.",
     remoteApiRequiredYes: "да",
@@ -320,6 +323,89 @@ export const adminDict = {
     deleteUserConfirm: "Удалить аккаунт",
     kindVideo: "видео",
     kindIdea: "идею",
+
+    // pipeline
+    pipelineNarrowScreen: "Конвейер доступен на экране шириной от 1024 пикселей.",
+    pipelineUsersLoadError: "Не удалось загрузить список пользователей.",
+    pipelineUsers: "Пользователи",
+    pipelineUserSearch: "Поиск по имени или почте",
+    pipelineNothingFound: "Ничего не найдено",
+    pipelineWatchAria: "Слежение за проектами {email}",
+    pipelineSuspendedAria: "Аккаунт заблокирован",
+    pipelineWatchedOf: "{watched} из {total}",
+    pipelineArchived: "архив {count}",
+    pipelineUserToggleError: "Не удалось изменить состояние.",
+    pipelineServerUnavailable: "Сервер недоступен",
+    pipelineStateUnavailable: "Состояние недоступно ({status})",
+    pipelineToggleError: "Не удалось изменить состояние конвейера.",
+    pipelineWatchStarted: "Слежение включено — задачи будут появляться сами.",
+    pipelineWatchStopped: "Слежение остановлено.",
+    pipelineWatching: "следим за папками IN",
+    pipelineNotWatching: "слежение остановлено",
+    pipelineStartedBy: "включил {email}",
+    pipelineLastScan: "последняя проверка {time}",
+    pipelineCounts: "в очереди {queued} · в работе {inFlight} · готово {done}",
+    pipelineCountsFailed: " · ошибок {failed}",
+    pipelineStop: "Остановить слежение",
+    pipelineStart: "Запустить слежение",
+    pipelineQueue: "Очередь",
+    pipelineSettings: "Настройки",
+
+    // pipeline · очередь задач
+    pipelineQueueTitle: "Очередь задач",
+    pipelineQueueCounts:
+      "всего {total} · в очереди {queued} · в работе {inFlight} · готово {done} · ошибок {failed}",
+    pipelineQueueEmpty:
+      "Задач пока нет. Включите слежение — задачи появятся, когда в папке IN отслеживаемого проекта окажется подходящий файл.",
+    pipelineQueueFootnote:
+      "Строку задачи можно раскрыть — видны шаги цепочки и последний отчёт по каждому. Логи шагов на сайт не приходят, только состояния.",
+    pipelineColFile: "Файл",
+    pipelineColProject: "Проект",
+    pipelineColSteps: "Шагов",
+    pipelineColMachine: "Машина",
+    pipelineColState: "Состояние",
+    pipelineColCreated: "Создана",
+    pipelineAttempts: "попыток {count}",
+    pipelineFolderSource: "Папка — обрабатывается целиком, в один результат",
+    taskQueued: "в очереди",
+    taskClaimed: "взята",
+    taskRunning: "в работе",
+    taskDone: "готово",
+    taskFailed: "ошибка",
+
+    // pipeline · общие настройки
+    settingsTitle: "Общие настройки",
+    settingsRevision: "ревизия {revision}",
+    settingsUnsaved: "есть несохранённое",
+    settingsCloseConfirm: "Закрыть без сохранения?",
+    settingsUnavailable: "Настройки недоступны ({status})",
+    settingsSaveError: "Не удалось сохранить настройки.",
+    settingsSaved: "Настройки сохранены.",
+    settingsConflict:
+      "Настройки изменились с другой стороны. Показана свежая версия — внесите правки заново.",
+    settingsAdd: "Добавить",
+    settingsNamePlaceholder: "имя",
+    settingsDefaultBadge: "базовый",
+    settingsColor: "Цвет",
+    settingsRemoveDefault: "Базовый тип удалить нельзя",
+    settingsAbsoluteHint:
+      "Абсолютный путь — на другой машине может не существовать",
+    settingsRemoveItem: "Убрать {item}",
+    settingsLocalNote:
+      "Пути к программам (ffmpeg, After Effects) и папкам материалов остаются локальными на каждой машине и здесь не показываются.",
+    settingsDomainFileType: "Типы файлов",
+    settingsDomainFileTypeHint:
+      "Расширения задают, какие файлы программа считает подходящими. Порядок важен: если расширение попало в два типа, победит верхний.",
+    settingsDomainNodeType: "Цвета нод",
+    settingsDomainNodeTypeHint:
+      "Только цвет. Список плагинов внутри типа не синхронизируется — у каждой машины свой набор установленных.",
+    settingsDomainDataType: "Типы данных",
+    settingsDomainDataTypeHint: "Цвета типов данных на портах нод.",
+    settingsDomainPathPattern: "Маски путей",
+    settingsDomainPathPatternHint:
+      "Пользовательские алиасы, доступные в путях как $имя. Сегменты могут сами содержать маски — например $localFolder.",
+    settingsPathLabelExtensions: "Расширения",
+    settingsPathLabelSegments: "Сегменты",
   },
   en: {
     all: "All",
@@ -347,6 +433,7 @@ export const adminDict = {
     actions: "Actions",
     confirm: "Confirm",
     cancel: "Cancel",
+    close: "Close",
     saveChanges: "Save changes",
     search: "Search…",
     loading: "Loading…",
@@ -531,6 +618,8 @@ export const adminDict = {
     remoteApiErrors: "Errors",
     remoteApiGroupComputer: "Computer",
     remoteApiGroupStorage: "Files",
+    remoteApiGroupSettings: "Settings",
+    remoteApiGroupQueue: "Queue",
     remoteApiProp: "Field",
     remoteApiRequired: "Req.",
     remoteApiRequiredYes: "yes",
@@ -625,20 +714,98 @@ export const adminDict = {
     deleteUserConfirm: "Delete account",
     kindVideo: "video",
     kindIdea: "idea",
+
+    // pipeline
+    pipelineNarrowScreen: "The pipeline needs a screen at least 1024 pixels wide.",
+    pipelineUsersLoadError: "Could not load the list of users.",
+    pipelineUsers: "Users",
+    pipelineUserSearch: "Search by name or email",
+    pipelineNothingFound: "Nothing found",
+    pipelineWatchAria: "Watch projects of {email}",
+    pipelineSuspendedAria: "Account suspended",
+    pipelineWatchedOf: "{watched} of {total}",
+    pipelineArchived: "archived {count}",
+    pipelineUserToggleError: "Could not change the state.",
+    pipelineServerUnavailable: "Server unavailable",
+    pipelineStateUnavailable: "State unavailable ({status})",
+    pipelineToggleError: "Could not change the pipeline state.",
+    pipelineWatchStarted: "Watching is on — tasks will appear on their own.",
+    pipelineWatchStopped: "Watching stopped.",
+    pipelineWatching: "watching IN folders",
+    pipelineNotWatching: "watching stopped",
+    pipelineStartedBy: "started by {email}",
+    pipelineLastScan: "last check {time}",
+    pipelineCounts: "queued {queued} · in progress {inFlight} · done {done}",
+    pipelineCountsFailed: " · failed {failed}",
+    pipelineStop: "Stop watching",
+    pipelineStart: "Start watching",
+    pipelineQueue: "Queue",
+    pipelineSettings: "Settings",
+
+    // pipeline · task queue
+    pipelineQueueTitle: "Task queue",
+    pipelineQueueCounts:
+      "total {total} · queued {queued} · in progress {inFlight} · done {done} · failed {failed}",
+    pipelineQueueEmpty:
+      "No tasks yet. Turn watching on — tasks appear once a matching file lands in the IN folder of a watched project.",
+    pipelineQueueFootnote:
+      "A task row expands — it shows the chain of steps and the latest report for each. Step logs never reach the site, only states.",
+    pipelineColFile: "File",
+    pipelineColProject: "Project",
+    pipelineColSteps: "Steps",
+    pipelineColMachine: "Machine",
+    pipelineColState: "State",
+    pipelineColCreated: "Created",
+    pipelineAttempts: "attempts {count}",
+    pipelineFolderSource: "Folder — processed as a whole, into one result",
+    taskQueued: "queued",
+    taskClaimed: "claimed",
+    taskRunning: "running",
+    taskDone: "done",
+    taskFailed: "failed",
+
+    // pipeline · shared settings
+    settingsTitle: "Shared settings",
+    settingsRevision: "revision {revision}",
+    settingsUnsaved: "unsaved changes",
+    settingsCloseConfirm: "Close without saving?",
+    settingsUnavailable: "Settings unavailable ({status})",
+    settingsSaveError: "Could not save the settings.",
+    settingsSaved: "Settings saved.",
+    settingsConflict:
+      "The settings changed elsewhere. The fresh version is shown — reapply your edits.",
+    settingsAdd: "Add",
+    settingsNamePlaceholder: "name",
+    settingsDefaultBadge: "built-in",
+    settingsColor: "Color",
+    settingsRemoveDefault: "A built-in type cannot be removed",
+    settingsAbsoluteHint:
+      "Absolute path — it may not exist on another machine",
+    settingsRemoveItem: "Remove {item}",
+    settingsLocalNote:
+      "Paths to programs (ffmpeg, After Effects) and material folders stay local to each machine and are not shown here.",
+    settingsDomainFileType: "File types",
+    settingsDomainFileTypeHint:
+      "Extensions decide which files the program treats as eligible. Order matters: an extension listed in two types belongs to the upper one.",
+    settingsDomainNodeType: "Node colors",
+    settingsDomainNodeTypeHint:
+      "Color only. The list of plugins inside a type is not synchronized — every machine has its own installed set.",
+    settingsDomainDataType: "Data types",
+    settingsDomainDataTypeHint: "Colors of data types on node ports.",
+    settingsDomainPathPattern: "Path masks",
+    settingsDomainPathPatternHint:
+      "User aliases available in paths as $name. Segments may themselves contain masks — $localFolder, for instance.",
+    settingsPathLabelExtensions: "Extensions",
+    settingsPathLabelSegments: "Segments",
   },
 } as const
 
 export type AdminDict = (typeof adminDict)[Lang]
 export type AdminDictKey = keyof AdminDict
 
-export function tf(
-  template: string,
-  vars: Record<string, string | number>,
-): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) =>
-    String(vars[key] ?? ""),
-  )
-}
+// Реализация — в components/account/i18n.tsx: она нужна обеим зонам, а account
+// не должен зависеть от admin. Реэкспорт сохраняет прежние импорты отсюда.
+export { tf } from "@/components/account/i18n"
 
 export function useAdminI18n() {
   const { lang } = useI18n()

@@ -13,6 +13,22 @@ export type Lang = "ru" | "en"
 
 const STORAGE_KEY = "ffworks-lang"
 
+/**
+ * Подстановка в шаблон словаря: `tf(t.greeting, { name })` для `"Привет, {name}"`.
+ *
+ * Живёт здесь, а не в admin-dict.ts, потому что нужна обеим зонам, а
+ * `components/account` не должен зависеть от `components/admin`. Админский
+ * словарь её реэкспортирует — прежние импорты оттуда продолжают работать.
+ */
+export function tf(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) =>
+    String(vars[key] ?? ""),
+  )
+}
+
 export const dict = {
   ru: {
     langName: "RU",
@@ -258,6 +274,21 @@ export const dict = {
     paneOutSub: "Здесь готовые результаты",
     driveUnavailable: "Хранилище недоступно для этого проекта",
     driveEmpty: "Папок пока нет — загрузите файлы или дождитесь синхронизации",
+
+    // описание проекта (options/description.md)
+    descSaveError: "Не удалось сохранить описание.",
+    descSaved: "Описание сохранено в options/description.md",
+    descServerUnavailable: "Сервер недоступен.",
+    descEdit: "Редактировать",
+    descCreate: "Создать описание",
+    descPlaceholder:
+      "# Заголовок\n\nТекст, **жирный**, таблицы, ссылки на картинки.",
+    descMdEmpty: "Описания ещё нет. Оно сохранится в папку options проекта.",
+
+    // прочее в воркспейсе
+    projectSharedWith: "Проект расшарен: {users}",
+    userHasNoProjects: "У пользователя нет проектов",
+    newProjectName: "Новый проект {number}",
   },
   en: {
     langName: "EN",
@@ -503,6 +534,22 @@ export const dict = {
     paneOutSub: "Pick up finished results here",
     driveUnavailable: "Storage is unavailable for this project",
     driveEmpty: "No folders yet — upload files or wait for sync",
+
+    // project description (options/description.md)
+    descSaveError: "Could not save the description.",
+    descSaved: "Description saved to options/description.md",
+    descServerUnavailable: "Server unavailable.",
+    descEdit: "Edit",
+    descCreate: "Add description",
+    descPlaceholder:
+      "# Heading\n\nText, **bold**, tables, links to images.",
+    descMdEmpty:
+      "No description yet. It will be saved into the project’s options folder.",
+
+    // elsewhere in the workspace
+    projectSharedWith: "Shared with: {users}",
+    userHasNoProjects: "This user has no projects",
+    newProjectName: "New project {number}",
   },
 } as const
 

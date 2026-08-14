@@ -1,21 +1,31 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { AlertTriangle, ListOrdered, Loader2, Play, Square } from "lucide-react"
+import {
+  AlertTriangle,
+  ListOrdered,
+  Loader2,
+  Play,
+  Sliders,
+  Square,
+} from "lucide-react"
 import { toast } from "sonner"
 
+import { tf, useAdminI18n } from "@/components/admin/admin-dict"
+import { useI18n, type Lang } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
 import type { PipelineState } from "@/lib/pipeline/state"
 import type { TaskCounts } from "@/lib/pipeline/tasks"
 import { TasksDialog } from "./tasks-dialog"
+import { SettingsDialog } from "./settings-dialog"
 
 /** Пока слежение включено, состояние подтягиваем чаще — видно, что цикл живой. */
 const POLL_RUNNING_MS = 10_000
 const POLL_IDLE_MS = 30_000
 
-function fmtTime(iso: string | null): string {
+function fmtTime(iso: string | null, lang: Lang): string {
   if (!iso) return "—"
-  return new Date(iso).toLocaleTimeString("ru-RU", {
+  return new Date(iso).toLocaleTimeString(lang === "ru" ? "ru-RU" : "en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -34,10 +44,13 @@ function fmtTime(iso: string | null): string {
  * Стоп — прекратить и слежение, и сборку. Уже созданные задачи остаются в очереди.
  */
 export function PipelineRunBar() {
+  const t = useAdminI18n()
+  const { lang } = useI18n()
   const [state, setState] = useState<PipelineState | null>(null)
   const [counts, setCounts] = useState<TaskCounts | null>(null)
   const [busy, setBusy] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   /**
    * Ошибка опроса состояния. Показывается в строке статуса, а не тостом: опрос
    * идёт по таймеру, и тост на каждом круге был бы невыносим. Но и молчать
@@ -50,7 +63,9 @@ export function PipelineRunBar() {
       const res = await fetch("/api/admin/pipeline/state")
       if (!res.ok) {
         const data = await res.json().catch(() => null)
-        setLoadError(data?.message ?? `Состояние недоступно (${res.status})`)
+        setLoadError(
+          data?.message ?? tf(t.pipelineStateUnavailable, { status: res.status }),
+        )
         return
       }
       const data = await res.json()
@@ -58,9 +73,9 @@ export function PipelineRunBar() {
       setCounts(data.counts ?? null)
       setLoadError(null)
     } catch {
-      setLoadError("Сервер недоступен")
+      setLoadError(t.pipelineServerUnavailable)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void load()
@@ -86,18 +101,18 @@ export function PipelineRunBar() {
       })
       const data = await res.json().catch(() => null)
       if (!res.ok) {
-        toast.error(data?.message ?? "Не удалось изменить состояние конвейера.")
+        toast.error(data?.message ?? t.pipelineToggleError)
         return
       }
       setState(data.state ?? null)
       setCounts(data.counts ?? null)
       toast.success(
         data.state?.isRunning
-          ? "Слежение включено — задачи будут появляться сами."
-          : "Слежение остановлено.",
+          ? t.pipelineWatchStarted
+          : t.pipelineWatchStopped,
       )
     } catch {
-      toast.error("Сервер недоступен.")
+      toast.error(t.pipelineServerUnavailable)
     } finally {
       setBusy(false)
     }
@@ -116,19 +131,26 @@ export function PipelineRunBar() {
                 running ? "bg-ws-out" : "bg-ws-5",
               )}
             />
-            {running ? "следим за папками IN" : "слежение остановлено"}
+            {running ? t.pipelineWatching : t.pipelineNotWatching}
           </span>
           {running && state?.startedByEmail ? (
-            <span>включил {state.startedByEmail}</span>
+            <span>{tf(t.pipelineStartedBy, { email: state.startedByEmail })}</span>
           ) : null}
           {state?.scannedAt ? (
-            <span>последняя проверка {fmtTime(state.scannedAt)}</span>
+            <span>
+              {tf(t.pipelineLastScan, { time: fmtTime(state.scannedAt, lang) })}
+            </span>
           ) : null}
           {counts ? (
             <span>
-              в очереди {counts.queued} · в работе {inFlight} · готово{" "}
-              {counts.done}
-              {counts.failed > 0 ? ` · ошибок ${counts.failed}` : ""}
+              {tf(t.pipelineCounts, {
+                queued: counts.queued,
+                inFlight,
+                done: counts.done,
+              })}
+              {counts.failed > 0
+                ? tf(t.pipelineCountsFailed, { failed: counts.failed })
+                : ""}
             </span>
           ) : null}
           {state?.lastError ? (
@@ -168,7 +190,7 @@ export function PipelineRunBar() {
             ) : (
               <Play className="h-5 w-5" />
             )}
-            {running ? "Остановить слежение" : "Запустить слежение"}
+            {running ? t.pipelineStop : t.pipelineStart}
           </button>
 
           <button
@@ -177,17 +199,32 @@ export function PipelineRunBar() {
             className="flex h-[52px] shrink-0 items-center gap-2.5 rounded-[11px] border border-white/[0.14] px-5 text-[14px] text-ws-2 hover:bg-white/5"
           >
             <ListOrdered className="h-[18px] w-[18px]" />
-            Очередь
+            {t.pipelineQueue}
             {counts && counts.total > 0 ? (
               <span className="rounded-full bg-white/10 px-2 py-[2px] text-[12px] tabular-nums text-ws-1">
                 {counts.total}
               </span>
             ) : null}
           </button>
+
+          {/* Словари общие на всю установку, а не на проект или пользователя,
+              поэтому кнопка стоит здесь — рядом с очередью, которая тоже
+              относится ко всей установке. */}
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="flex h-[52px] shrink-0 items-center gap-2.5 rounded-[11px] border border-white/[0.14] px-5 text-[14px] text-ws-2 hover:bg-white/5"
+          >
+            <Sliders className="h-[18px] w-[18px]" />
+            {t.pipelineSettings}
+          </button>
         </div>
       </div>
 
       {queueOpen ? <TasksDialog onClose={() => setQueueOpen(false)} /> : null}
+      {settingsOpen ? (
+        <SettingsDialog onClose={() => setSettingsOpen(false)} />
+      ) : null}
     </>
   )
 }

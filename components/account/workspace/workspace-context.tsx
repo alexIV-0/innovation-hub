@@ -12,7 +12,12 @@ import {
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
-import { useI18n, type Dictionary, type Lang } from "@/components/account/i18n"
+import {
+  tf,
+  useI18n,
+  type Dictionary,
+  type Lang,
+} from "@/components/account/i18n"
 import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import {
   findChildByName,
@@ -669,10 +674,7 @@ export function WorkspaceProvider({
     setPrompt({
       title: t.newProject,
       label: t.projectNamePrompt,
-      initial:
-        lang === "ru"
-          ? `Новый проект ${projects.length + 1}`
-          : `New project ${projects.length + 1}`,
+      initial: tf(t.newProjectName, { number: projects.length + 1 }),
       confirmLabel: t.create,
       onSubmit: (name) => {
         void (async () => {

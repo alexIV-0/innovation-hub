@@ -1,3 +1,4 @@
+import { reapExpiredLeases } from "@/lib/pipeline/queue"
 import { collectTasks } from "@/lib/pipeline/scan"
 import { isPipelineRunning, recordTickResult } from "@/lib/pipeline/state"
 
@@ -32,6 +33,16 @@ export function startPipelineRunner(): void {
     if (ticking) return
     ticking = true
     try {
+      // Протухшие аренды собираем ДО проверки флага и независимо от него:
+      // машина могла умереть с задачей в руках уже после того, как слежение
+      // выключили, и тогда задача осталась бы взятой навсегда.
+      const reaped = await reapExpiredLeases()
+      if (reaped > 0) {
+        console.log(
+          `[pipeline-runner] возвращено задач по протухшей аренде: ${reaped}`,
+        )
+      }
+
       if (!(await isPipelineRunning())) return
 
       const result = await collectTasks()

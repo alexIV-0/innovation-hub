@@ -9,16 +9,42 @@ import { query } from "@/lib/db"
 
 export type TaskStatus = "queued" | "claimed" | "running" | "done" | "failed"
 
+/**
+ * Состояние шага. Порт `StepInfo['status']` из лог-окна десктопа: `queued` —
+ * шаг есть в цепочке, но машина о нём ещё не отчитывалась.
+ */
+export type TaskStepStatus = "queued" | "running" | "done" | "error"
+
+export type TaskStep = {
+  stepId: string
+  /** Человекочитаемая подпись: pluginId, если он есть, иначе id шага. */
+  label: string
+  nodeType: string | null
+  status: TaskStepStatus
+  message: string | null
+  updatedAt: string | null
+}
+
 export type PipelineTask = {
   id: string
   status: TaskStatus
   projectId: string
   projectName: string
   ownerEmail: string
-  /** Имя файла, по которому создана задача. */
+  /** Имя элемента, по которому создана задача: файла или папки. */
   sourceName: string
+  /** Папка целиком обрабатывается в один результат — это видно в списке. */
+  isFolder: boolean
   /** Сколько шагов в собранной цепочке обработки. */
   stepCount: number
+  /**
+   * Шаги в порядке processingQueue со наложенным прогрессом.
+   *
+   * Пусто у завершённых: taskDone заменяет payload итогом и удаляет строки
+   * прогресса, поэтому у done цепочку показывать уже нечем — как и в живом виде
+   * лог-окна, которое про работу «прямо сейчас».
+   */
+  steps: TaskStep[]
   /** Машина, взявшая задачу; null — ещё никто не взял. */
   machineName: string | null
   claimedAt: string | null
@@ -30,11 +56,15 @@ export type PipelineTask = {
 
 type TaskRow = Omit<
   PipelineTask,
-  "claimedAt" | "leaseExpiresAt" | "createdAt"
+  "claimedAt" | "leaseExpiresAt" | "createdAt" | "steps"
 > & {
   claimedAt: Date | null
   leaseExpiresAt: Date | null
   createdAt: Date
+  /** Порядок шагов из payload.processingQueue. */
+  stepIds: string[] | null
+  /** pluginId и nodeType по каждому шагу — из тех же ключей payload. */
+  stepMeta: Record<string, { pluginId?: string; nodeType?: string }> | null
 }
 
 export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
@@ -51,6 +81,29 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
               regexp_replace(t.source_key, '^.*/', '')
             ) AS "sourceName",
             COALESCE(jsonb_array_length(t.payload -> 'processingQueue'), 0) AS "stepCount",
+            COALESCE(
+              (t.payload -> 'description' ->> 'isFolder')::boolean, FALSE
+            ) AS "isFolder",
+            -- Порядок шагов и их метаданные достаём тем же запросом: цепочка уже
+            -- лежит в payload, второй раз ходить за ней незачем.
+            CASE
+              WHEN jsonb_typeof(t.payload -> 'processingQueue') = 'array'
+              THEN ARRAY(SELECT jsonb_array_elements_text(t.payload -> 'processingQueue'))
+            END AS "stepIds",
+            (
+              SELECT jsonb_object_agg(
+                       s.step_id,
+                       jsonb_build_object(
+                         'pluginId', t.payload -> s.step_id ->> 'pluginId',
+                         'nodeType', t.payload -> s.step_id ->> 'nodeType'
+                       )
+                     )
+                FROM jsonb_array_elements_text(
+                       CASE WHEN jsonb_typeof(t.payload -> 'processingQueue') = 'array'
+                            THEN t.payload -> 'processingQueue'
+                            ELSE '[]'::jsonb END
+                     ) AS s(step_id)
+            ) AS "stepMeta",
             c.name       AS "machineName",
             t.claimed_at AS "claimedAt",
             t.lease_expires_at AS "leaseExpiresAt",
@@ -75,12 +128,77 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
     [limit],
   )
 
-  return result.rows.map((r) => ({
-    ...r,
-    claimedAt: r.claimedAt?.toISOString() ?? null,
-    leaseExpiresAt: r.leaseExpiresAt?.toISOString() ?? null,
-    createdAt: r.createdAt.toISOString(),
-  }))
+  // Прогресс — одним запросом на всю выборку, а не по задаче: строк там столько
+  // же, сколько живых шагов, и join на каждую задачу отдельно ничего не выиграет.
+  const liveIds = result.rows
+    .filter((r) => r.status === "claimed" || r.status === "running")
+    .map((r) => r.id)
+
+  const progress = new Map<
+    string,
+    Map<string, { status: TaskStepStatus; message: string | null; updatedAt: Date }>
+  >()
+
+  if (liveIds.length > 0) {
+    const rows = await query<{
+      taskId: string
+      stepId: string
+      status: TaskStepStatus
+      message: string | null
+      updatedAt: Date
+    }>(
+      `SELECT task_id AS "taskId", step_id AS "stepId", status, message,
+              updated_at AS "updatedAt"
+         FROM task_progress
+        WHERE task_id = ANY($1)`,
+      [liveIds],
+    )
+    for (const row of rows.rows) {
+      const byStep = progress.get(row.taskId) ?? new Map()
+      byStep.set(row.stepId, {
+        status: row.status,
+        message: row.message,
+        updatedAt: row.updatedAt,
+      })
+      progress.set(row.taskId, byStep)
+    }
+  }
+
+  return result.rows.map((row) => {
+    const reported = progress.get(row.id)
+    const steps: TaskStep[] = (row.stepIds ?? []).map((stepId) => {
+      const meta = row.stepMeta?.[stepId]
+      const seen = reported?.get(stepId)
+      return {
+        stepId,
+        label: meta?.pluginId || stepId,
+        nodeType: meta?.nodeType ?? null,
+        // Шаг, о котором машина ещё не отчитывалась, — queued. Так цепочка видна
+        // целиком с самого начала, а не наполняется по мере отчётов.
+        status: seen?.status ?? "queued",
+        message: seen?.message ?? null,
+        updatedAt: seen?.updatedAt.toISOString() ?? null,
+      }
+    })
+
+    return {
+      id: row.id,
+      status: row.status,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      ownerEmail: row.ownerEmail,
+      sourceName: row.sourceName,
+      isFolder: row.isFolder,
+      stepCount: row.stepCount,
+      steps,
+      machineName: row.machineName,
+      attempts: row.attempts,
+      error: row.error,
+      claimedAt: row.claimedAt?.toISOString() ?? null,
+      leaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+    }
+  })
 }
 
 export type TaskCounts = Record<TaskStatus, number> & { total: number }

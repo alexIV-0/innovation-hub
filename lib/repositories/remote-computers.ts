@@ -135,6 +135,80 @@ export async function createRemoteComputer(input: {
   return { id, token: input.rawToken, name: input.name }
 }
 
+/**
+ * Находит машину по её UUID или заводит новую.
+ *
+ * Заводить компьютер в админке руками не нужно: машина приходит со своим UUID,
+ * сгенерированным один раз при первом запуске, и сайт создаёт строку сам
+ * (PIPELINE_BACKEND_REQUESTS.md §4).
+ *
+ * Почему UUID, а не hostname: дефолтные имена маков совпадают сплошь и рядом, и
+ * на совпадении ломается не очередь, а архив статистики — две машины начнут
+ * писать в один объект, а в объектном хранилище нет дописывания в конец, заливка
+ * перезаписывает объект целиком и строки затрутся тихо. Hostname остаётся
+ * человекочитаемой подписью в `name` и обновляется на каждом обращении: машину
+ * могли переименовать.
+ *
+ * `token_hash` у самозаписанной машины синтетический: она ходит своим `mch_`
+ * токеном, а не выданным `rc_`, и подобрать этот хеш нечем — он не хеш токена.
+ */
+export async function ensureRemoteComputerByUuid(input: {
+  machineUuid: string
+  hostname?: string | null
+  /** Владелец токена, которым пришла машина. */
+  userId: string
+}): Promise<{ id: string; name: string; created: boolean }> {
+  const uuid = input.machineUuid.trim()
+  const label = input.hostname?.trim() || `machine-${uuid.slice(0, 8)}`
+
+  const existing = await query<{ id: string; name: string }>(
+    `SELECT id, name FROM remote_computers
+      WHERE machine_uuid = $1 AND revoked_at IS NULL`,
+    [uuid],
+  )
+  if (existing.rows[0]) {
+    const row = existing.rows[0]
+    if (input.hostname?.trim() && row.name !== label) {
+      await query(`UPDATE remote_computers SET name = $2 WHERE id = $1`, [
+        row.id,
+        label,
+      ])
+    }
+    return { id: row.id, name: label, created: false }
+  }
+
+  const id = randomUUID()
+  const inserted = await query<{ id: string }>(
+    `INSERT INTO remote_computers
+       (id, name, description, token_hash, machine_uuid, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
+    [
+      id,
+      label,
+      "Заведена автоматически при первом обращении машины.",
+      `self:${uuid}`,
+      uuid,
+      input.userId,
+    ],
+  )
+
+  // Ноль строк — параллельная самозапись той же машины успела раньше.
+  if (inserted.rows.length === 0) {
+    const race = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM remote_computers
+        WHERE machine_uuid = $1 AND revoked_at IS NULL`,
+      [uuid],
+    )
+    const row = race.rows[0]
+    if (!row) throw new Error(`Failed to register machine ${uuid}.`)
+    return { id: row.id, name: row.name, created: false }
+  }
+
+  return { id, name: label, created: true }
+}
+
 export async function updateRemoteComputer(
   id: string,
   patch: { name?: string; description?: string },

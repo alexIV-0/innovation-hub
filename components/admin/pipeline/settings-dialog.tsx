@@ -1,0 +1,463 @@
+"use client"
+
+import { useCallback, useEffect, useMemo, useState } from "react"
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react"
+import { toast } from "sonner"
+
+import { tf, useAdminI18n, type AdminDict } from "@/components/admin/admin-dict"
+import { cn } from "@/lib/utils"
+import {
+  DOMAIN_LABELS,
+  SETTINGS_DOMAINS,
+  type SettingsDocument,
+  type SettingsDomain,
+  type SettingsEntry,
+} from "@/lib/settings-types"
+
+/**
+ * Общие словари: типы файлов с расширениями, цвета типов нод и типов данных,
+ * пользовательские маски путей. Контракт — docs/SETTINGS_SYNC.md.
+ *
+ * Модальное окно рядом с очередью, а не отдельный раздел меню: словари правят по
+ * ходу работы с конвейером.
+ *
+ * Настройки общие на всю установку, а не на проект: «video = mp4, mov» и цвет
+ * ноды ffmpeg — конвенция оператора, одна на всех.
+ */
+
+/**
+ * `<input type="color">` понимает только `#rrggbb`, а в словаре может лежать
+ * `#rrggbbaa`. Разбираем на пару, чтобы прозрачность не пропала молча при первом
+ * же клике по палитре.
+ */
+function splitColor(color: string | null): { rgb: string; alpha: string } {
+  if (!color) return { rgb: "#888888", alpha: "" }
+  const value = color.trim().toLowerCase()
+  return value.length === 9
+    ? { rgb: value.slice(0, 7), alpha: value.slice(7) }
+    : { rgb: value, alpha: "" }
+}
+
+/** Похоже ли на абсолютный путь: `/Volumes/…`, `D:\…`, `C:/…`. */
+function looksAbsolute(segment: string): boolean {
+  return /^([a-z]:[\\/]|[\\/])/i.test(segment.trim())
+}
+
+type DraftDomains = Record<SettingsDomain, SettingsEntry[]>
+
+function toDraft(document: SettingsDocument): DraftDomains {
+  return SETTINGS_DOMAINS.reduce((acc, domain) => {
+    acc[domain] = (document.domains[domain] ?? []).map((entry) => ({
+      ...entry,
+      path: [...entry.path],
+    }))
+    return acc
+  }, {} as DraftDomains)
+}
+
+export function SettingsDialog({ onClose }: { onClose: () => void }) {
+  const t = useAdminI18n()
+  const [revision, setRevision] = useState<number | null>(null)
+  const [draft, setDraft] = useState<DraftDomains | null>(null)
+  const [saved, setSaved] = useState<string>("")
+  const [tab, setTab] = useState<SettingsDomain>("fileType")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch("/api/admin/settings")
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setError(
+          data?.message ?? tf(t.settingsUnavailable, { status: res.status }),
+        )
+        return
+      }
+      const next = toDraft(data as SettingsDocument)
+      setRevision((data as SettingsDocument).revision)
+      setDraft(next)
+      setSaved(JSON.stringify(next))
+      setError(null)
+    } catch {
+      setError(t.pipelineServerUnavailable)
+    } finally {
+      setLoading(false)
+    }
+  }, [t])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const dirty = useMemo(
+    () => draft != null && JSON.stringify(draft) !== saved,
+    [draft, saved],
+  )
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      // Несохранённые правки не выбрасываем по случайному Esc.
+      if (dirty && !window.confirm(t.settingsCloseConfirm)) return
+      onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose, dirty, t])
+
+  const patch = (domain: SettingsDomain, next: SettingsEntry[]) =>
+    setDraft((current) => (current ? { ...current, [domain]: next } : current))
+
+  const save = async () => {
+    if (!draft || revision == null) return
+    setSaving(true)
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseRevision: revision, domains: draft }),
+      })
+      const data = await res.json().catch(() => null)
+
+      if (res.status === 409) {
+        // Настройки успели поменять с другой стороны — из программы или из
+        // соседней вкладки. Сливать в браузере нечем: базы (снимка на момент
+        // последней синхронизации) у него нет, поэтому показываем серверное
+        // состояние и даём переприменить правки осознанно.
+        const fresh = toDraft(data as SettingsDocument)
+        setRevision((data as SettingsDocument).revision)
+        setDraft(fresh)
+        setSaved(JSON.stringify(fresh))
+        toast.error(t.settingsConflict)
+        return
+      }
+
+      if (!res.ok) {
+        toast.error(data?.message ?? t.settingsSaveError)
+        return
+      }
+
+      const next = toDraft(data as SettingsDocument)
+      setRevision((data as SettingsDocument).revision)
+      setDraft(next)
+      setSaved(JSON.stringify(next))
+      toast.success(t.settingsSaved)
+    } catch {
+      toast.error(t.pipelineServerUnavailable)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const entries = draft?.[tab] ?? []
+  const labels = DOMAIN_LABELS[tab]
+
+  return (
+    <div
+      className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4"
+      onClick={() => {
+        if (dirty && !window.confirm(t.settingsCloseConfirm)) return
+        onClose()
+      }}
+    >
+      <div
+        role="dialog"
+        aria-label={t.settingsTitle}
+        className="flex max-h-[85vh] w-full max-w-[840px] flex-col overflow-hidden rounded-xl border border-white/10 bg-ws-panel shadow-ws-menu"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.07] px-5 py-3.5">
+          <h2 className="text-[16px] font-semibold text-ws-1">{t.settingsTitle}</h2>
+          {revision != null ? (
+            <span className="text-[12.5px] text-ws-4">
+              {tf(t.settingsRevision, { revision })}
+            </span>
+          ) : null}
+          {dirty ? (
+            <span className="text-[12.5px] text-ws-out">{t.settingsUnsaved}</span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (dirty && !window.confirm(t.settingsCloseConfirm)) return
+              onClose()
+            }}
+            aria-label={t.close}
+            className="ml-auto flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex shrink-0 gap-1 border-b border-white/[0.07] px-4 pt-3">
+          {SETTINGS_DOMAINS.map((domain) => (
+            <button
+              key={domain}
+              type="button"
+              onClick={() => setTab(domain)}
+              className={cn(
+                "rounded-t-[9px] px-3.5 py-2 text-[13px]",
+                domain === tab
+                  ? "bg-white/[0.06] text-ws-1"
+                  : "text-ws-4 hover:text-ws-2",
+              )}
+            >
+              {t[DOMAIN_LABELS[domain].title as keyof AdminDict]}
+            </button>
+          ))}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+          <p className="mb-3.5 text-[12.5px] leading-relaxed text-ws-4">
+            {t[labels.hint as keyof AdminDict]}
+          </p>
+
+          {loading ? (
+            <div className="flex justify-center py-12 text-ws-4">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : error ? (
+            <p className="flex items-center justify-center gap-2 py-12 text-[13.5px] text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              {error}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {entries.map((entry, index) => (
+                <EntryRow
+                  key={`${tab}-${entry.name}-${index}`}
+                  entry={entry}
+                  index={index}
+                  total={entries.length}
+                  t={t}
+                  pathLabel={
+                    labels.pathLabel
+                      ? t[labels.pathLabel as keyof AdminDict]
+                      : null
+                  }
+                  onChange={(next) =>
+                    patch(
+                      tab,
+                      entries.map((e, i) => (i === index ? next : e)),
+                    )
+                  }
+                  onMove={(delta) => {
+                    const target = index + delta
+                    if (target < 0 || target >= entries.length) return
+                    const next = [...entries]
+                    const [moved] = next.splice(index, 1)
+                    next.splice(target, 0, moved)
+                    patch(tab, next)
+                  }}
+                  onRemove={() =>
+                    patch(
+                      tab,
+                      entries.filter((_, i) => i !== index),
+                    )
+                  }
+                />
+              ))}
+
+              <button
+                type="button"
+                onClick={() =>
+                  patch(tab, [
+                    ...entries,
+                    { name: "", path: [], color: "#888888", isDefault: false },
+                  ])
+                }
+                className="flex items-center justify-center gap-2 rounded-[10px] border border-dashed border-white/[0.14] py-2.5 text-[13px] text-ws-4 hover:border-white/25 hover:text-ws-2"
+              >
+                <Plus className="h-4 w-4" />
+                {t.settingsAdd}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3 border-t border-white/[0.07] px-5 py-3">
+          {/* Не синхронизируемое лучше назвать здесь: иначе непонятно, почему
+              одни настройки едут на сервер, а пути к ffmpeg — нет. */}
+          <p className="text-[11.5px] leading-relaxed text-ws-5">
+            {t.settingsLocalNote}
+          </p>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || !dirty || loading}
+            className="ml-auto flex h-9 shrink-0 items-center gap-2 rounded-[10px] bg-ws-action px-4 text-[13.5px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {t.saveChanges}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EntryRow({
+  entry,
+  index,
+  total,
+  pathLabel,
+  t,
+  onChange,
+  onMove,
+  onRemove,
+}: {
+  entry: SettingsEntry
+  index: number
+  total: number
+  pathLabel: string | null
+  t: AdminDict
+  onChange: (next: SettingsEntry) => void
+  onMove: (delta: number) => void
+  onRemove: () => void
+}) {
+  const [pathInput, setPathInput] = useState("")
+  const { rgb, alpha } = splitColor(entry.color)
+
+  const addPathItem = () => {
+    const value = pathInput.trim()
+    if (!value) return
+    if (entry.path.includes(value)) {
+      setPathInput("")
+      return
+    }
+    onChange({ ...entry, path: [...entry.path, value] })
+    setPathInput("")
+  }
+
+  return (
+    <div className="rounded-[10px] border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
+      <div className="flex items-center gap-2.5">
+        <input
+          type="color"
+          value={rgb}
+          onChange={(e) => onChange({ ...entry, color: `${e.target.value}${alpha}` })}
+          title={t.settingsColor}
+          className="h-7 w-7 shrink-0 cursor-pointer rounded-[7px] border border-white/10 bg-transparent p-0"
+        />
+
+        <input
+          value={entry.name}
+          onChange={(e) => onChange({ ...entry, name: e.target.value })}
+          // Дефолтные типы переименовывать нельзя: графы ссылаются на тип по
+          // имени (searchType: "video"), переименование их сломает.
+          disabled={entry.isDefault}
+          placeholder={t.settingsNamePlaceholder}
+          className={cn(
+            "h-8 w-[180px] shrink-0 rounded-[8px] border border-white/[0.1] bg-black/20 px-2.5 text-[13px] text-ws-1",
+            "placeholder:text-ws-5 focus:border-white/25 focus:outline-none",
+            entry.isDefault && "cursor-not-allowed opacity-70",
+          )}
+        />
+
+        {entry.isDefault ? (
+          <span className="shrink-0 rounded-full border border-white/[0.12] px-2 py-[2px] text-[11px] text-ws-5">
+            {t.settingsDefaultBadge}
+          </span>
+        ) : null}
+
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => onMove(-1)}
+            disabled={index === 0}
+            title={t.moveUp}
+            className="flex h-7 w-7 items-center justify-center rounded-[7px] text-ws-4 hover:bg-white/5 hover:text-ws-1 disabled:opacity-30"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMove(1)}
+            disabled={index === total - 1}
+            title={t.moveDown}
+            className="flex h-7 w-7 items-center justify-center rounded-[7px] text-ws-4 hover:bg-white/5 hover:text-ws-1 disabled:opacity-30"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={entry.isDefault}
+            title={entry.isDefault ? t.settingsRemoveDefault : t.delete}
+            className="flex h-7 w-7 items-center justify-center rounded-[7px] text-ws-4 hover:bg-destructive/15 hover:text-destructive disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-ws-4"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {pathLabel ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-[38px]">
+          {entry.path.map((item) => (
+            <span
+              key={item}
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2 py-[2px] text-[12px]",
+                looksAbsolute(item)
+                  ? "border-ws-out/40 bg-ws-out/10 text-ws-out"
+                  : "border-white/[0.12] text-ws-2",
+              )}
+              // Абсолютный путь синхронизируется как есть, но на другой машине
+              // его может не существовать — помечаем, а не запрещаем.
+              title={
+                looksAbsolute(item)
+                  ? t.settingsAbsoluteHint
+                  : undefined
+              }
+            >
+              {item}
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    ...entry,
+                    path: entry.path.filter((p) => p !== item),
+                  })
+                }
+                aria-label={tf(t.settingsRemoveItem, { item })}
+                className="text-ws-5 hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+
+          <input
+            value={pathInput}
+            onChange={(e) => setPathInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                addPathItem()
+              }
+            }}
+            onBlur={addPathItem}
+            placeholder={`+ ${pathLabel.toLowerCase()}`}
+            className="h-6 w-[130px] rounded-full border border-dashed border-white/[0.14] bg-transparent px-2.5 text-[12px] text-ws-1 placeholder:text-ws-5 focus:border-white/25 focus:outline-none"
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+}

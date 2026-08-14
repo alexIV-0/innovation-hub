@@ -10,6 +10,7 @@ import {
   Wrench,
 } from "lucide-react"
 
+import { tf } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
 import type { Project } from "./types"
 import { useWorkspace } from "./workspace-context"
@@ -121,7 +122,7 @@ export function ProjectCard({
         </span>
         {sharedWith ? (
           <span
-            title={`Проект расшарен: ${sharedWith}`}
+            title={tf(t.projectSharedWith, { users: sharedWith })}
             className="flex shrink-0 items-center gap-1 text-[11.5px] tabular-nums text-ws-5"
           >
             <Users className="h-3 w-3" />

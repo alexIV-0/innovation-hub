@@ -7,7 +7,7 @@ export type ActionPropDoc = {
   notes: LocaleText
 }
 
-export type ActionGroup = "computer" | "storage"
+export type ActionGroup = "computer" | "storage" | "settings" | "queue"
 
 export type ActionDoc = {
   action: string
@@ -837,6 +837,716 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
       folderState: { enabled: true },
     },
   },
+  {
+    action: "deleteProject",
+    group: "storage",
+    summary: {
+      ru: "Мягкое удаление проекта в корзину.",
+      en: "Soft-delete a project into trash.",
+    },
+    description: {
+      ru: "Проект уезжает в корзину на 30 дней, объекты в R2 сразу не удаляются — вернуть можно через restoreProject. Токену, привязанному к проекту, откажут: 403.",
+      en: "The project goes to trash for 30 days; R2 objects are not deleted immediately — restoreProject brings it back. A project-scoped token is refused with 403.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Проект.", en: "Project." },
+      },
+    ],
+    exampleProps: { projectId: "project-uuid" },
+    exampleResponse: { ok: true },
+  },
+  {
+    action: "restoreProject",
+    group: "storage",
+    summary: {
+      ru: "Вернуть проект из корзины.",
+      en: "Restore a project from trash.",
+    },
+    description: {
+      ru: "Обратная операция к deleteProject, пока не истекли 30 дней.",
+      en: "The inverse of deleteProject, while the 30 days have not expired.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Проект в корзине.", en: "Project in trash." },
+      },
+    ],
+    exampleProps: { projectId: "project-uuid" },
+    exampleResponse: {
+      project: { id: "project-uuid", name: "Project", isArchived: false },
+    },
+  },
+  {
+    action: "copy",
+    group: "storage",
+    summary: {
+      ru: "Копирование файлов и папок на стороне сервера.",
+      en: "Server-side copy of files and folders.",
+    },
+    description: {
+      ru: "Байты не ходят через клиента: копирование делает сам R2. Один файл копируется сразу и возвращает 200 с файлом; папка или пачка — это 202 с jobId, прогресс смотрите через getJob. Совпавшие имена получают суффикс « (2)», « (3)». Копирование между проектами разрешено, если есть чтение источника и запись в приёмник.",
+      en: "Bytes never pass through the client: R2 does the copy. A single file copies inline and returns 200 with the file; a folder or batch returns 202 with a jobId — poll getJob for progress. Colliding names get a “ (2)”, “ (3)” suffix. Cross-project copy is allowed when you can read the source and write the destination.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Проект-источник.", en: "Source project." },
+      },
+      {
+        name: "fileIds",
+        type: "string[] (uuid)",
+        required: true,
+        notes: {
+          ru: "Что копировать: файлы и/или папки, от 1 до 500 корней.",
+          en: "What to copy: files and/or folders, 1 to 500 roots.",
+        },
+      },
+      {
+        name: "destProjectId",
+        type: "string (uuid)",
+        required: false,
+        notes: {
+          ru: "По умолчанию тот же проект.",
+          en: "Defaults to the same project.",
+        },
+      },
+      {
+        name: "destFolderPath",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Логическая папка приёмника; по умолчанию корень.",
+          en: "Logical destination folder; root by default.",
+        },
+      },
+      {
+        name: "eventId",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Ключ идемпотентности: повтор с тем же значением не создаст вторую копию.",
+          en: "Idempotency key: a retry with the same value will not create a second copy.",
+        },
+      },
+    ],
+    exampleProps: {
+      projectId: "project-uuid",
+      fileIds: ["file-uuid"],
+      destFolderPath: "OUT",
+    },
+    exampleResponse: {
+      files: [{ id: "new-file-uuid", name: "clip_01.mp4", folderPath: "OUT" }],
+      fileIds: ["new-file-uuid"],
+    },
+  },
+  {
+    action: "getJob",
+    group: "storage",
+    summary: {
+      ru: "Прогресс длительной операции хранилища.",
+      en: "Progress of a long-running storage job.",
+    },
+    description: {
+      ru: "Для задач, вернувших jobId: copy, move, purge, recatalog. Чужую задачу видит только ADMIN; остальным она отвечает 404, а не 403 — существование чужой задачи не подтверждается.",
+      en: "For operations that returned a jobId: copy, move, purge, recatalog. Only ADMIN sees someone else’s job; others get 404 rather than 403 — the existence of another user’s job is not confirmed.",
+    },
+    props: [
+      {
+        name: "jobId",
+        type: "string (uuid)",
+        required: true,
+        notes: {
+          ru: "Из ответа 202 операции.",
+          en: "From the operation’s 202 response.",
+        },
+      },
+    ],
+    exampleProps: { jobId: "job-uuid" },
+    exampleResponse: {
+      job: {
+        id: "job-uuid",
+        kind: "copy",
+        state: "running",
+        total: 12,
+        done: 4,
+        error: null,
+        projectId: "project-uuid",
+        payload: { fileIds: ["file-uuid"] },
+        createdAt: "2026-08-13T10:00:00.000Z",
+        updatedAt: "2026-08-13T10:00:30.000Z",
+      },
+    },
+  },
+  {
+    action: "multipartCreate",
+    group: "storage",
+    summary: {
+      ru: "Начать многочастную загрузку.",
+      en: "Start a multipart upload.",
+    },
+    description: {
+      ru: "Для объектов больше ~5 ГиБ и для докачки. Полный цикл: multipartCreate → multipartPresignPart на каждую часть → PUT частей напрямую в R2 → multipartComplete. Прерванную загрузку закрывает multipartAbort, иначе части остаются висеть в R2.",
+      en: "For objects larger than ~5 GiB and for resumable uploads. Full cycle: multipartCreate → multipartPresignPart per part → PUT parts straight to R2 → multipartComplete. An interrupted upload is closed by multipartAbort, otherwise the parts linger in R2.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Проект.", en: "Project." },
+      },
+      {
+        name: "fileName",
+        type: "string",
+        required: true,
+        notes: { ru: "Имя файла.", en: "File name." },
+      },
+      {
+        name: "folderPath",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Логическая папка; по умолчанию корень.",
+          en: "Logical folder; root by default.",
+        },
+      },
+      {
+        name: "contentType",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "По умолчанию application/octet-stream.",
+          en: "Defaults to application/octet-stream.",
+        },
+      },
+    ],
+    exampleProps: {
+      projectId: "project-uuid",
+      folderPath: "IN",
+      fileName: "master.mov",
+    },
+    exampleResponse: {
+      uploadId: "upload-id",
+      s3Key: "projects/owner/project/IN/master.mov",
+      fileName: "master.mov",
+      folderPath: "IN",
+      contentType: "video/quicktime",
+    },
+  },
+  {
+    action: "multipartPresignPart",
+    group: "storage",
+    summary: {
+      ru: "Signed URL на одну часть.",
+      en: "Signed URL for one part.",
+    },
+    description: {
+      ru: "Берётся на каждую часть отдельно. Части нумеруются с 1, максимум 10000. Ссылка живёт минуты — запрашивайте её перед самой отправкой части, а не пачкой заранее.",
+      en: "Requested per part. Parts are numbered from 1, up to 10000. The URL lives for minutes — request it right before sending the part, not for all parts up front.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Проект.", en: "Project." },
+      },
+      {
+        name: "s3Key",
+        type: "string",
+        required: true,
+        notes: {
+          ru: "Из ответа multipartCreate.",
+          en: "From the multipartCreate response.",
+        },
+      },
+      {
+        name: "uploadId",
+        type: "string",
+        required: true,
+        notes: {
+          ru: "Из ответа multipartCreate.",
+          en: "From the multipartCreate response.",
+        },
+      },
+      {
+        name: "partNumber",
+        type: "number",
+        required: true,
+        notes: { ru: "От 1 до 10000.", en: "From 1 to 10000." },
+      },
+      {
+        name: "ttlSec",
+        type: "number",
+        required: false,
+        notes: {
+          ru: "Время жизни ссылки, 60…86400 секунд.",
+          en: "URL lifetime, 60…86400 seconds.",
+        },
+      },
+    ],
+    exampleProps: {
+      projectId: "project-uuid",
+      s3Key: "projects/owner/project/IN/master.mov",
+      uploadId: "upload-id",
+      partNumber: 1,
+    },
+    exampleResponse: {
+      url: "https://…",
+      method: "PUT",
+      partNumber: 1,
+      expiresIn: 900,
+    },
+  },
+  {
+    action: "multipartComplete",
+    group: "storage",
+    summary: {
+      ru: "Собрать части в объект и занести в каталог.",
+      en: "Assemble the parts and register the object.",
+    },
+    description: {
+      ru: "ETag каждой части возвращает сам R2 в ответе на PUT — их надо сохранить и передать сюда все, по порядку. После сборки каталог обновляется так же, как после notify.",
+      en: "R2 returns each part’s ETag in the PUT response — keep them and pass them all here, in order. After assembly the catalog is updated exactly as it is after notify.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Проект.", en: "Project." },
+      },
+      {
+        name: "s3Key",
+        type: "string",
+        required: true,
+        notes: {
+          ru: "Из ответа multipartCreate.",
+          en: "From the multipartCreate response.",
+        },
+      },
+      {
+        name: "uploadId",
+        type: "string",
+        required: true,
+        notes: {
+          ru: "Из ответа multipartCreate.",
+          en: "From the multipartCreate response.",
+        },
+      },
+      {
+        name: "fileName",
+        type: "string",
+        required: true,
+        notes: { ru: "Имя файла.", en: "File name." },
+      },
+      {
+        name: "parts",
+        type: "{ partNumber, etag }[]",
+        required: true,
+        notes: {
+          ru: "Все части с их ETag, минимум одна.",
+          en: "Every part with its ETag, at least one.",
+        },
+      },
+      {
+        name: "folderPath",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Логическая папка; по умолчанию корень.",
+          en: "Logical folder; root by default.",
+        },
+      },
+      {
+        name: "contentType",
+        type: "string",
+        required: false,
+        notes: { ru: "MIME-тип.", en: "MIME type." },
+      },
+      {
+        name: "sizeBytes",
+        type: "number",
+        required: false,
+        notes: { ru: "Размер файла.", en: "File size." },
+      },
+      {
+        name: "contentHash",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Хеш содержимого для дедупа и сверки.",
+          en: "Content hash for dedup and verification.",
+        },
+      },
+      {
+        name: "originMtime",
+        type: "number",
+        required: false,
+        notes: {
+          ru: "Время изменения на исходной машине, unix-секунды.",
+          en: "Modification time on the source machine, unix seconds.",
+        },
+      },
+      {
+        name: "eventId",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Ключ идемпотентности.",
+          en: "Idempotency key.",
+        },
+      },
+    ],
+    exampleProps: {
+      projectId: "project-uuid",
+      s3Key: "projects/owner/project/IN/master.mov",
+      uploadId: "upload-id",
+      folderPath: "IN",
+      fileName: "master.mov",
+      parts: [{ partNumber: 1, etag: '"abc123"' }],
+      sizeBytes: 8_589_934_592,
+    },
+    exampleResponse: {
+      file: { id: "file-uuid", name: "master.mov", folderPath: "IN" },
+      fileIds: ["file-uuid"],
+    },
+  },
+  {
+    action: "multipartAbort",
+    group: "storage",
+    summary: {
+      ru: "Отменить незавершённую многочастную загрузку.",
+      en: "Abort an unfinished multipart upload.",
+    },
+    description: {
+      ru: "Зовите при любом обрыве, который не собираетесь докачивать: без этого залитые части остаются в R2 и продолжают занимать место, не будучи видимым файлом.",
+      en: "Call it on any interruption you do not intend to resume: without it the uploaded parts stay in R2 and keep taking up space without being a visible file.",
+    },
+    props: [
+      {
+        name: "projectId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Проект.", en: "Project." },
+      },
+      {
+        name: "s3Key",
+        type: "string",
+        required: true,
+        notes: {
+          ru: "Из ответа multipartCreate.",
+          en: "From the multipartCreate response.",
+        },
+      },
+      {
+        name: "uploadId",
+        type: "string",
+        required: true,
+        notes: {
+          ru: "Из ответа multipartCreate.",
+          en: "From the multipartCreate response.",
+        },
+      },
+    ],
+    exampleProps: {
+      projectId: "project-uuid",
+      s3Key: "projects/owner/project/IN/master.mov",
+      uploadId: "upload-id",
+    },
+    exampleResponse: { ok: true },
+  },
+  {
+    action: "claimTask",
+    group: "queue",
+    summary: {
+      ru: "Атомарно забрать следующую задачу из очереди.",
+      en: "Atomically take the next task from the queue.",
+    },
+    description: {
+      ru: "Модель pull: сайт не рассылает задачи, машина сама приходит за следующей. Судья при захвате — запрос в БД (FOR UPDATE SKIP LOCKED), поэтому из десяти машин, дёрнувших claim одновременно, задачу получит ровно одна. Пустая очередь — это `task: null`, штатный ответ, а не ошибка. Аренда 15 минут, продлевается каждым taskProgress; не продлил — задача вернётся в очередь. Видимость наследует роль токена: админский видит общую очередь, обычный — только проекты своего владельца.",
+      en: "Pull model: the site does not dispatch tasks, the machine comes for the next one itself. The claim is arbitrated by the database query (FOR UPDATE SKIP LOCKED), so out of ten machines calling claim at once exactly one gets the task. An empty queue is `task: null` — a normal answer, not an error. The lease lasts 15 minutes and is extended by every taskProgress; stop reporting and the task returns to the queue. Visibility follows the token's role: an admin token sees the shared queue, a regular one only its owner's projects.",
+    },
+    props: [
+      {
+        name: "machineUuid",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "UUID машины из её настроек. Обязателен для токена `mch_…`, у которого нет привязанного компьютера — по нему сайт заводит машину сам.",
+          en: "The machine's UUID from its own settings. Required for an `mch_…` token, which has no bound computer — the site registers the machine by it.",
+        },
+      },
+      {
+        name: "hostname",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Человекочитаемая подпись для админки; обновляется при каждом обращении.",
+          en: "Human-readable label for the admin UI; refreshed on every call.",
+        },
+      },
+      {
+        name: "capabilities",
+        type: "string[]",
+        required: false,
+        notes: {
+          ru: "На будущее: теги вроде ffmpeg / ae под гибридный роутинг. Сейчас не влияет на выдачу.",
+          en: "Reserved: tags such as ffmpeg / ae for hybrid routing. Currently does not affect dispatch.",
+        },
+      },
+    ],
+    exampleProps: { machineUuid: "b1e2…", hostname: "render-box-1" },
+    exampleResponse: {
+      task: {
+        id: "task-uuid",
+        projectId: "project-uuid",
+        projectName: "Project",
+        ownerEmail: "client@example.com",
+        payload: { schemaVersion: 1, processingQueue: ["mainSearch"] },
+        attempts: 1,
+        maxAttempts: 3,
+        leaseExpiresAt: "2026-08-14T10:15:00.000Z",
+      },
+    },
+  },
+  {
+    action: "taskProgress",
+    group: "queue",
+    summary: {
+      ru: "Двинуть шаг и продлить аренду.",
+      en: "Advance a step and extend the lease.",
+    },
+    description: {
+      ru: "Первый отчёт переводит задачу из claimed в running. Каждый отчёт продлевает аренду на 15 минут, поэтому долгий шаг обязан отчитываться — иначе задачу вернут в очередь как брошенную. Шаги самоочищаются: при завершении задачи строки прогресса удаляются.",
+      en: "The first report moves the task from claimed to running. Every report extends the lease by 15 minutes, so a long step must keep reporting — otherwise the task is returned to the queue as abandoned. Progress rows are self-cleaning: they are deleted when the task finishes.",
+    },
+    props: [
+      {
+        name: "taskId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Из ответа claimTask.", en: "From the claimTask response." },
+      },
+      {
+        name: "stepId",
+        type: "string",
+        required: true,
+        notes: {
+          ru: "id шага из processingQueue.",
+          en: "Step id from processingQueue.",
+        },
+      },
+      {
+        name: "status",
+        type: '"running" | "done" | "error"',
+        required: true,
+        notes: { ru: "Состояние шага.", en: "Step state." },
+      },
+      {
+        name: "message",
+        type: "string | null",
+        required: false,
+        notes: { ru: "Короткая заметка к шагу.", en: "Short note for the step." },
+      },
+    ],
+    exampleProps: {
+      taskId: "task-uuid",
+      stepId: "convert_01",
+      status: "running",
+      message: "ffmpeg 40%",
+    },
+    exampleResponse: { ok: true },
+  },
+  {
+    action: "taskDone",
+    group: "queue",
+    summary: { ru: "Задача выполнена.", en: "Task finished." },
+    description: {
+      ru: "Идемпотентно по taskId: повторный заход (машина упала между заливкой и отчётом, задачу перезабрали и она прошла второй раз) отвечает ok, а не ошибкой. В распределённой системе «ровно один раз» не бывает, поэтому повтор сделан безвредным. payload завершённой задачи заменяется на итог — outFiles и totalCost.",
+      en: "Idempotent by taskId: a repeat call (the machine died between upload and report, the task was re-claimed and ran twice) answers ok rather than failing. “Exactly once” does not exist in a distributed system, so the repeat is made harmless. A finished task's payload is replaced by the outcome — outFiles and totalCost.",
+    },
+    props: [
+      {
+        name: "taskId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Из ответа claimTask.", en: "From the claimTask response." },
+      },
+      {
+        name: "outFiles",
+        type: "string[]",
+        required: false,
+        notes: {
+          ru: "Логические пути результатов внутри проекта.",
+          en: "Logical paths of the results inside the project.",
+        },
+      },
+      {
+        name: "totalCost",
+        type: "number",
+        required: false,
+        notes: { ru: "Итоговая цена прогона.", en: "Total cost of the run." },
+      },
+    ],
+    exampleProps: {
+      taskId: "task-uuid",
+      outFiles: ["OUT/clip_01.mp4"],
+      totalCost: 0.09,
+    },
+    exampleResponse: { ok: true },
+  },
+  {
+    action: "taskFailed",
+    group: "queue",
+    summary: { ru: "Задача упала.", en: "Task failed." },
+    description: {
+      ru: "В отличие от taskDone, payload **сохраняется**: без него нельзя ни переретраить задачу, ни разобраться в причине.",
+      en: "Unlike taskDone, the payload is **kept**: without it the task can neither be retried nor investigated.",
+    },
+    props: [
+      {
+        name: "taskId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Из ответа claimTask.", en: "From the claimTask response." },
+      },
+      {
+        name: "error",
+        type: "string",
+        required: true,
+        notes: { ru: "Причина падения.", en: "Failure reason." },
+      },
+    ],
+    exampleProps: { taskId: "task-uuid", error: "ffmpeg exit 1" },
+    exampleResponse: { ok: true },
+  },
+  {
+    action: "releaseTask",
+    group: "queue",
+    summary: {
+      ru: "Вернуть задачу в очередь при аварийной остановке.",
+      en: "Return a task to the queue on emergency stop.",
+    },
+    description: {
+      ru: "У машины две кнопки стопа, и это разные операции. Мягкая доводит текущую задачу до конца и отчитывается обычным taskDone. Аварийная убивает процессы сейчас — и тогда нужен releaseTask, иначе задача пятнадцать минут числится взятой и никто её не подхватит. Попытка не считается: оператор остановил осознанно, это не провал обработки.",
+      en: "The machine has two stop buttons, and they are different operations. The soft one finishes the current task and reports via the usual taskDone. The emergency one kills processes immediately — and then releaseTask is needed, otherwise the task stays claimed for fifteen minutes and nobody picks it up. The attempt is not counted: the operator stopped deliberately, this is not a processing failure.",
+    },
+    props: [
+      {
+        name: "taskId",
+        type: "string (uuid)",
+        required: true,
+        notes: { ru: "Из ответа claimTask.", en: "From the claimTask response." },
+      },
+    ],
+    exampleProps: { taskId: "task-uuid" },
+    exampleResponse: { ok: true },
+  },
+  {
+    action: "getSettings",
+    group: "settings",
+    summary: {
+      ru: "Общие словари: типы файлов, цвета, маски путей.",
+      en: "Shared dictionaries: file types, colors, path masks.",
+    },
+    description: {
+      ru: "Словари общие на всю установку, а не на проект. Ответ всегда содержит revision — сравнивайте его с локальным, чтобы понять, нужно ли обновляться. То же значение приходит в поле settingsRevision ответа GET /api/storage/v1/delta, поэтому отдельный поллинг не нужен.",
+      en: "Dictionaries are installation-wide, not per project. The response always carries a revision — compare it with your local one to decide whether to refresh. The same value arrives as settingsRevision in GET /api/storage/v1/delta, so no separate polling is needed.",
+    },
+    props: [
+      {
+        name: "domains",
+        type: '("fileType" | "nodeType" | "dataType" | "pathPattern")[]',
+        required: false,
+        notes: {
+          ru: "Без него вернутся все домены.",
+          en: "Omit to get every domain.",
+        },
+      },
+    ],
+    exampleProps: { domains: ["fileType"] },
+    exampleResponse: {
+      revision: 42,
+      domains: {
+        fileType: [
+          {
+            name: "video",
+            path: ["avi", "mov", "mp4", "mkv"],
+            color: "#0a84fe",
+            isDefault: true,
+          },
+        ],
+      },
+    },
+  },
+  {
+    action: "putSettings",
+    group: "settings",
+    summary: {
+      ru: "Запись словарей с проверкой ревизии.",
+      en: "Write dictionaries with revision check.",
+    },
+    description: {
+      ru: "Домены, не перечисленные в domains, не трогаются — можно послать только fileType, не зная остальных. Порядок записей значим: расширение, попавшее в два типа, достаётся верхнему. Если baseRevision устарела, ответ 409 содержит текущий документ целиком — слейте его со своим и повторите. Пути к программам и папкам материалов машинно-локальные, их доменов здесь нет вовсе.",
+      en: "Domains absent from `domains` are left untouched — you can send fileType alone without knowing the rest. Entry order matters: an extension listed in two types belongs to the upper one. If baseRevision is stale, the 409 response carries the whole current document — merge it with yours and retry. Program and material-folder paths are machine-local and have no domain here.",
+    },
+    props: [
+      {
+        name: "baseRevision",
+        type: "number",
+        required: true,
+        notes: {
+          ru: "Ревизия, на которой основаны правки. Не совпала — 409.",
+          en: "Revision your edits are based on. Mismatch — 409.",
+        },
+      },
+      {
+        name: "domains",
+        type: "Record<domain, { name, path?, color?, isDefault? }[]>",
+        required: true,
+        notes: {
+          ru: "Ключ записи — name. Расширения приводятся к нижнему регистру, ведущая точка отбрасывается.",
+          en: "Entries are keyed by name. Extensions are lowercased and a leading dot is stripped.",
+        },
+      },
+    ],
+    exampleProps: {
+      baseRevision: 42,
+      domains: {
+        fileType: [
+          {
+            name: "video",
+            path: ["avi", "mov", "mp4", "mkv", "webm"],
+            color: "#0a84fe",
+            isDefault: true,
+          },
+        ],
+      },
+    },
+    exampleResponse: {
+      revision: 43,
+      domains: {
+        fileType: [
+          {
+            name: "video",
+            path: ["avi", "mov", "mp4", "mkv", "webm"],
+            color: "#0a84fe",
+            isDefault: true,
+          },
+        ],
+      },
+    },
+  },
 ]
 
 export const MACHINE_API_ERRORS: {
@@ -874,8 +1584,8 @@ export const MACHINE_API_ERRORS: {
   {
     status: 409,
     meaning: {
-      ru: "Конфликт: дубликат имени, нет объекта в R2, ETag.",
-      en: "Conflict: duplicate name, missing R2 object, ETag.",
+      ru: "Конфликт: дубликат имени, нет объекта в R2, ETag. У putSettings — устаревшая baseRevision; тело содержит текущий документ.",
+      en: "Conflict: duplicate name, missing R2 object, ETag. For putSettings — stale baseRevision; the body carries the current document.",
     },
   },
   {

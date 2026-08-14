@@ -277,12 +277,26 @@ CREATE TABLE IF NOT EXISTS remote_computers (
                         CHECK (status IN ('idle', 'busy', 'error')),
   current_project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
   current_task        TEXT,
+  -- Какую задачу машина держит — связью, а не строкой: current_task остаётся
+  -- человекочитаемой меткой операции, а продление аренды требует ссылки.
+  current_task_id     TEXT,
+  -- UUID машины, сгенерированный ей один раз при первом запуске. По нему машина
+  -- заводит себя сама, без ручного создания в админке. Hostname для этого не
+  -- годится: дефолтные имена маков совпадают, а на совпадении ломается архив
+  -- статистики — две машины пишут в один объект, и заливка затирает строки.
+  machine_uuid        TEXT,
   last_heartbeat_at   TIMESTAMPTZ,
   meta                JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_by          TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   revoked_at          TIMESTAMPTZ
 );
+
+-- Одна строка на UUID среди неотозванных: отозвав компьютер, ту же машину можно
+-- завести заново.
+CREATE UNIQUE INDEX IF NOT EXISTS remote_computers_machine_uuid_idx
+  ON remote_computers (machine_uuid)
+  WHERE machine_uuid IS NOT NULL AND revoked_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS remote_computers_active_idx
   ON remote_computers (created_at DESC)
@@ -409,6 +423,45 @@ CREATE INDEX IF NOT EXISTS tasks_project_idx
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_active_source_idx
   ON tasks (project_id, source_key)
   WHERE status IN ('queued', 'claimed', 'running');
+
+-- Индекс под сборщик протухших аренд на тике runner.ts. Без него это скан
+-- таблицы каждые 15 секунд.
+CREATE INDEX IF NOT EXISTS tasks_lease_idx
+  ON tasks (lease_expires_at)
+  WHERE status IN ('claimed', 'running');
+
+-- Прогресс выполнения, самоочищающийся: появилась задача — шаги видны,
+-- завершилась — строки удаляются. Разбор падения идёт по tasks.error и логам
+-- машины, поэтому историю шагов держать незачем.
+CREATE TABLE IF NOT EXISTS task_progress (
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  step_id    TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'running'
+               CHECK (status IN ('running', 'done', 'error')),
+  message    TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (task_id, step_id)
+);
+
+-- Общие словари: типы файлов с расширениями, цвета типов нод и типов данных,
+-- пользовательские маски путей. Синглтон — словарь принадлежит системе обработки,
+-- а не клиенту, который заливает файлы в проект. Подробно — docs/SETTINGS_SYNC.md.
+--
+-- revision растёт на КАЖДУЮ запись, даже если содержимое не изменилось: это
+-- счётчик версии для оптимистической блокировки (UPDATE … WHERE revision = $base),
+-- а не хеш состояния.
+CREATE TABLE IF NOT EXISTS automation_settings (
+  id         TEXT PRIMARY KEY DEFAULT 'singleton',
+  revision   BIGINT NOT NULL DEFAULT 1,
+  domains    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT automation_settings_singleton_chk CHECK (id = 'singleton')
+);
+
+INSERT INTO automation_settings (id, revision, domains)
+VALUES ('singleton', 1, '{}'::jsonb)
+ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS project_messages (
   id            TEXT PRIMARY KEY,

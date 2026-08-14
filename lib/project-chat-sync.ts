@@ -45,10 +45,13 @@ export async function syncProjectChatFromYouGile(project: {
   try {
     const config = getYouGileConfig()
     const existing = await listProjectChatMessages(project.id)
-    const lastKnownAt = existing.reduce<number>(
-      (max, m) => Math.max(max, m.createdAt.getTime()),
-      0,
-    )
+    // Cursor is YouGile's own message id (epoch-ms), not our created_at —
+    // site-clock skew would otherwise skip replies typed in the YouGile app.
+    const lastKnownAt = existing.reduce<number>((max, m) => {
+      if (!m.yougileMessageId) return max
+      const ts = Number(m.yougileMessageId)
+      return Number.isFinite(ts) ? Math.max(max, ts) : max
+    }, 0)
 
     const remote = await listChatMessages({
       chatId: project.yougileChatId,

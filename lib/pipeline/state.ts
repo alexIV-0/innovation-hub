@@ -98,7 +98,18 @@ export async function setPipelineRunning(input: {
   return readPipelineState()
 }
 
-/** Пишет итог тика — по нему на странице видно, что цикл живой. */
+/**
+ * Пишет итог тика — по нему на странице видно, что цикл живой.
+ *
+ * `scanned_at` двигается здесь, то есть на КАЖДОМ тике. Раньше он писался только
+ * в `writeCursor`, а тот вызывается лишь когда в журнале нашлись новые события —
+ * из-за чего на странице «последняя проверка» замирала на моменте последней
+ * загрузки файла и через сутки простоя выглядела так, будто цикл умер. Поле,
+ * которое должно доказывать, что конвейер жив, ровно этого и не доказывало.
+ *
+ * Пишем и при ошибке тика: проверка была, просто не удалась, а причина видна
+ * рядом в `last_error`. Замершее время рядом с ошибкой сбивало бы с толку сильнее.
+ */
 export async function recordTickResult(input: {
   created: number
   error: string | null
@@ -107,6 +118,7 @@ export async function recordTickResult(input: {
     `UPDATE automation_scan_state
         SET last_created = $1,
             last_error = $2,
+            scanned_at = NOW(),
             updated_at = NOW()
       WHERE id = 'singleton'`,
     [input.created, input.error],

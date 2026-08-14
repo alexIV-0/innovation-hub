@@ -2,6 +2,8 @@ import { defineAction } from "@/lib/machine-api/types"
 import {
   claimTaskSchema,
   handleClaimTask,
+  handlePing,
+  machineIdentitySchema,
   handleReleaseTask,
   handleTaskDone,
   handleTaskFailed,
@@ -18,6 +20,7 @@ import {
  * `/api/storage/v1/queue/*`, которым ходит десктоп.
  */
 
+export const machinePingAction = defineAction(machineIdentitySchema, handlePing)
 export const claimTaskAction = defineAction(claimTaskSchema, handleClaimTask)
 export const taskProgressAction = defineAction(
   taskProgressSchema,

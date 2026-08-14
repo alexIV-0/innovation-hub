@@ -285,6 +285,14 @@ CREATE TABLE IF NOT EXISTS remote_computers (
   -- годится: дефолтные имена маков совпадают, а на совпадении ломается архив
   -- статистики — две машины пишут в один объект, и заливка затирает строки.
   machine_uuid        TEXT,
+  -- Каким `mch_`-токеном машина зашла. Модель такого токена — «один токен, много
+  -- машин», и без этой связи вопрос «кто подключён по этому токену» неотвечаем.
+  -- У `rc_`-компьютеров NULL: там токен свой у каждого.
+  registered_token_id TEXT REFERENCES machine_tokens(id) ON DELETE CASCADE,
+  -- Два разных признака, сводить в один нельзя: машина может быть на связи и
+  -- синхронизировать файлы, но обработку не вести.
+  last_seen_at        TIMESTAMPTZ,   -- любое обращение со своим UUID
+  last_claim_at       TIMESTAMPTZ,   -- воркер опрашивает очередь
   last_heartbeat_at   TIMESTAMPTZ,
   meta                JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_by          TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -297,6 +305,10 @@ CREATE TABLE IF NOT EXISTS remote_computers (
 CREATE UNIQUE INDEX IF NOT EXISTS remote_computers_machine_uuid_idx
   ON remote_computers (machine_uuid)
   WHERE machine_uuid IS NOT NULL AND revoked_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS remote_computers_token_idx
+  ON remote_computers (registered_token_id)
+  WHERE registered_token_id IS NOT NULL AND revoked_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS remote_computers_active_idx
   ON remote_computers (created_at DESC)

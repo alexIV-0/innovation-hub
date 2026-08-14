@@ -6,7 +6,9 @@ import {
   handleReleaseTask,
   handleTaskDone,
   handleTaskFailed,
+  handlePing,
   handleTaskProgress,
+  machineIdentitySchema,
   releaseTaskSchema,
   taskDoneSchema,
   taskFailedSchema,
@@ -26,6 +28,10 @@ export const runtime = "nodejs"
  */
 
 const HANDLERS = {
+  // ping — «я на связи», без запроса задачи. Звать на пульсе синхронизации
+  // независимо от воркера: иначе состояние «машина включена, воркер выключен»
+  // сайту не видно вовсе.
+  ping: { schema: machineIdentitySchema, run: handlePing },
   claim: { schema: claimTaskSchema, run: handleClaimTask },
   progress: { schema: taskProgressSchema, run: handleTaskProgress },
   done: { schema: taskDoneSchema, run: handleTaskDone },

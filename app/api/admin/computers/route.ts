@@ -26,6 +26,7 @@ function serializeComputer(
     currentProjectId: row.currentProjectId,
     currentProjectName: row.currentProjectName,
     currentTask: row.currentTask,
+    machineUuid: row.machineUuid,
     lastHeartbeatAt: row.lastHeartbeatAt?.toISOString() ?? null,
     meta: row.meta,
     createdBy: row.createdBy,

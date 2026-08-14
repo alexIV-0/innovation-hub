@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { ensureRemoteComputerByUuid } from "@/lib/repositories/remote-computers"
+import {
+  ensureRemoteComputerByUuid,
+  recordComputerIdentity,
+  touchMachineContact,
+} from "@/lib/repositories/remote-computers"
 import {
   claimNextTask,
   completeTask,
@@ -75,15 +79,16 @@ export async function resolveQueueCaller(
   props: { machineUuid?: string; hostname?: string },
 ): Promise<QueueCaller | NextResponse> {
   if (auth.computerId) {
-    // Компьютер заведён в админке. Если он вдруг прислал UUID — запомним, чтобы
-    // имя файла статистики совпало с тем, что машина пишет у себя.
+    // Компьютер заведён в админке: сам компьютер и есть машина под своим токеном.
+    // UUID, если прислали, пишем НА ЭТУ ЖЕ строку, а не заводим вторую: иначе одна
+    // машина числилась бы дважды, и вторая запись висела бы без токена вообще.
     if (props.machineUuid) {
-      await ensureRemoteComputerByUuid({
+      await recordComputerIdentity({
+        computerId: auth.computerId,
         machineUuid: props.machineUuid,
         hostname: props.hostname,
-        userId: auth.userId,
       }).catch(() => {
-        // Уже занят другой строкой — не повод отказывать в задаче.
+        // UUID уже занят другой строкой — не повод отказывать в задаче.
       })
     }
     return {
@@ -103,13 +108,42 @@ export async function resolveQueueCaller(
     )
   }
 
+  // Без токена машины машину не завести: строка, не привязанная ни к токену, ни к
+  // компьютеру, повисла бы в списке ничьей. Сессия браузера очередь не разгребает.
+  if (!auth.machineTokenId) {
+    return NextResponse.json(
+      { message: "A machine token is required to work the queue." },
+      { status: 403 },
+    )
+  }
+
   const computer = await ensureRemoteComputerByUuid({
     machineUuid: props.machineUuid,
     hostname: props.hostname,
     userId: auth.userId,
+    // Токен, которым машина зашла: по нему её видно в списке машин этого токена.
+    registeredTokenId: auth.machineTokenId,
   })
 
   return { computerId: computer.id, userId: auth.userId, role: auth.role }
+}
+
+/**
+ * Отметка «я на связи», без запроса задачи.
+ *
+ * Нужна потому, что иначе состояние «машина включена, но воркер выключен» сайту
+ * не видно вовсе: от `mch_`-десктопа он слышит только когда воркер зовёт очередь.
+ * Программе стоит звать это на пульсе синхронизации независимо от воркера — тогда
+ * в админке горят два разных индикатора, а не один на оба состояния.
+ */
+export async function handlePing(
+  auth: StorageApiAuth,
+  props: z.infer<typeof machineIdentitySchema>,
+): Promise<NextResponse> {
+  const caller = await resolveQueueCaller(auth, props)
+  if (caller instanceof NextResponse) return caller
+  await touchMachineContact({ computerId: caller.computerId })
+  return NextResponse.json({ ok: true })
 }
 
 function mutationResponse(result: QueueMutationResult): NextResponse {
@@ -132,9 +166,13 @@ export async function handleClaimTask(
   const caller = await resolveQueueCaller(auth, props)
   if (caller instanceof NextResponse) return caller
 
+  // Отмечаем ДО захвата: даже если очередь пуста, факт «воркер спрашивал» —
+  // это и есть признак работающего воркера, а он гаснет быстрее, чем «на связи».
+  await touchMachineContact({ computerId: caller.computerId, claimed: true })
+
   const task = await claimNextTask(caller)
   // null — очередь пуста. Штатный ответ, а не ошибка: машина спрашивает каждые
-  // 3 секунды и почти всегда получает именно его.
+  // несколько секунд и почти всегда получает именно его.
   return NextResponse.json({ task })
 }
 
@@ -144,6 +182,7 @@ export async function handleTaskProgress(
 ): Promise<NextResponse> {
   const caller = await resolveQueueCaller(auth, props)
   if (caller instanceof NextResponse) return caller
+  await touchMachineContact({ computerId: caller.computerId, claimed: true })
   return mutationResponse(
     await reportTaskProgress({
       caller,
@@ -161,6 +200,7 @@ export async function handleTaskDone(
 ): Promise<NextResponse> {
   const caller = await resolveQueueCaller(auth, props)
   if (caller instanceof NextResponse) return caller
+  await touchMachineContact({ computerId: caller.computerId, claimed: true })
   return mutationResponse(
     await completeTask({
       caller,
@@ -177,6 +217,7 @@ export async function handleTaskFailed(
 ): Promise<NextResponse> {
   const caller = await resolveQueueCaller(auth, props)
   if (caller instanceof NextResponse) return caller
+  await touchMachineContact({ computerId: caller.computerId, claimed: true })
   return mutationResponse(
     await failTask({ caller, taskId: props.taskId, error: props.error }),
   )
@@ -188,5 +229,6 @@ export async function handleReleaseTask(
 ): Promise<NextResponse> {
   const caller = await resolveQueueCaller(auth, props)
   if (caller instanceof NextResponse) return caller
+  await touchMachineContact({ computerId: caller.computerId, claimed: true })
   return mutationResponse(await releaseTask({ caller, taskId: props.taskId }))
 }

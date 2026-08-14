@@ -37,6 +37,7 @@ import {
 } from "@/lib/machine-api/actions/settings"
 import {
   claimTaskAction,
+  machinePingAction,
   releaseTaskAction,
   taskDoneAction,
   taskFailedAction,
@@ -72,6 +73,7 @@ export const ACTION_REGISTRY: Record<string, MachineActionHandler> = {
   multipartAbort: multipartAbortAction,
   getSettings: getSettingsAction,
   putSettings: putSettingsAction,
+  machinePing: machinePingAction,
   claimTask: claimTaskAction,
   taskProgress: taskProgressAction,
   taskDone: taskDoneAction,

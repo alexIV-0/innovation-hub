@@ -10,18 +10,18 @@ import { AdminConfirmDialog } from "@/components/admin/admin-confirm-dialog"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { EmptyState } from "@/components/admin/shared/empty-state"
 import { LoadingBlock } from "@/components/admin/shared/loading-block"
-import { ComputerRow } from "./computer-row"
+import { AccessTokenRow } from "./access-token-row"
 import { ConnectComputerDialog } from "./connect-computer-dialog"
 import { RemoteAccessSubnav } from "./remote-access-subnav"
 import { RotateTokenDialog } from "./rotate-token-dialog"
-import type { RemoteComputerDto } from "./types"
+import type { AccessTokenDto } from "./types"
 
 const POLL_MS = 20_000
 
 export function RemoteAccessContent() {
   const { t: accountT } = useI18n()
   const t = useAdminI18n()
-  const [computers, setComputers] = useState<RemoteComputerDto[]>([])
+  const [tokens, setTokens] = useState<AccessTokenDto[]>([])
   const [loading, setLoading] = useState(true)
   const [connectOpen, setConnectOpen] = useState(false)
   const [rotateId, setRotateId] = useState<string | null>(null)
@@ -30,16 +30,16 @@ export function RemoteAccessContent() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const res = await fetch("/api/admin/computers")
+      const res = await fetch("/api/admin/machines")
       const data = (await res.json()) as {
         message?: string
-        computers?: RemoteComputerDto[]
+        tokens?: AccessTokenDto[]
       }
       if (!res.ok) {
         if (!silent) toast.error(data.message ?? t.remoteLoadError)
         return
       }
-      setComputers(data.computers ?? [])
+      setTokens(data.tokens ?? [])
     } catch {
       if (!silent) toast.error(t.remoteLoadError)
     } finally {
@@ -56,8 +56,8 @@ export function RemoteAccessContent() {
     return () => window.clearInterval(id)
   }, [load])
 
-  const revokeTarget = computers.find((c) => c.id === revokeId)
-  const rotateTarget = computers.find((c) => c.id === rotateId)
+  const revokeTarget = tokens.find((c) => c.id === revokeId)
+  const rotateTarget = tokens.find((c) => c.id === rotateId)
 
   const handleRevoke = async () => {
     if (!revokeId) return
@@ -100,7 +100,7 @@ export function RemoteAccessContent() {
 
       {loading ? (
         <LoadingBlock />
-      ) : computers.length === 0 ? (
+      ) : tokens.length === 0 ? (
         <EmptyState
           icon={<Monitor className="h-5 w-5" />}
           title={accountT.adminRemoteEmptyTitle}
@@ -117,12 +117,12 @@ export function RemoteAccessContent() {
         />
       ) : (
         <div className="space-y-2">
-          {computers.map((computer) => (
-            <ComputerRow
-              key={computer.id}
-              computer={computer}
-              onRotateToken={() => setRotateId(computer.id)}
-              onRevoke={() => setRevokeId(computer.id)}
+          {tokens.map((token) => (
+            <AccessTokenRow
+              key={`${token.kind}:${token.id}`}
+              token={token}
+              onRotateToken={() => setRotateId(token.id)}
+              onRevoke={() => setRevokeId(token.id)}
             />
           ))}
         </div>

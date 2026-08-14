@@ -669,6 +669,7 @@ itself on first contact. Hostname is only a human-readable label.
 
 | `action` | Body (beyond `machineUuid` / `hostname`) | Response |
 |---|---|---|
+| `ping` | — | `{ ok: true }` — “I am online”, without asking for a task |
 | `claim` | `capabilities?: string[]` | `{ task }` or `{ task: null }` when the queue is empty |
 | `progress` | `taskId`, `stepId`, `status: "running"\|"done"\|"error"`, `message?` | `{ ok: true }` |
 | `done` | `taskId`, `outFiles?: string[]`, `totalCost?: number` | `{ ok: true }` |
@@ -699,6 +700,12 @@ with the outcome. `release` is for an emergency stop and does not count an attem
 
 Visibility follows the token's role: an admin token works the shared queue, a regular
 one only its owner's projects.
+
+**Call `ping` on your own pulse, regardless of whether the worker is running.** The
+admin UI shows two separate indicators per machine — *online* (any contact within 90 s)
+and *worker polling* (a task request within 45 s). With an `mch_` token the site only
+hears the machine when it asks for a task, so without `ping` the state “machine up,
+worker off” is invisible and both indicators light up together.
 
 **Response `409`** — the task is held by another machine (its lease expired and it was
 re-claimed). **`404`** — no such task.

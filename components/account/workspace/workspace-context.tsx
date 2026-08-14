@@ -43,6 +43,7 @@ import type {
 } from "./types"
 
 const DENSITY_KEY = "ffworks-ws-density"
+const CHAT_POLL_INTERVAL_MS = 6000
 const VIEW_KEY = "ffworks-ws-view"
 const DELTA_INTERVAL_MS = 4000
 
@@ -579,7 +580,12 @@ export function WorkspaceProvider({
   }, [selected])
 
   useEffect(() => {
-    if (selectedId && bottomTab === "chat") void loadMessages(selectedId)
+    if (!selectedId || bottomTab !== "chat") return
+    void loadMessages(selectedId)
+    const timer = window.setInterval(() => {
+      void loadMessages(selectedId)
+    }, CHAT_POLL_INTERVAL_MS)
+    return () => window.clearInterval(timer)
   }, [selectedId, bottomTab, loadMessages])
 
   useEffect(() => {

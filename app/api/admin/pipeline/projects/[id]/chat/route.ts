@@ -7,18 +7,10 @@ import {
   listProjectChatMessages,
   markProjectChatMessageDelivered,
 } from "@/lib/repositories/project-chat"
-import {
-  findProjectById,
-  setProjectYougileChatId,
-} from "@/lib/repositories/projects"
+import { findProjectById } from "@/lib/repositories/projects"
 import { findUserById } from "@/lib/repositories/users"
-import {
-  createProjectGroupChat,
-  getYouGileConfig,
-  isYouGileConfigured,
-  sendChatMessage,
-  YouGileError,
-} from "@/lib/yougile"
+import { deliverProjectMessageToYouGile } from "@/lib/project-yougile-chat"
+import { isYouGileConfigured, YouGileError } from "@/lib/yougile"
 
 export const runtime = "nodejs"
 
@@ -46,22 +38,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const messages = await listProjectChatMessages(project.id)
   return NextResponse.json({ messages })
-}
-
-async function ensureYouGileChatId(
-  project: { id: string; name: string; yougileChatId: string | null },
-  ownerEmail: string,
-): Promise<string> {
-  if (project.yougileChatId) return project.yougileChatId
-
-  const config = getYouGileConfig()
-  const chat = await createProjectGroupChat({
-    title: `${project.name} — ${ownerEmail}`,
-    botUserId: config.botUserId,
-    memberIds: config.memberIds,
-  })
-  await setProjectYougileChatId(project.id, chat.id)
-  return chat.id
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -103,12 +79,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (isYouGileConfigured()) {
     try {
       const ownerEmail = (await findUserById(project.ownerId))?.email ?? ""
-      const chatId = await ensureYouGileChatId(project, ownerEmail)
-      const sent = await sendChatMessage({
-        chatId,
+      const yougileMessageId = await deliverProjectMessageToYouGile({
+        projectId: project.id,
+        projectName: project.name,
+        yougileChatId: project.yougileChatId,
+        writerEmail: ownerEmail,
         text: `${senderName} (админ сайта): ${parsed.data.text}`,
       })
-      const yougileMessageId = String(sent.id)
       await markProjectChatMessageDelivered(message.id, yougileMessageId)
       message = { ...message, yougileMessageId, delivered: true }
     } catch (error) {

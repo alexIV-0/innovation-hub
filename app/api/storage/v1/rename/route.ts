@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
+  actorFromAuth,
   requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
@@ -58,6 +59,9 @@ export async function POST(request: NextRequest) {
       name: data.name,
       folderPath: data.folderPath,
       eventId: data.eventId,
+      // Снятие `-` с имени папки приходит сюда: это событие готовности витка, и
+      // его актор становится contact задачи (lib/pipeline/scan.ts).
+      actor: actorFromAuth(auth),
     })
     if (!file) {
       return NextResponse.json({ message: "File not found." }, { status: 404 })

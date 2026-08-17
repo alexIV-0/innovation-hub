@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
+  actorFromAuth,
   requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest) {
       originMtime: data.originMtime,
       contentHash: data.contentHash,
       eventId: data.eventId,
+      // Основной путь загрузки из кабинета (lib/project-direct-upload.ts): здесь
+      // и фиксируется, кто принёс файл, — дальше это имя уедет в contact задачи.
+      actor: actorFromAuth(auth),
     })
     return NextResponse.json({ file, fileIds: [file.id] }, { status: 201 })
   } catch (error) {

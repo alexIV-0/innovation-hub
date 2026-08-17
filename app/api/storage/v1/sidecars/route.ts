@@ -7,7 +7,8 @@ import {
 } from "@/lib/storage/auth"
 import { setProjectPaused } from "@/lib/project-automation"
 import {
-  getObjectText,
+  getObjectTextWithMeta,
+  OPTIONS_FILE_NAME,
   projectDescriptionKey,
   projectFolderStateKey,
   projectOptionsKey,
@@ -16,9 +17,9 @@ import {
   updateProjectExposedOptions,
 } from "@/lib/project-storage"
 import {
-  journalStorageEvent,
   StorageWriteError,
   writeSidecarPut,
+  writeSidecarSync,
 } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
@@ -84,11 +85,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Unknown sidecar." }, { status: 400 })
   }
 
-  const text = await getObjectText(key)
-  if (text == null) {
+  const object = await getObjectTextWithMeta(key)
+  if (object == null) {
     return NextResponse.json({ message: "Not found." }, { status: 404 })
   }
-  return NextResponse.json({ key, body: text })
+  // etag отдаётся вместе с телом: он и есть версия, которую клиент возвращает в
+  // `ifMatch` при записи. Без него сравнить облачную копию с локальной и
+  // перезаписать её без риска затереть чужую правку нечем.
+  return NextResponse.json({
+    key,
+    body: object.body,
+    etag: object.etag,
+    sizeBytes: object.sizeBytes,
+    lastModified: object.lastModified,
+  })
 }
 
 /** PUT /api/storage/v1/sidecars */
@@ -122,6 +132,7 @@ export async function PUT(request: NextRequest) {
         ownerId: access.ownerId,
         paused: !data.enabled,
         updatedBy: siteUpdatedBy(auth.email),
+        actorUserId: auth.userId,
       })
       return NextResponse.json({ folderState })
     }
@@ -132,11 +143,12 @@ export async function PUT(request: NextRequest) {
         projectId: access.projectId,
         changes: data.changes,
       })
-      await journalStorageEvent({
+      await writeSidecarSync({
+        userId: access.ownerId,
         projectId: access.projectId,
         key: projectOptionsKey(access.ownerId, access.projectId),
-        op: "put",
-        payload: { name: "options.json", folderPath: "options" },
+        name: OPTIONS_FILE_NAME,
+        actor: { userId: auth.userId },
       })
       return NextResponse.json({ options: result })
     }
@@ -145,18 +157,23 @@ export async function PUT(request: NextRequest) {
     if (!key) {
       return NextResponse.json({ message: "Unknown sidecar." }, { status: 400 })
     }
-    const { etag } = await writeSidecarPut({
+    const { etag, file } = await writeSidecarPut({
+      userId: access.ownerId,
       projectId: access.projectId,
       key,
       body: data.body,
       ifMatch: data.ifMatch,
+      actor: { userId: auth.userId },
     })
-    return NextResponse.json({ ok: true, etag })
+    return NextResponse.json({ ok: true, etag, file })
   } catch (error) {
-    if (
-      error instanceof ProjectStorageError ||
-      error instanceof StorageWriteError
-    ) {
+    // Статус берём у ошибки: 412 (версия устарела) клиенту нужно отличать от 409
+    // (имя занято) — на второе он ответил бы переименованием, а тут надо
+    // перечитать сайдкар и решить, чья версия едет в облако.
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+    if (error instanceof ProjectStorageError) {
       return NextResponse.json({ message: error.message }, { status: 409 })
     }
     console.error("[storage] sidecar put failed", error)

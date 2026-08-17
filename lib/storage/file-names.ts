@@ -1,5 +1,4 @@
 import type { PoolClient } from "pg"
-import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
 import { CATALOG_FOLDER_NAME } from "@/lib/storage/keys"
 import { StorageWriteError } from "@/lib/storage/errors"
 
@@ -40,9 +39,10 @@ export function validateLogicalName(name: string): string {
       400,
     )
   }
-  if (trimmed.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    throw new StorageWriteError("This folder name is reserved.", 403)
-  }
+  // `options` намеренно НЕ запрещён: служебная папка проекта — обычная папка
+  // каталога, её содержимое создаётся, переименовывается и удаляется как любое
+  // другое. Закреплены только три канонических имени внутри неё, и это
+  // проверяется на уровне операции (writeRename / writeFileDelete), а не имени.
   if (trimmed.toLowerCase() === CATALOG_FOLDER_NAME) {
     throw new StorageWriteError("This folder name is reserved.", 403)
   }

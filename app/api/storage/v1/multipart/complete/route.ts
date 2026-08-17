@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import {
+  actorFromAuth,
   requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
       contentHash: parsed.data.contentHash,
       originMtime: parsed.data.originMtime,
       eventId: parsed.data.eventId,
+      actor: actorFromAuth(auth),
     })
     return NextResponse.json({ file, fileIds: [file.id] })
   } catch (error) {

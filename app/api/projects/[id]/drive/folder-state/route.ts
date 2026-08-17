@@ -44,6 +44,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       ownerId: project.ownerId,
       paused: !parsed.data.enabled,
       updatedBy: siteUpdatedBy(auth.email),
+      actorUserId: auth.userId,
     })
 
     return NextResponse.json({ folderState })

@@ -20,6 +20,7 @@ export async function GET() {
   return NextResponse.json({
     id: user.id,
     fullName: user.fullName,
+    contactName: user.contactName,
     email: user.email,
     role: user.role,
     isActive: user.isActive,
@@ -67,6 +68,7 @@ export async function PATCH(request: Request) {
   try {
     updated = await updateUser(current.id, {
       fullName: parsed.data.fullName,
+      contactName: parsed.data.contactName,
       email: nextEmail,
     })
   } catch (error) {
@@ -107,6 +109,7 @@ export async function PATCH(request: Request) {
     profile: {
       id: updated.id,
       fullName: updated.fullName,
+      contactName: updated.contactName,
       email: updated.email,
       role: updated.role,
       isActive: updated.isActive,

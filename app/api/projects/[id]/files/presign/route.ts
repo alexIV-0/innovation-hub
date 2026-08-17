@@ -65,6 +65,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         s3Key: parsed.data.s3Key,
         sizeBytes: parsed.data.sizeBytes,
         contentType: parsed.data.contentType,
+        actor: { userId: auth.userId },
       })
       return NextResponse.json(
         {

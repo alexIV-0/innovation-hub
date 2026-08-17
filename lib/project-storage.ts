@@ -1,18 +1,18 @@
 import {
   GetObjectCommand,
   HeadObjectCommand,
-  ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3"
 import type { ProjectFileRecord } from "@/lib/domain-types"
 import { listAllProjectFiles } from "@/lib/repositories/project-files"
-import {
-  buildProjectObjectKey,
-  getS3Bucket,
-  projectObjectPrefix,
-  userMetaObjectKey,
-} from "@/lib/s3-config"
+import { buildProjectObjectKey, getS3Bucket, userMetaObjectKey } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
+import {
+  DESCRIPTION_FILE_NAME,
+  FOLDER_STATE_FILE_NAME,
+  OPTIONS_FILE_NAME,
+  OPTIONS_FOLDER_NAME,
+} from "@/lib/storage/keys"
 
 /**
  * R2/S3 layout for a project (replaces the Google Drive tree):
@@ -22,23 +22,32 @@ import { getS3Client, isS3Configured } from "@/lib/s3-client"
  *   projects/{userId}/{projectId}/options/options.json
  *   projects/{userId}/{projectId}/{folderPath}/{uuid}-{name}   — user files
  *
- * Folder structure for the cabinet lives in Postgres `project_files`.
- * The `options` service folder is never listed in the UI.
+ * Структура папок для кабинета живёт в Postgres `project_files` — вместе со
+ * служебной папкой `options`: она такая же папка каталога, как любая другая, и
+ * показывается в дереве наравне с ними. Строки сайдкарам создаёт
+ * `writeSidecarSync` (lib/storage/write-path.ts), потому что сами объекты
+ * пишутся по фиксированному ключу, минуя presign/notify.
  */
 
-export const OPTIONS_FOLDER_NAME = "options"
-export const FOLDER_STATE_FILE_NAME = "folderState.json"
-export const OPTIONS_FILE_NAME = "options.json"
-export const PROJECT_META_FILE_NAME = "project-meta.json"
 /**
- * Развёрнутое описание проекта в markdown: картинки, схемы, таблицы.
+ * Имена служебных файлов и папки лежат в lib/storage/keys.ts: их читает путь
+ * записи, а импорт оттуда в эту сторону замкнул бы цикл. Здесь только
+ * реэкспорт — чтобы существующие импорты из `@/lib/project-storage` работали.
  *
- * Отдельный файл, а не поле в options.json: options.json принадлежит редактору
- * нод, его формат задаёт десктопное приложение. Короткая подпись остаётся в
- * projects.description — она нужна на карточке в списке, а ходить за ней в
- * объектное хранилище на каждый рендер списка нельзя.
+ * `description.md` — развёрнутое описание проекта в markdown: картинки, схемы,
+ * таблицы. Отдельный файл, а не поле в options.json: options.json принадлежит
+ * редактору нод, его формат задаёт десктопное приложение. Короткая подпись
+ * остаётся в projects.description — она нужна на карточке в списке, а ходить за
+ * ней в объектное хранилище на каждый рендер списка нельзя.
  */
-export const DESCRIPTION_FILE_NAME = "description.md"
+export {
+  DESCRIPTION_FILE_NAME,
+  FOLDER_STATE_FILE_NAME,
+  OPTIONS_FILE_NAME,
+  OPTIONS_FOLDER_NAME,
+}
+
+export const PROJECT_META_FILE_NAME = "project-meta.json"
 
 export class ProjectStorageError extends Error {
   constructor(message: string) {
@@ -57,6 +66,8 @@ export type ProjectStorageFile = {
   createdAt: string | null
   s3Key: string | null
   folderPath: string
+  /** Кто принёс файл; null — атрибуции нет (загрузка до её появления). */
+  uploadedByName?: string | null
   children?: ProjectStorageFile[]
 }
 
@@ -295,7 +306,23 @@ export function extractExposedOptions(root: unknown): ExposedOption[] {
   return out
 }
 
-export async function getObjectText(key: string): Promise<string | null> {
+export type ObjectTextWithMeta = {
+  body: string
+  etag: string | null
+  sizeBytes: number
+  lastModified: string | null
+}
+
+/**
+ * Читает текст объекта вместе с его версией.
+ *
+ * Версия нужна на чтении сайдкара: клиент сравнивает облачную копию с локальной,
+ * а `etag` возвращает обратно в `ifMatch` при записи — иначе перезапись затрёт
+ * правку, случившуюся между чтением и записью, и узнать об этом будет нечем.
+ */
+export async function getObjectTextWithMeta(
+  key: string,
+): Promise<ObjectTextWithMeta | null> {
   if (!isS3Configured()) return null
   try {
     const response = await getS3Client().send(
@@ -303,7 +330,12 @@ export async function getObjectText(key: string): Promise<string | null> {
     )
     const body = response.Body
     if (!body) return null
-    return await body.transformToString()
+    return {
+      body: await body.transformToString(),
+      etag: response.ETag?.replace(/"/g, "") ?? null,
+      sizeBytes: Number(response.ContentLength ?? 0),
+      lastModified: response.LastModified?.toISOString() ?? null,
+    }
   } catch (error) {
     const status =
       error &&
@@ -322,6 +354,11 @@ export async function getObjectText(key: string): Promise<string | null> {
     if (name === "NoSuchKey" || name === "NotFound") return null
     throw error
   }
+}
+
+export async function getObjectText(key: string): Promise<string | null> {
+  const object = await getObjectTextWithMeta(key)
+  return object?.body ?? null
 }
 
 async function putObjectText(
@@ -411,9 +448,15 @@ export async function syncUserMeta(input: {
   }
 }
 
+/**
+ * Скрыт только манифест проекта: его пишет сайт, редактировать его человеку
+ * нечем, и в дереве файлов он выглядел бы мусором.
+ *
+ * `options` здесь больше нет намеренно: служебная папка показывается как любая
+ * другая — с логическими именами, вложенностью и обычными операциями.
+ */
 function isHiddenName(name: string): boolean {
-  const n = name.toLowerCase()
-  return n === OPTIONS_FOLDER_NAME || n === PROJECT_META_FILE_NAME
+  return name.toLowerCase() === PROJECT_META_FILE_NAME
 }
 
 function toStorageFile(row: ProjectFileRecord): ProjectStorageFile {
@@ -429,6 +472,7 @@ function toStorageFile(row: ProjectFileRecord): ProjectStorageFile {
     createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
     s3Key: row.s3Key,
     folderPath: row.folderPath,
+    uploadedByName: row.uploadedByName ?? null,
   }
 }
 
@@ -464,92 +508,17 @@ function buildTree(rows: ProjectFileRecord[]): ProjectStorageFile[] {
 }
 
 /**
- * Содержимое служебной папки options как узел дерева.
- *
- * Строится листингом R2, а не выборкой из project_files: сайдкаров там нет и не
- * будет. Их пишут напрямую в объектное хранилище, а reindex пропускает этот
- * префикс намеренно (см. lib/storage/write-path.ts), чтобы служебные файлы не
- * появлялись в кабинете пользователя как обычные.
- *
- * Листинг, а не HEAD по известным именам: кроме folderState.json, options.json и
- * description.md десктопное приложение кладёт туда и другие сайдкары
- * (postSources.json, tgSearch.json), и админ должен видеть всё, что есть.
- */
-export async function listProjectServiceFiles(
-  userId: string,
-  projectId: string,
-): Promise<ProjectStorageFile | null> {
-  if (!isS3Configured()) return null
-
-  const prefix = `${projectObjectPrefix(userId, projectId)}${OPTIONS_FOLDER_NAME}/`
-  const children: ProjectStorageFile[] = []
-
-  let token: string | undefined
-  do {
-    const page = await getS3Client().send(
-      new ListObjectsV2Command({
-        Bucket: getS3Bucket(),
-        Prefix: prefix,
-        ContinuationToken: token,
-      }),
-    )
-    for (const obj of page.Contents ?? []) {
-      if (!obj.Key || obj.Key.endsWith("/")) continue
-      const name = obj.Key.slice(obj.Key.lastIndexOf("/") + 1)
-      if (!name) continue
-      const modified = obj.LastModified?.toISOString() ?? null
-      children.push({
-        // Идентичности в БД у этих файлов нет, поэтому id — сам ключ.
-        // Он стабилен и уникален, а больше от него в дереве ничего не требуется.
-        id: obj.Key,
-        name,
-        mimeType: name.endsWith(".json")
-          ? "application/json"
-          : name.endsWith(".md")
-            ? "text/markdown"
-            : "application/octet-stream",
-        isFolder: false,
-        sizeBytes: Number(obj.Size ?? 0),
-        modifiedAt: modified,
-        createdAt: modified,
-        s3Key: obj.Key,
-        folderPath: OPTIONS_FOLDER_NAME,
-      })
-    }
-    token = page.IsTruncated ? page.NextContinuationToken : undefined
-  } while (token)
-
-  if (children.length === 0) return null
-
-  children.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-  )
-
-  return {
-    id: `${prefix}`,
-    name: OPTIONS_FOLDER_NAME,
-    mimeType: "application/vnd.folder",
-    isFolder: true,
-    sizeBytes: null,
-    modifiedAt: null,
-    createdAt: null,
-    s3Key: null,
-    folderPath: "",
-    children,
-  }
-}
-
-/**
  * Cabinet view: nested file tree from Postgres + automation JSON from R2.
  *
- * `includeServiceFiles` включает в дерево служебную папку options — так админский
- * «Конвейер» видит проект целиком, тогда как в кабинете пользователя эта папка
- * скрыта (buildTree отсекает её через isHiddenName).
+ * Служебная папка `options` приезжает из того же `project_files`, что и всё
+ * остальное — отдельного листинга бакета для неё больше нет. Раньше он был
+ * нужен, потому что сайдкарам не создавали строк; из-за него в кабинете
+ * показывались физические имена (`{uuid}-folderState.json`) и любой мусор,
+ * оставшийся под префиксом от прошлых заливок.
  */
 export async function loadProjectStorageState(
   userId: string,
   projectId: string,
-  view?: { includeServiceFiles?: boolean },
 ): Promise<ProjectStorageState> {
   const available = isS3Configured()
   const rows = await listAllProjectFiles(projectId)
@@ -565,16 +534,10 @@ export async function loadProjectStorageState(
     }
   }
 
-  const [stateRaw, optionsRaw, serviceFolder] = await Promise.all([
+  const [stateRaw, optionsRaw] = await Promise.all([
     getObjectText(projectFolderStateKey(userId, projectId)),
     getObjectText(projectOptionsKey(userId, projectId)),
-    view?.includeServiceFiles
-      ? listProjectServiceFiles(userId, projectId)
-      : Promise.resolve<ProjectStorageFile | null>(null),
   ])
-
-  // Служебная папка идёт первой: она про настройку проекта, а не про его данные.
-  if (serviceFolder) files.unshift(serviceFolder)
 
   const folderState = stateRaw
     ? parseFolderState(parseJson(stateRaw))

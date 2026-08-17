@@ -1,9 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import {
-  loadProjectStorageState,
-  OPTIONS_FOLDER_NAME,
-} from "@/lib/project-storage"
+import { loadProjectStorageState } from "@/lib/project-storage"
 import { findProjectForUser } from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
 import { writeFolderCreate } from "@/lib/storage/write-path"
@@ -77,19 +74,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!name || name.includes("/") || name.includes("\\")) {
     return NextResponse.json({ message: "Invalid folder name." }, { status: 400 })
   }
-  if (name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    return NextResponse.json(
-      { message: "This folder name is reserved." },
-      { status: 403 },
-    )
-  }
-
   try {
     const folder = await writeFolderCreate({
       userId: project.ownerId,
       projectId: project.id,
       folderPath: parentFolderPath,
       name,
+      actor: { userId: auth.userId },
     })
     return NextResponse.json(
       { id: folder.id, name: folder.name, folderPath: folder.folderPath },

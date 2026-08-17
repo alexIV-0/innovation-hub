@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
+  actorFromAuth,
   requireEditableProjectAccess,
   requireProjectAccess,
   requireStorageApi,
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
         destFolderPath: data.destFolderPath,
         source: syncSingle,
         eventId: data.eventId ?? null,
+        actor: actorFromAuth(auth),
       })
       return NextResponse.json({ files: [file], fileIds: [file.id] })
     }
@@ -93,6 +95,10 @@ export async function POST(request: NextRequest) {
         destFolderPath: data.destFolderPath,
         fileIds: data.fileIds,
         eventId: data.eventId,
+        // Асинхронную часть копирования исполняет job-runner уже без запроса,
+        // поэтому актора кладём в payload — иначе файлы приедут без заливщика.
+        actorUserId: auth.userId,
+        actorIsUploader: auth.computerId == null,
       },
     })
     scheduleJob(job.id)

@@ -29,6 +29,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     userId: project.ownerId,
     projectId: project.id,
     fileId: mediaId,
+    deletedBy: auth.userId,
+    actor: { userId: auth.userId },
   })
 
   return NextResponse.json({ ok: true })

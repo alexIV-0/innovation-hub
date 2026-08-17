@@ -1,5 +1,6 @@
 import type { ProjectRecord } from "@/lib/domain-types"
 import {
+  FOLDER_STATE_FILE_NAME,
   ProjectStorageError,
   projectFolderStateKey,
   setProjectAutomationEnabled,
@@ -7,7 +8,7 @@ import {
 } from "@/lib/project-storage"
 import { updateProject } from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
-import { journalStorageEvent } from "@/lib/storage/write-path"
+import { writeSidecarSync } from "@/lib/storage/write-path"
 
 /**
  * Тумблер слежения за проектом — единственная точка записи.
@@ -30,11 +31,14 @@ import { journalStorageEvent } from "@/lib/storage/write-path"
  *                не тронув: расхождения не возникает вовсе.
  *   2. Postgres — кэш. Если упадёт здесь, кэш отстаёт от правды; починит
  *                reconcileProjectPauseFromFolderState на следующем чтении.
- *   3. Журнал   — последним и только после того, как сайдкар реально изменился.
- *                Десктоп узнаёт об изменении через delta (lib/storage/changes.ts),
- *                а getDelta не фильтрует ключи по префиксу, поэтому put по
+ *   3. Каталог  — последним и только после того, как сайдкар реально изменился:
+ *                строка в project_files плюс событие в журнале. Десктоп узнаёт об
+ *                изменении через delta (lib/storage/changes.ts), а getDelta не
+ *                фильтрует ключи по префиксу, поэтому put по
  *                options/folderState.json доезжает наравне с обычными файлами.
- *                Без этого шага запись на R2 осталась бы для машины невидимой.
+ *                Без этого шага запись на R2 осталась бы для машины невидимой, а
+ *                сам файл — вне дерева: сайдкары пишутся минуя presign/notify,
+ *                поэтому строку им создаёт только writeSidecarSync.
  */
 export async function setProjectPaused(input: {
   projectId: string
@@ -42,6 +46,8 @@ export async function setProjectPaused(input: {
   paused: boolean
   /** Кто менял — siteUpdatedBy(email) из lib/project-storage. */
   updatedBy: string
+  /** Действующее лицо для журнала; владельцем проекта быть не обязано. */
+  actorUserId?: string | null
 }): Promise<{ project: ProjectRecord; folderState: ProjectFolderState }> {
   if (!isS3Configured()) {
     throw new ProjectStorageError(
@@ -66,11 +72,12 @@ export async function setProjectPaused(input: {
     throw new ProjectStorageError("Project not found.")
   }
 
-  await journalStorageEvent({
+  await writeSidecarSync({
+    userId: input.ownerId,
     projectId: input.projectId,
     key: projectFolderStateKey(input.ownerId, input.projectId),
-    op: "put",
-    payload: { name: "folderState.json", folderPath: "options" },
+    name: FOLDER_STATE_FILE_NAME,
+    actor: input.actorUserId ? { userId: input.actorUserId } : null,
   })
 
   return { project, folderState }

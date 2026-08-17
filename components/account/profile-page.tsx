@@ -20,6 +20,8 @@ import { avatarInitials, useI18n } from "@/components/account/i18n"
 export type ProfileUser = {
   id: string
   fullName: string
+  /** Имя для статистики обработки; пусто — используется fullName. */
+  contactName: string
   email: string
   role: UserRole
   isActive: boolean
@@ -46,7 +48,11 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
 
   const profileForm = useForm<UpdateProfileInput>({
     resolver: zodResolver(updateProfileSchema),
-    defaultValues: { fullName: current.fullName, email: current.email },
+    defaultValues: {
+      fullName: current.fullName,
+      contactName: current.contactName,
+      email: current.email,
+    },
   })
 
   const passwordForm = useForm<ChangePasswordInput>({
@@ -64,7 +70,11 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
   })
 
   useEffect(() => {
-    profileForm.reset({ fullName: current.fullName, email: current.email })
+    profileForm.reset({
+      fullName: current.fullName,
+      contactName: current.contactName,
+      email: current.email,
+    })
   }, [current, profileForm])
 
   const onSaveProfile = async (values: UpdateProfileInput) => {
@@ -81,6 +91,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
     setCurrent((c) => ({
       ...c,
       fullName: values.fullName,
+      contactName: values.contactName ?? "",
       email: values.email,
     }))
     toast.success(t.saveChanges)
@@ -209,6 +220,26 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
             )}
 
             <label className="mb-2 mt-4 block text-[14px] font-medium">
+              {t.contactName}
+            </label>
+            <div className="relative">
+              <UserIcon className="absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#626875]" />
+              <input
+                className={`${inputClass} pl-[42px]`}
+                placeholder={current.fullName}
+                {...profileForm.register("contactName")}
+              />
+            </div>
+            <p className="mt-2.5 text-[13px] text-[#7c8290]">
+              {t.contactNameHint}
+            </p>
+            {profileForm.formState.errors.contactName && (
+              <p className="mt-1 text-[13px] text-[#ff4d00]">
+                {profileForm.formState.errors.contactName.message}
+              </p>
+            )}
+
+            <label className="mb-2 mt-4 block text-[14px] font-medium">
               {t.email}
             </label>
             <div className="relative">
@@ -234,6 +265,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
                 onClick={() =>
                   profileForm.reset({
                     fullName: current.fullName,
+                    contactName: current.contactName,
                     email: current.email,
                   })
                 }

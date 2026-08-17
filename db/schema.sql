@@ -16,6 +16,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT '
 ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_account_id TEXT;
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
+-- Имя для статистики обработки: должно совпадать со строкой, которой человек
+-- подписывается при локальной обработке (статистика группируется по contact).
+-- NULL — берём full_name. См. db/migrations/2026-08-17-upload-attribution.sql.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_name TEXT;
+
 -- One Google `sub` (or any provider's account id) maps to at most one user;
 -- partial unique index lets multiple rows have NULL provider_account_id.
 CREATE UNIQUE INDEX IF NOT EXISTS users_provider_account_idx
@@ -219,6 +224,9 @@ CREATE TABLE IF NOT EXISTS project_files (
   etag          TEXT,
   content_hash  TEXT,
   origin_mtime  INTEGER,
+  -- Кто принёс файл. Перезапись переносит атрибуцию на нового заливщика; записи
+  -- машин парка (rc_) её не трогают. Отсюда конвейер берёт description.contact.
+  uploaded_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
   deleted_at    TIMESTAMPTZ,
   deleted_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -241,6 +249,9 @@ CREATE TABLE IF NOT EXISTS storage_changes (
   content_hash TEXT,
   event_time   INTEGER NOT NULL,
   event_id     TEXT UNIQUE,
+  -- Кто совершил запись. Нужен конвейеру: для папки виток запускает не заливщик
+  -- файла, а тот, кто снял `-` с имени, то есть актор move-события.
+  actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   payload      JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 

@@ -21,6 +21,9 @@ async function runCopyJob(job: StorageJobRecord): Promise<void> {
     destFolderPath?: string
     fileIds?: string[]
     eventId?: string
+    /** Кто запустил копирование — актора не восстановить из джоба иначе. */
+    actorUserId?: string
+    actorIsUploader?: boolean
   }
 
   const sourceProjectId = payload.sourceProjectId ?? job.projectId
@@ -57,6 +60,10 @@ async function runCopyJob(job: StorageJobRecord): Promise<void> {
       eventId: payload.eventId
         ? `${payload.eventId}:${item.source.id}`
         : null,
+      actor: {
+        userId: payload.actorUserId ?? job.userId,
+        isUploader: payload.actorIsUploader !== false,
+      },
     })
     createdIds.push(file.id)
     done++

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import {
+  DeleteObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -20,11 +21,15 @@ import {
   validateLogicalName,
 } from "@/lib/storage/file-names"
 import {
+  CATALOG_FOLDER_NAME,
+  contentTypeForSidecar,
   folderPathFromKey,
+  isCanonicalSidecar,
   isCatalogKey,
-  isOptionsKey,
+  isOptionsFolderRow,
   logicalKeyForFile,
   logicalNameFromObjectKey,
+  OPTIONS_FOLDER_NAME,
   parseProjectIdFromKey,
   projectPrefix,
 } from "@/lib/storage/keys"
@@ -41,6 +46,8 @@ const FILE_FIELDS = `
   s3_key AS "s3Key",
   size_bytes::float8 AS "sizeBytes",
   content_type AS "contentType",
+  etag,
+  content_hash AS "contentHash",
   created_at AS "createdAt"
 `
 
@@ -51,6 +58,32 @@ export type ObjectHead = {
   size: number
   contentHash: string | null
   originMtime: number | null
+}
+
+/**
+ * Кто совершает запись.
+ *
+ * Внимание: это НЕ `userId`, который уже принимают writeFolderCreate/writeRename —
+ * тот всегда владелец проекта и нужен только для построения ключа в хранилище
+ * (`projectPrefix(ownerId, …)`). Здесь — действующее лицо, и в расшаренном
+ * проекте это чаще всего не владелец.
+ *
+ * `userId` уезжает в журнал всегда: сквозной ответ на «кто это сделал».
+ * `isUploader` отвечает на другой вопрос — считать ли его тем, кто принёс файл.
+ * У машин парка (`rc_`) он `false`: машина возвращает результаты в проект, и если
+ * бы её запись перетирала `uploaded_by`, `description.contact` следующей задачи
+ * переехал бы на админа, который зарегистрировал компьютер.
+ */
+export type StorageActor = {
+  userId: string | null
+  /** По умолчанию true — записи с сайта и с персонального `mch_`-токена. */
+  isUploader?: boolean
+}
+
+/** id для `uploaded_by`: null, если актора нет или он не заливщик. */
+function uploaderIdOf(actor: StorageActor | null | undefined): string | null {
+  if (!actor?.userId) return null
+  return actor.isUploader === false ? null : actor.userId
 }
 
 export async function headObject(key: string): Promise<ObjectHead | null> {
@@ -72,6 +105,63 @@ export async function headObject(key: string): Promise<ObjectHead | null> {
   }
 }
 
+/**
+ * Убирает объект, который уже залит, но строку в каталоге не получил.
+ *
+ * Байты в бакете появляются от PUT по presigned URL, а строка — от `/notify`.
+ * Между ними стоит проверка имени, и её отказ раньше оставлял оплаченный объект
+ * навсегда: удалять его клиенту нечем — `delete` работает по `file_id`, а строки
+ * не появилось. Зовётся только на ключ, на который заведомо не ссылается ни одна
+ * строка, поэтому живой файл этим снести нельзя.
+ */
+async function deleteOrphanUpload(key: string): Promise<void> {
+  if (!isS3Configured()) return
+  try {
+    await getS3Client().send(
+      new DeleteObjectCommand({ Bucket: getS3Bucket(), Key: key }),
+    )
+  } catch (error) {
+    // Не маскируем исходную ошибку записи: она важнее неудачной уборки.
+    console.error("[storage] failed to remove orphaned upload", key, error)
+  }
+}
+
+function isNameConflict(error: unknown): boolean {
+  return error instanceof StorageWriteError && error.status === 409
+}
+
+/**
+ * Единственное исключение из «options — обычная папка».
+ *
+ * Содержимое служебной папки создаётся, переименовывается, переносится и
+ * удаляется как любое другое. Но три файла сайт читает по фиксированному ключу
+ * (projectFolderStateKey и рядом), а сама папка задаёт этот ключ. Уведи их с
+ * места — и тумблер проекта вместе с настройками перестанет читаться при целом
+ * и на вид исправном файле, без единой ошибки где-либо.
+ *
+ * Поэтому закреплены только имя и место: `folderState.json`, `options.json`,
+ * `description.md` внутри `options` и сама папка `options` в корне проекта.
+ * Перезапись содержимого при этом полностью разрешена — через PUT /sidecars.
+ */
+function assertSidecarPlaceIsStable(
+  row: { folderPath: string; name: string; isFolder: boolean },
+  operation: "rename" | "delete",
+): void {
+  const what = isOptionsFolderRow(row)
+    ? `The "${OPTIONS_FOLDER_NAME}" folder`
+    : isCanonicalSidecar(row.folderPath, row.name)
+      ? `"${row.name}"`
+      : null
+  if (!what) return
+
+  throw new StorageWriteError(
+    operation === "rename"
+      ? `${what} cannot be renamed or moved: the site reads it at a fixed key. Its contents can still be replaced through PUT /api/storage/v1/sidecars.`
+      : `${what} cannot be deleted: project automation reads it at a fixed key.`,
+    403,
+  )
+}
+
 async function journal(
   client: PoolClient,
   input: {
@@ -82,11 +172,14 @@ async function journal(
     etag?: string | null
     contentHash?: string | null
     eventId?: string | null
+    actor?: StorageActor | null
     payload?: StorageChangePayload
   },
 ): Promise<number> {
+  const { actor, ...rest } = input
   return appendStorageChange(client, {
-    ...input,
+    ...rest,
+    actorUserId: actor?.userId ?? null,
     eventTime: nowUnixSec(),
   })
 }
@@ -101,6 +194,8 @@ async function touchFileRow(
     originMtime?: number | null
     sizeBytes?: number
     s3Key?: string
+    /** Новый заливщик при перезаписи; null оставляет прежнего. */
+    uploadedBy?: string | null
   },
 ): Promise<void> {
   await client.query(
@@ -110,6 +205,7 @@ async function touchFileRow(
             origin_mtime = COALESCE($5, origin_mtime),
             size_bytes = COALESCE($6, size_bytes),
             s3_key = COALESCE($7, s3_key),
+            uploaded_by = COALESCE($8, uploaded_by),
             updated_at = NOW(),
             last_seq = $2,
             deleted_at = NULL
@@ -122,16 +218,19 @@ async function touchFileRow(
       patch.originMtime ?? null,
       patch.sizeBytes ?? null,
       patch.s3Key ?? null,
+      patch.uploadedBy ?? null,
     ],
   )
 }
 
 export async function writeFolderCreate(input: {
+  /** Владелец проекта — для ключа в хранилище. Не путать с `actor`. */
   userId: string
   projectId: string
   folderPath: string
   name: string
   eventId?: string
+  actor?: StorageActor | null
 }): Promise<ProjectFileRecord> {
   const name = validateLogicalName(input.name)
   const folderPath = input.folderPath.replace(/^\/+|\/+$/g, "")
@@ -151,13 +250,17 @@ export async function writeFolderCreate(input: {
       name,
     })
 
+    // uploaded_by у папки — её создатель: для папки-источника это первое звено
+    // отката, когда актора события готовности не осталось (см. resolveContact
+    // в lib/pipeline/scan.ts).
     const result = await client.query<ProjectFileRecord>(
       `INSERT INTO project_files (
-          id, project_id, folder_path, name, is_folder, s3_key, size_bytes, content_type
+          id, project_id, folder_path, name, is_folder, s3_key, size_bytes,
+          content_type, uploaded_by
        )
-       VALUES ($1, $2, $3, $4, TRUE, NULL, 0, '')
+       VALUES ($1, $2, $3, $4, TRUE, NULL, 0, '', $5)
        RETURNING ${FILE_FIELDS}`,
-      [id, input.projectId, folderPath, name],
+      [id, input.projectId, folderPath, name, uploaderIdOf(input.actor)],
     )
     const file = result.rows[0]!
 
@@ -167,6 +270,7 @@ export async function writeFolderCreate(input: {
       op: "put",
       size: 0,
       eventId: input.eventId ?? null,
+      actor: input.actor,
       payload: {
         fileId: file.id,
         name,
@@ -191,6 +295,7 @@ export async function writeEnsureFolderPath(input: {
   projectId: string
   folderPath: string
   eventId?: string
+  actor?: StorageActor | null
 }): Promise<{ folderIds: string[]; folderPath: string }> {
   const cleaned = input.folderPath.replace(/^\/+|\/+$/g, "")
   if (!cleaned) return { folderIds: [], folderPath: "" }
@@ -230,6 +335,7 @@ export async function writeEnsureFolderPath(input: {
       eventId: input.eventId
         ? `${input.eventId}:mkdir:${i}`
         : undefined,
+      actor: input.actor,
     })
     folderIds.push(created.id)
     parent = parent ? `${parent}/${created.name}` : created.name
@@ -249,6 +355,7 @@ export async function writeFilePut(input: {
   contentHash?: string | null
   originMtime?: number | null
   eventId?: string
+  actor?: StorageActor | null
 }): Promise<ProjectFileRecord> {
   const name = validateLogicalName(input.name)
   const folderPath = input.folderPath.replace(/^\/+|\/+$/g, "")
@@ -264,9 +371,9 @@ export async function writeFilePut(input: {
     const result = await client.query<ProjectFileRecord>(
       `INSERT INTO project_files (
           id, project_id, folder_path, name, is_folder, s3_key,
-          size_bytes, content_type, etag, content_hash, origin_mtime
+          size_bytes, content_type, etag, content_hash, origin_mtime, uploaded_by
        )
-       VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7, $8, $9, $10)
+       VALUES ($1, $2, $3, $4, FALSE, $5, $6, $7, $8, $9, $10, $11)
        RETURNING ${FILE_FIELDS}`,
       [
         id,
@@ -279,6 +386,7 @@ export async function writeFilePut(input: {
         input.etag ?? null,
         input.contentHash ?? null,
         input.originMtime ?? null,
+        uploaderIdOf(input.actor),
       ],
     )
     const file = result.rows[0]!
@@ -291,6 +399,7 @@ export async function writeFilePut(input: {
       etag: input.etag ?? null,
       contentHash: input.contentHash ?? null,
       eventId: input.eventId ?? null,
+      actor: input.actor,
       payload: {
         fileId: file.id,
         name,
@@ -320,7 +429,24 @@ export async function writeNotifyUpload(input: {
   /** Content hash (e.g. sha256 hex); preferred over R2 metadata when provided. */
   contentHash?: string | null
   eventId?: string
+  actor?: StorageActor | null
 }): Promise<ProjectFileRecord> {
+  // Три канонических сайдкара сайт читает по фиксированному ключу, а presign
+  // минтит `{uuid}-{имя}`. Заливка их обычным путём давала второй объект с тем
+  // же логическим именем: сайт читал свой, программа — свой, и «какая версия
+  // новее» тут не помогало, потому что это два разных объекта. Единственный
+  // законный канал — PUT /api/storage/v1/sidecars.
+  if (
+    isCanonicalSidecar(input.folderPath, input.fileName) &&
+    !input.s3Key.endsWith(`/${OPTIONS_FOLDER_NAME}/${input.fileName}`)
+  ) {
+    await deleteOrphanUpload(input.s3Key)
+    throw new StorageWriteError(
+      `"${input.fileName}" is written through PUT /api/storage/v1/sidecars, not /notify.`,
+      409,
+    )
+  }
+
   const head = await headObject(input.s3Key)
   if (!head) {
     throw new StorageWriteError("Object not found in storage.")
@@ -353,6 +479,7 @@ export async function writeNotifyUpload(input: {
         etag: head.etag,
         contentHash,
         eventId: input.eventId ?? null,
+        actor: input.actor,
         payload: {
           fileId: existing.id,
           name: existing.name,
@@ -365,6 +492,9 @@ export async function writeNotifyUpload(input: {
         contentHash,
         originMtime,
         sizeBytes: head.size,
+        // Перезаписал другой человек — заливщик теперь он: задачу создаёт
+        // именно это событие. Машина парка прежнего не трогает.
+        uploadedBy: uploaderIdOf(input.actor),
       })
       const updated = await client.query<ProjectFileRecord>(
         `SELECT ${FILE_FIELDS} FROM project_files WHERE id = $1`,
@@ -374,18 +504,28 @@ export async function writeNotifyUpload(input: {
     })
   }
 
-  return writeFilePut({
-    projectId: input.projectId,
-    folderPath: input.folderPath,
-    name: input.fileName,
-    s3Key: input.s3Key,
-    sizeBytes: input.sizeBytes ?? head.size,
-    contentType: input.contentType ?? "application/octet-stream",
-    etag: head.etag,
-    contentHash,
-    originMtime,
-    eventId: input.eventId,
-  })
+  try {
+    return await writeFilePut({
+      projectId: input.projectId,
+      folderPath: input.folderPath,
+      name: input.fileName,
+      s3Key: input.s3Key,
+      sizeBytes: input.sizeBytes ?? head.size,
+      contentType: input.contentType ?? "application/octet-stream",
+      etag: head.etag,
+      contentHash,
+      originMtime,
+      eventId: input.eventId,
+      actor: input.actor,
+    })
+  } catch (error) {
+    // Имя занято — строки не будет, а байты уже в бакете. Ссылок на этот ключ
+    // нет (выше искали по s3_key и не нашли), поэтому объект здесь только
+    // сирота: не уберём — он останется оплаченным навсегда, удалить его
+    // клиенту нечем, `delete` работает по file_id.
+    if (isNameConflict(error)) await deleteOrphanUpload(input.s3Key)
+    throw error
+  }
 }
 
 export async function writeFileDelete(input: {
@@ -394,6 +534,7 @@ export async function writeFileDelete(input: {
   fileId: string
   deletedBy?: string | null
   eventId?: string
+  actor?: StorageActor | null
 }): Promise<{ fileIds: string[]; deletedS3Keys: string[] }> {
   return withTransaction(async (client) => {
     const found = await client.query<{
@@ -416,6 +557,8 @@ export async function writeFileDelete(input: {
     )
     const existing = found.rows[0]
     if (!existing) return { fileIds: [], deletedS3Keys: [] }
+
+    assertSidecarPlaceIsStable(existing, "delete")
 
     const prefix = existing.isFolder
       ? folderPrefix(existing.folderPath, existing.name)
@@ -465,6 +608,7 @@ export async function writeFileDelete(input: {
             ? input.eventId
             : `${input.eventId}:${row.id}`
           : null,
+        actor: input.actor ?? (input.deletedBy ? { userId: input.deletedBy } : null),
         payload: {
           fileId: row.id,
           name: row.name,
@@ -485,6 +629,13 @@ export async function writeFileDelete(input: {
   })
 }
 
+/**
+ * Переименование / перемещение.
+ *
+ * `actor` здесь особенно важен: снятие `-` с имени папки приезжает именно сюда, а
+ * для конвейера это событие готовности — «обрабатывай». Кто его совершил, тот и
+ * становится `description.contact` витка (lib/pipeline/scan.ts#resolveSourceActor).
+ */
 export async function writeRename(input: {
   userId: string
   projectId: string
@@ -492,6 +643,7 @@ export async function writeRename(input: {
   name?: string
   folderPath?: string
   eventId?: string
+  actor?: StorageActor | null
 }): Promise<ProjectFileRecord | null> {
   return withTransaction(async (client) => {
     const found = await client.query<ProjectFileRecord>(
@@ -514,6 +666,17 @@ export async function writeRename(input: {
 
     if (newName === existing.name && newFolder === existing.folderPath) {
       return existing
+    }
+
+    assertSidecarPlaceIsStable(existing, "rename")
+
+    // Занять каноническое имя чужим файлом — то же расхождение с другой стороны:
+    // в каталоге options.json есть, а сайт по своему ключу не находит ничего.
+    if (isCanonicalSidecar(newFolder, newName)) {
+      throw new StorageWriteError(
+        `"${newName}" in "${OPTIONS_FOLDER_NAME}" is reserved for project automation.`,
+        403,
+      )
     }
 
     if (existing.isFolder) {
@@ -577,6 +740,7 @@ export async function writeRename(input: {
       op: "move",
       size: file.isFolder ? 0 : file.sizeBytes,
       eventId: input.eventId ?? null,
+      actor: input.actor,
       payload: {
         fileId: file.id,
         isFolder: existing.isFolder,
@@ -595,14 +759,130 @@ export async function writeRename(input: {
   })
 }
 
+/**
+ * Приводит каталог в соответствие с только что записанным сайдкаром.
+ *
+ * Сайдкары попадают в бакет по фиксированному ключу, минуя presign/notify,
+ * поэтому строку в `project_files` им никто не создавал. Без строки файла не
+ * видно ни в дереве кабинета, ни в `/tree` у клиента, а событие в журнале
+ * приходит без `fileId` — то есть применить его к своему индексу клиент не может
+ * и вынужден перечитывать дерево целиком.
+ *
+ * Зовётся ПОСЛЕ каждой успешной записи сайдкара. Идемпотентна: строка ищется по
+ * логическому имени, а не по ключу, поэтому файл, попавший в каталог когда-то с
+ * uuid-ключом, здесь же переводится на канонический и сохраняет свой `file_id`.
+ */
+export async function writeSidecarSync(input: {
+  /** Владелец проекта — для ключа папки в хранилище. */
+  userId: string
+  projectId: string
+  /** Канонический ключ объекта. */
+  key: string
+  /** Логическое имя: folderState.json, options.json, description.md. */
+  name: string
+  folderPath?: string
+  contentType?: string
+  sizeBytes?: number
+  etag?: string | null
+  contentHash?: string | null
+  eventId?: string
+  actor?: StorageActor | null
+}): Promise<ProjectFileRecord | null> {
+  const folderPath = input.folderPath ?? OPTIONS_FOLDER_NAME
+  const contentType = input.contentType ?? contentTypeForSidecar(input.name)
+
+  // Размер и версию берём у объекта, если их не передали: у части путей записи
+  // (тумблер, правка options.json) под рукой только результат разбора JSON.
+  const head =
+    input.etag !== undefined && input.sizeBytes !== undefined
+      ? null
+      : await headObject(input.key)
+  const sizeBytes = input.sizeBytes ?? head?.size ?? 0
+  const etag = input.etag ?? head?.etag ?? null
+  const contentHash = input.contentHash ?? head?.contentHash ?? null
+
+  // Папка нужна раньше файла: buildTree спускается только в существующие
+  // строки-папки, поэтому без неё сайдкар лежал бы в каталоге невидимкой.
+  await writeEnsureFolderPath({
+    userId: input.userId,
+    projectId: input.projectId,
+    folderPath,
+    actor: input.actor,
+  })
+
+  const existing = await withTransaction(async (client) => {
+    const found = await client.query<ProjectFileRecord>(
+      `SELECT ${FILE_FIELDS}
+         FROM project_files
+        WHERE project_id = $1
+          AND lower(folder_path) = lower($2)
+          AND lower(name) = lower($3)
+        ORDER BY (deleted_at IS NULL) DESC, (s3_key = $4) DESC
+        LIMIT 1`,
+      [input.projectId, folderPath, input.name, input.key],
+    )
+    return found.rows[0] ?? null
+  })
+
+  if (existing) {
+    return withTransaction(async (client) => {
+      const seq = await journal(client, {
+        projectId: input.projectId,
+        key: input.key,
+        op: "put",
+        size: sizeBytes,
+        etag,
+        contentHash,
+        eventId: input.eventId ?? null,
+        actor: input.actor,
+        payload: {
+          fileId: existing.id,
+          name: existing.name,
+          folderPath: existing.folderPath,
+          isFolder: false,
+          contentType,
+        },
+      })
+      await touchFileRow(client, existing.id, seq, {
+        etag,
+        contentHash,
+        sizeBytes,
+        s3Key: input.key,
+        uploadedBy: uploaderIdOf(input.actor),
+      })
+      const updated = await client.query<ProjectFileRecord>(
+        `SELECT ${FILE_FIELDS} FROM project_files WHERE id = $1`,
+        [existing.id],
+      )
+      return updated.rows[0] ?? null
+    })
+  }
+
+  return writeFilePut({
+    projectId: input.projectId,
+    folderPath,
+    name: input.name,
+    s3Key: input.key,
+    sizeBytes,
+    contentType,
+    etag,
+    contentHash,
+    eventId: input.eventId,
+    actor: input.actor,
+  })
+}
+
 export async function writeSidecarPut(input: {
+  /** Владелец проекта — нужен, чтобы завести строку каталога и папку options. */
+  userId: string
   projectId: string
   key: string
   body: string
   contentType?: string
   ifMatch?: string | null
   eventId?: string
-}): Promise<{ etag: string | null }> {
+  actor?: StorageActor | null
+}): Promise<{ etag: string | null; file: ProjectFileRecord | null }> {
   if (!isS3Configured()) {
     throw new StorageWriteError("Object storage is not configured.")
   }
@@ -628,25 +908,29 @@ export async function writeSidecarPut(input: {
         ? (error as { $metadata: { httpStatusCode: number } }).$metadata
             .httpStatusCode
         : null
+    // 412, а не 409: клиенту нужно отличать «версия устарела, перечитай и
+    // реши, что делать» от «имя занято». На 409 он ответил бы переименованием.
     if (status === 412) {
-      throw new StorageWriteError("Precondition failed (ETag mismatch).")
+      throw new StorageWriteError("Precondition failed (ETag mismatch).", 412)
     }
     throw error
   }
 
   const etag = response.ETag?.replace(/"/g, "") ?? null
-  await withTransaction(async (client) => {
-    await journal(client, {
-      projectId: input.projectId,
-      key: input.key,
-      op: "put",
-      size: Buffer.byteLength(input.body, "utf8"),
-      etag,
-      eventId: input.eventId ?? null,
-      payload: { name: input.key.split("/").pop() },
-    })
+  // Журналирует и заводит строку writeSidecarSync — отдельной записи в журнал
+  // здесь нет намеренно, иначе событие ушло бы дважды.
+  const file = await writeSidecarSync({
+    userId: input.userId,
+    projectId: input.projectId,
+    key: input.key,
+    name: input.key.slice(input.key.lastIndexOf("/") + 1),
+    contentType: input.contentType,
+    sizeBytes: Buffer.byteLength(input.body, "utf8"),
+    etag,
+    eventId: input.eventId,
+    actor: input.actor,
   })
-  return { etag }
+  return { etag, file }
 }
 
 export async function writeR2PutFromBuffer(input: {
@@ -657,6 +941,7 @@ export async function writeR2PutFromBuffer(input: {
   fileName: string
   folderPath: string
   eventId?: string
+  actor?: StorageActor | null
 }): Promise<ProjectFileRecord> {
   if (!isS3Configured()) {
     throw new StorageWriteError("Object storage is not configured.")
@@ -672,16 +957,57 @@ export async function writeR2PutFromBuffer(input: {
   )
 
   const etag = response.ETag?.replace(/"/g, "") ?? null
-  return writeFilePut({
-    projectId: input.projectId,
-    folderPath: input.folderPath,
-    name: input.fileName,
-    s3Key: input.key,
-    sizeBytes: input.body.length,
-    contentType: input.contentType,
-    etag,
-    eventId: input.eventId,
-  })
+  try {
+    return await writeFilePut({
+      projectId: input.projectId,
+      folderPath: input.folderPath,
+      name: input.fileName,
+      s3Key: input.key,
+      sizeBytes: input.body.length,
+      contentType: input.contentType,
+      etag,
+      eventId: input.eventId,
+      actor: input.actor,
+    })
+  } catch (error) {
+    // Байты записали мы сами строкой выше, строки не будет — значит объект здесь
+    // сирота, как и на пути presign → PUT → notify.
+    if (isNameConflict(error)) await deleteOrphanUpload(input.key)
+    throw error
+  }
+}
+
+type ReindexCandidate = {
+  key: string
+  folderPath: string
+  name: string
+  head: ObjectHead
+}
+
+/** Ключ строки в каталоге: путь плюс имя без учёта регистра — как в индексе. */
+function logicalRowId(folderPath: string, name: string): string {
+  return `${folderPath.toLowerCase()}\u0000${name.toLowerCase()}`
+}
+
+/**
+ * Кто из двойников представляет логическое имя.
+ *
+ * Двойники берутся оттуда, что presign минтит `{uuid}-{имя}`: один и тот же файл
+ * мог попасть в бакет и под каноническим ключом, и под физическим. В каталоге же
+ * место одно — `project_files_unique_name_idx` держит (project_id, folder_path,
+ * name). Побеждает канонический ключ, при прочих равных — свежий по дате.
+ */
+function preferCandidate(
+  a: ReindexCandidate,
+  b: ReindexCandidate,
+): ReindexCandidate {
+  const aCanonical = a.key.endsWith(`/${a.name}`)
+  const bCanonical = b.key.endsWith(`/${b.name}`)
+  if (aCanonical !== bCanonical) return aCanonical ? a : b
+  const aTime = a.head.originMtime ?? 0
+  const bTime = b.head.originMtime ?? 0
+  if (aTime !== bTime) return aTime > bTime ? a : b
+  return a.key <= b.key ? a : b
 }
 
 export async function reindexProject(userId: string, projectId: string): Promise<{
@@ -689,6 +1015,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
   inserted: number
   updated: number
   removed: number
+  shadowed: number
 }> {
   if (!isS3Configured()) {
     throw new StorageWriteError("Object storage is not configured.")
@@ -710,8 +1037,11 @@ export async function reindexProject(userId: string, projectId: string): Promise
     )
     for (const obj of page.Contents ?? []) {
       if (!obj.Key || obj.Key.endsWith("/")) continue
-      if (obj.Key.includes("/options/")) continue
-      if (obj.Key.includes("/_catalog/")) continue
+      // `options/` больше НЕ исключается: служебная папка индексируется как
+      // любая другая, поэтому её содержимое получает строки и приезжает в /tree.
+      // Исключены только два служебных места самого бэкенда: снимки каталога и
+      // манифест проекта — их пишет сайт, и в дереве файлов им делать нечего.
+      if (obj.Key.includes(`/${CATALOG_FOLDER_NAME}/`)) continue
       if (obj.Key.endsWith("project-meta.json")) continue
       remoteKeys.set(obj.Key, {
         etag: obj.ETag?.replace(/"/g, "") ?? null,
@@ -725,6 +1055,54 @@ export async function reindexProject(userId: string, projectId: string): Promise
     token = page.IsTruncated ? page.NextContinuationToken : undefined
   } while (token)
 
+  // Сводим объекты к одному на логическое имя. Без этого шага реиндекс проекта,
+  // где под options лежат канонический сайдкар и его uuid-двойник, упал бы на
+  // уникальном индексе и отменил бы всю транзакцию целиком.
+  const byLogical = new Map<string, ReindexCandidate>()
+  let shadowed = 0
+  for (const [key, head] of remoteKeys) {
+    const physicalName = key.slice(key.lastIndexOf("/") + 1)
+    const candidate: ReindexCandidate = {
+      key,
+      head,
+      name: logicalNameFromObjectKey(physicalName),
+      folderPath: folderPathFromKey(userId, projectId, key, physicalName),
+    }
+    const id = logicalRowId(candidate.folderPath, candidate.name)
+    const previous = byLogical.get(id)
+    if (!previous) {
+      byLogical.set(id, candidate)
+      continue
+    }
+    const winner = preferCandidate(previous, candidate)
+    byLogical.set(id, winner)
+    shadowed++
+    console.warn(
+      "[storage] reindex: duplicate logical name under",
+      `${candidate.folderPath}/${candidate.name};`,
+      "keeping",
+      winner.key,
+    )
+  }
+  const candidates = [...byLogical.values()]
+
+  // Строки-папок заводим до основной транзакции — вложенная транзакция брала бы
+  // второе соединение из пула. Без них buildTree не спустится внутрь: он идёт
+  // только по существующим строкам-папкам, и файл в options/__stat остался бы в
+  // каталоге, но не показался бы в дереве.
+  const folderPaths = [
+    ...new Set(candidates.map((c) => c.folderPath).filter(Boolean)),
+  ].sort()
+  for (const folderPath of folderPaths) {
+    try {
+      await writeEnsureFolderPath({ userId, projectId, folderPath })
+    } catch (error) {
+      // Имя занято файлом или недопустимо: пропускаем только эту папку, а не
+      // весь реиндекс — остальное проиндексировать всё равно нужно.
+      console.warn("[storage] reindex: cannot ensure folder", folderPath, error)
+    }
+  }
+
   let inserted = 0
   let updated = 0
   let removed = 0
@@ -735,32 +1113,41 @@ export async function reindexProject(userId: string, projectId: string): Promise
       s3Key: string
       etag: string | null
       name: string
+      folderPath: string
+      deletedAt: Date | null
     }>(
-      `SELECT id, s3_key AS "s3Key", etag, name
+      `SELECT id, s3_key AS "s3Key", etag, name,
+              folder_path AS "folderPath", deleted_at AS "deletedAt"
          FROM project_files
         WHERE project_id = $1 AND s3_key IS NOT NULL AND is_folder = FALSE`,
       [projectId],
     )
     const localByKey = new Map(local.rows.map((r) => [r.s3Key, r]))
+    // Только живые строки: строку из корзины оживлять реиндексом нельзя, иначе
+    // удалённый человеком файл вернулся бы сам.
+    const localByLogical = new Map(
+      local.rows
+        .filter((r) => r.deletedAt == null)
+        .map((r) => [logicalRowId(r.folderPath, r.name), r]),
+    )
 
-    for (const [key, head] of remoteKeys) {
-      const physicalName = key.slice(key.lastIndexOf("/") + 1)
-      const name = logicalNameFromObjectKey(physicalName)
-      const folderPath = folderPathFromKey(
-        userId,
-        projectId,
-        key,
-        physicalName,
-      )
-      const row = localByKey.get(key)
+    for (const { key, folderPath, name, head } of candidates) {
+      // Сначала по ключу, потом по логическому имени: файл, попавший в каталог с
+      // uuid-ключом, здесь переводится на канонический и сохраняет file_id —
+      // для клиента это тот же файл, перекачивать его не нужно.
+      const row =
+        localByKey.get(key) ?? localByLogical.get(logicalRowId(folderPath, name))
+
       if (!row) {
         const fileId = randomUUID()
-        await db.query(
+        const insert = await db.query<{ id: string }>(
           `INSERT INTO project_files (
               id, project_id, folder_path, name, is_folder, s3_key,
               size_bytes, content_type, etag, origin_mtime
            )
-           VALUES ($1, $2, $3, $4, FALSE, $5, $6, '', $7, $8)`,
+           VALUES ($1, $2, $3, $4, FALSE, $5, $6, '', $7, $8)
+           ON CONFLICT DO NOTHING
+           RETURNING id`,
           [
             fileId,
             projectId,
@@ -772,6 +1159,13 @@ export async function reindexProject(userId: string, projectId: string): Promise
             head.originMtime,
           ],
         )
+        if (insert.rows.length === 0) {
+          // Место занято строкой, которой нет ни в одной из карт (гонка с
+          // параллельной заливкой). Молча пропускаем: объект на месте, а имя
+          // уже за кем-то — навязывать вторую строку нельзя.
+          shadowed++
+          continue
+        }
         await journal(db, {
           projectId,
           key,
@@ -782,37 +1176,52 @@ export async function reindexProject(userId: string, projectId: string): Promise
           payload: { fileId, name, folderPath, isFolder: false },
         })
         inserted++
-      } else if (row.etag !== head.etag) {
-        const seq = await journal(db, {
-          projectId,
-          key,
-          op: "put",
-          size: head.size,
-          etag: head.etag,
-          eventId: `reindex:sync:${createHash("sha256").update(key + (head.etag ?? "")).digest("hex").slice(0, 16)}`,
-          payload: {
-            fileId: row.id,
-            name: row.name,
-            folderPath,
-            isFolder: false,
-          },
-        })
-        await db.query(
-          `UPDATE project_files
-              SET etag = $3, size_bytes = $4, origin_mtime = $5, last_seq = $2, updated_at = NOW()
-            WHERE id = $1`,
-          [row.id, seq, head.etag, head.size, head.originMtime],
-        )
-        updated++
+        continue
       }
-      localByKey.delete(key)
+
+      localByKey.delete(row.s3Key)
+      localByLogical.delete(logicalRowId(row.folderPath, row.name))
+
+      const keyChanged = row.s3Key !== key
+      if (!keyChanged && row.etag === head.etag) continue
+
+      const seq = await journal(db, {
+        projectId,
+        key,
+        op: "put",
+        size: head.size,
+        etag: head.etag,
+        eventId: `reindex:sync:${createHash("sha256")
+          .update(`${key}:${head.etag ?? ""}`)
+          .digest("hex")
+          .slice(0, 16)}`,
+        payload: {
+          fileId: row.id,
+          name: row.name,
+          folderPath,
+          isFolder: false,
+        },
+      })
+      await db.query(
+        `UPDATE project_files
+            SET s3_key = $6,
+                etag = $3,
+                size_bytes = $4,
+                origin_mtime = $5,
+                last_seq = $2,
+                updated_at = NOW()
+          WHERE id = $1`,
+        [row.id, seq, head.etag, head.size, head.originMtime, key],
+      )
+      updated++
     }
 
     for (const [, row] of localByKey) {
-      // options/* is listed out of remoteKeys (sidecars + processing stats).
-      // Do not treat those catalog rows as missing objects.
-      if (isOptionsKey(row.s3Key, userId, projectId)) continue
+      // Снимки каталога живут вне дерева: строк у них нет и удалять нечего.
       if (isCatalogKey(row.s3Key, userId, projectId)) continue
+      // Строка уже в корзине — её объект стёрт вместе с ретеншеном, повторное
+      // событие удаления клиенту ни о чём не сообщит.
+      if (row.deletedAt != null) continue
       await journal(db, {
         projectId,
         key: row.s3Key,
@@ -825,7 +1234,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
     }
   })
 
-  return { scanned: remoteKeys.size, inserted, updated, removed }
+  return { scanned: remoteKeys.size, inserted, updated, removed, shadowed }
 }
 
 /** Append a journal row after an external R2 write (e.g. sidecar helpers). */
@@ -837,6 +1246,7 @@ export async function journalStorageEvent(input: {
   etag?: string | null
   contentHash?: string | null
   eventId?: string | null
+  actor?: StorageActor | null
   payload?: StorageChangePayload
 }): Promise<number> {
   return withTransaction(async (client) => journal(client, input))

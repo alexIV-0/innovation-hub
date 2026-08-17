@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Loader2,
   Plus,
+  RefreshCw,
   Save,
   Trash2,
   X,
@@ -14,7 +15,9 @@ import {
 import { toast } from "sonner"
 
 import { tf, useAdminI18n, type AdminDict } from "@/components/admin/admin-dict"
+import { useI18n, type Lang } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
+import type { PipelineState } from "@/lib/pipeline/state"
 import {
   DOMAIN_LABELS,
   SETTINGS_DOMAINS,
@@ -32,7 +35,15 @@ import {
  *
  * Настройки общие на всю установку, а не на проект: «video = mp4, mov» и цвет
  * ноды ffmpeg — конвенция оператора, одна на всех.
+ *
+ * Последняя закладка выбивается из этого ряда: страховочный обход папок IN — не
+ * словарь и на десктоп не синхронизируется, он живёт в состоянии конвейера. Стоит
+ * здесь потому, что это настройка того же конвейера, и искать её оператор будет
+ * там же, где остальные, а не в третьем месте.
  */
+
+/** Закладки: домены словарей плюс обход, у которого своё хранилище. */
+type Tab = SettingsDomain | "sweep"
 
 /**
  * `<input type="color">` понимает только `#rrggbb`, а в словаре может лежать
@@ -66,10 +77,11 @@ function toDraft(document: SettingsDocument): DraftDomains {
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
   const t = useAdminI18n()
+  const { lang } = useI18n()
   const [revision, setRevision] = useState<number | null>(null)
   const [draft, setDraft] = useState<DraftDomains | null>(null)
   const [saved, setSaved] = useState<string>("")
-  const [tab, setTab] = useState<SettingsDomain>("fileType")
+  const [tab, setTab] = useState<Tab>("fileType")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -161,8 +173,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const entries = draft?.[tab] ?? []
-  const labels = DOMAIN_LABELS[tab]
+  const sweepTab = tab === "sweep"
+  const entries = sweepTab ? [] : (draft?.[tab] ?? [])
+  const hintKey = sweepTab
+    ? "settingsDomainSweepHint"
+    : DOMAIN_LABELS[tab].hint
+  const labels = sweepTab ? null : DOMAIN_LABELS[tab]
 
   return (
     <div
@@ -217,14 +233,29 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               {t[DOMAIN_LABELS[domain].title as keyof AdminDict]}
             </button>
           ))}
+          {/* Отбита слева: это не словарь, а настройка самого конвейера. */}
+          <button
+            type="button"
+            onClick={() => setTab("sweep")}
+            className={cn(
+              "ml-2 rounded-t-[9px] px-3.5 py-2 text-[13px]",
+              sweepTab
+                ? "bg-white/[0.06] text-ws-1"
+                : "text-ws-4 hover:text-ws-2",
+            )}
+          >
+            {t.settingsDomainSweep}
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
           <p className="mb-3.5 text-[12.5px] leading-relaxed text-ws-4">
-            {t[labels.hint as keyof AdminDict]}
+            {t[hintKey as keyof AdminDict]}
           </p>
 
-          {loading ? (
+          {sweepTab ? (
+            <SweepPanel t={t} lang={lang} />
+          ) : loading ? (
             <div className="flex justify-center py-12 text-ws-4">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
@@ -243,7 +274,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                   total={entries.length}
                   t={t}
                   pathLabel={
-                    labels.pathLabel
+                    labels?.pathLabel
                       ? t[labels.pathLabel as keyof AdminDict]
                       : null
                   }
@@ -287,27 +318,250 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 border-t border-white/[0.07] px-5 py-3">
-          {/* Не синхронизируемое лучше назвать здесь: иначе непонятно, почему
-              одни настройки едут на сервер, а пути к ffmpeg — нет. */}
-          <p className="text-[11.5px] leading-relaxed text-ws-5">
-            {t.settingsLocalNote}
-          </p>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={saving || !dirty || loading}
-            className="ml-auto flex h-9 shrink-0 items-center gap-2 rounded-[10px] bg-ws-action px-4 text-[13.5px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-50"
-          >
-            {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {t.saveChanges}
-          </button>
-        </div>
+        {/* На закладке обхода футера нет: там своё хранилище и своя кнопка
+            сохранения, а примечание про локальные пути к словарям не относится. */}
+        {sweepTab ? null : (
+          <div className="flex shrink-0 items-center gap-3 border-t border-white/[0.07] px-5 py-3">
+            {/* Не синхронизируемое лучше назвать здесь: иначе непонятно, почему
+                одни настройки едут на сервер, а пути к ffmpeg — нет. */}
+            <p className="text-[11.5px] leading-relaxed text-ws-5">
+              {t.settingsLocalNote}
+            </p>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving || !dirty || loading}
+              className="ml-auto flex h-9 shrink-0 items-center gap-2 rounded-[10px] bg-ws-action px-4 text-[13.5px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-50"
+            >
+              {saving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {t.saveChanges}
+            </button>
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Закладка «Обход IN»: тумблер, интервал, итог прошлого обхода и кнопка разового
+ * прогона.
+ *
+ * Состояние своё, а не поднятое в диалог: обход лежит в automation_scan_state, у
+ * него нет ни ревизии, ни оптимистической блокировки словарей, и мешать эти два
+ * механизма в одном черновике — заводить путаницу, чей именно «есть
+ * несохранённое» горит в заголовке.
+ */
+function SweepPanel({ t, lang }: { t: AdminDict; lang: Lang }) {
+  const [state, setState] = useState<PipelineState | null>(null)
+  const [intervalDraft, setIntervalDraft] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [sweeping, setSweeping] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch("/api/admin/pipeline/state")
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setError(
+          data?.message ??
+            tf(t.settingsSweepStateUnavailable, { status: res.status }),
+        )
+        return
+      }
+      setState(data.state as PipelineState)
+      setIntervalDraft(String((data.state as PipelineState).sweepIntervalMin))
+      setError(null)
+    } catch {
+      setError(t.pipelineServerUnavailable)
+    } finally {
+      setLoading(false)
+    }
+  }, [t])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  /** Отправляет частичное изменение: тумблер — сразу, интервал — по кнопке. */
+  const patch = async (body: Record<string, unknown>) => {
+    setSaving(true)
+    try {
+      const res = await fetch("/api/admin/pipeline/state", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        toast.error(data?.message ?? t.settingsSweepSaveError)
+        return
+      }
+      const next = data.state as PipelineState
+      setState(next)
+      setIntervalDraft(String(next.sweepIntervalMin))
+      toast.success(t.settingsSweepSaved)
+    } catch {
+      toast.error(t.pipelineServerUnavailable)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const runNow = async () => {
+    setSweeping(true)
+    try {
+      const res = await fetch("/api/admin/pipeline/sweep", { method: "POST" })
+      const data = await res.json().catch(() => null)
+      if (res.status === 409) {
+        toast.error(t.settingsSweepStopped)
+        return
+      }
+      if (!res.ok) {
+        toast.error(data?.message ?? t.settingsSweepError)
+        return
+      }
+      toast.success(
+        tf(t.settingsSweepDone, {
+          created: data.created,
+          scanned: data.scanned,
+          known: data.known,
+        }) + (data.truncated ? t.settingsSweepTruncated : ""),
+      )
+      await load()
+    } catch {
+      toast.error(t.pipelineServerUnavailable)
+    } finally {
+      setSweeping(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12 text-ws-4">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    )
+  }
+
+  if (error || !state) {
+    return (
+      <p className="flex items-center justify-center gap-2 py-12 text-[13.5px] text-destructive">
+        <AlertTriangle className="h-4 w-4" />
+        {error ?? t.pipelineServerUnavailable}
+      </p>
+    )
+  }
+
+  // Пустое поле — это не ноль: пока человек стёр значение и не набрал новое,
+  // сохранять нечего, иначе одно нажатие Backspace тихо снимало бы расписание.
+  const parsed = intervalDraft === "" ? Number.NaN : Number(intervalDraft)
+  const intervalValid = Number.isInteger(parsed) && parsed >= 0 && parsed <= 1440
+  const intervalDirty = intervalValid && parsed !== state.sweepIntervalMin
+  const scheduleOff = state.sweepIntervalMin === 0
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3 rounded-[10px] border border-white/[0.08] bg-white/[0.02] px-3 py-3">
+        <span className="text-[13.5px] text-ws-1">
+          {t.settingsSweepInterval}
+        </span>
+        <input
+          value={intervalDraft}
+          onChange={(e) => setIntervalDraft(e.target.value.replace(/[^\d]/g, ""))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && intervalDirty) {
+              e.preventDefault()
+              void patch({ sweepIntervalMin: parsed })
+            }
+          }}
+          inputMode="numeric"
+          aria-label={t.settingsSweepInterval}
+          className={cn(
+            "h-8 w-[70px] rounded-[8px] border bg-black/20 px-2.5 text-right text-[13px] text-ws-1",
+            "focus:outline-none",
+            intervalValid
+              ? "border-white/[0.1] focus:border-white/25"
+              : "border-destructive/60",
+          )}
+        />
+        <span className="text-[13px] text-ws-4">
+          {t.settingsSweepIntervalUnit}
+        </span>
+
+        {/* Состояние расписания читается из самого числа, отдельной подписи-статуса
+            для него не нужно — нужна только подсказка, что ноль это «не ходить». */}
+        <span
+          className={cn(
+            "text-[12.5px]",
+            scheduleOff ? "text-ws-out" : "text-ws-5",
+          )}
+        >
+          {scheduleOff ? t.settingsSweepOff : t.settingsSweepOn}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => void patch({ sweepIntervalMin: parsed })}
+          disabled={saving || !intervalDirty}
+          className="ml-auto flex h-8 items-center gap-1.5 rounded-[8px] bg-ws-action px-3 text-[13px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-40"
+        >
+          {saving ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Save className="h-3.5 w-3.5" />
+          )}
+          {t.saveChanges}
+        </button>
+      </div>
+
+      <p className="px-1 text-[11.5px] text-ws-5">
+        {t.settingsSweepIntervalHint}
+      </p>
+
+      <div className="mt-1 flex items-center gap-3 rounded-[10px] border border-white/[0.08] bg-white/[0.02] px-3 py-3">
+        <span className="text-[12.5px] text-ws-4">
+          {state.sweptAt
+            ? tf(t.settingsSweepLast, {
+                time: new Date(state.sweptAt).toLocaleString(
+                  lang === "ru" ? "ru-RU" : "en-GB",
+                  { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" },
+                ),
+                created: state.lastSwept,
+              })
+            : t.settingsSweepNever}
+        </span>
+        {state.lastSweepError ? (
+          <span className="flex items-center gap-1.5 text-[12.5px] text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {state.lastSweepError}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void runNow()}
+          disabled={sweeping}
+          className="ml-auto flex h-8 shrink-0 items-center gap-2 rounded-[8px] border border-white/[0.14] px-3 text-[13px] text-ws-2 hover:bg-white/5 disabled:opacity-50"
+        >
+          {sweeping ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+          {t.settingsSweepRunNow}
+        </button>
+      </div>
+
+      <p className="mt-1 px-1 text-[11.5px] leading-relaxed text-ws-5">
+        {t.settingsSweepOnce}
+      </p>
     </div>
   )
 }

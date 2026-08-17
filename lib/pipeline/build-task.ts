@@ -95,11 +95,29 @@ function normalizeExts(raw: unknown): string[] {
     .filter(Boolean)
 }
 
+/**
+ * Типы файлов из узла mainSearch.
+ *
+ * Из узла всегда выходит массив, даже когда элемент в нём один:
+ * `searchType: ["video"]`. Раньше здесь стояла проверка `typeof === "string"`,
+ * и по ней отсекался любой граф из редактора — `no-search-type`, файл залит,
+ * событие в журнале есть, а задача не создаётся никогда. Одиночную строку
+ * принимаем на всякий случай, но нормальная форма — массив.
+ */
+function normalizeSearchTypes(raw: unknown): string[] {
+  const values = Array.isArray(raw) ? raw : [raw]
+  return values
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean)
+}
+
 export type SearchExtsOutcome =
   | {
       ok: true
       searchExts: string[]
-      searchType: string | null
+      /** Список типов из узла; null — типа в графе нет. */
+      searchType: string[] | null
       /** Словарь, которым разворачивался тип: он же уезжает в description. */
       fileTypes: FileTypeDictionary
     }
@@ -174,22 +192,24 @@ export function readSearchExts(
 
   const props = nodeProps(mainSearchNode)
 
+  // В description уезжает список — в той же форме, в какой значение выходит из
+  // узла. Пустой список это null: «типа нет», а не «выбран пустой».
+  const searchTypes = normalizeSearchTypes(props.searchType)
+  const searchType = searchTypes.length > 0 ? searchTypes : null
+
   const explicit = normalizeExts(props.searchExts)
   if (explicit.length > 0) {
-    const searchType =
-      typeof props.searchType === "string" ? props.searchType : null
     return { ok: true, searchExts: explicit, searchType, fileTypes }
   }
 
-  const searchType =
-    typeof props.searchType === "string" && props.searchType.trim()
-      ? props.searchType.trim()
-      : null
-  if (!searchType) {
+  if (searchTypes.length === 0) {
     return { ok: false, reason: "no-search-type" }
   }
 
-  const searchExts = normalizeExts(fileTypes[searchType])
+  // Несколько типов — объединение расширений: граф ищет любой из выбранных.
+  const searchExts = [
+    ...new Set(searchTypes.flatMap((type) => normalizeExts(fileTypes[type]))),
+  ]
   if (searchExts.length === 0) {
     // Тип есть, а расширений к нему нет ни в снимке, ни в общем словаре:
     // либо тип переименовали, либо из него убрали все расширения.

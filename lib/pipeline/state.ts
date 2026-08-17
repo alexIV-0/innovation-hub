@@ -18,6 +18,14 @@ export type PipelineState = {
   lastCreated: number
   lastError: string | null
   scannedAt: string | null
+  /**
+   * Страховочный обход папок IN — вторая линия сборки (lib/pipeline/sweep.ts).
+   * Период в минутах; 0 — по таймеру не ходим, только по кнопке.
+   */
+  sweepIntervalMin: number
+  sweptAt: string | null
+  lastSwept: number
+  lastSweepError: string | null
 }
 
 type StateRow = {
@@ -28,6 +36,10 @@ type StateRow = {
   lastCreated: number
   lastError: string | null
   scannedAt: Date | null
+  sweepIntervalMin: number
+  sweptAt: Date | null
+  lastSwept: number
+  lastSweepError: string | null
 }
 
 function toState(row: StateRow): PipelineState {
@@ -39,6 +51,10 @@ function toState(row: StateRow): PipelineState {
     lastCreated: row.lastCreated,
     lastError: row.lastError,
     scannedAt: row.scannedAt?.toISOString() ?? null,
+    sweepIntervalMin: row.sweepIntervalMin,
+    sweptAt: row.sweptAt?.toISOString() ?? null,
+    lastSwept: row.lastSwept,
+    lastSweepError: row.lastSweepError,
   }
 }
 
@@ -49,11 +65,22 @@ const SELECT_STATE = `
          s.last_seq::text AS "lastSeq",
          s.last_created AS "lastCreated",
          s.last_error   AS "lastError",
-         s.scanned_at   AS "scannedAt"
+         s.scanned_at   AS "scannedAt",
+         s.sweep_interval_min AS "sweepIntervalMin",
+         s.swept_at           AS "sweptAt",
+         s.last_swept         AS "lastSwept",
+         s.last_sweep_error   AS "lastSweepError"
     FROM automation_scan_state s
     LEFT JOIN users u ON u.id = s.started_by
    WHERE s.id = 'singleton'
 `
+
+/**
+ * Границы периода обхода. Совпадают с CHECK в схеме — держим их в одном месте с
+ * валидацией API. Ноль легален и значит «по таймеру не ходить».
+ */
+export const SWEEP_INTERVAL_OFF = 0
+export const SWEEP_INTERVAL_MAX = 1440
 
 export async function readPipelineState(): Promise<PipelineState> {
   const result = await query<StateRow>(SELECT_STATE)
@@ -69,6 +96,10 @@ export async function readPipelineState(): Promise<PipelineState> {
       lastCreated: 0,
       lastError: null,
       scannedAt: null,
+      sweepIntervalMin: 15,
+      sweptAt: null,
+      lastSwept: 0,
+      lastSweepError: null,
     }
   }
   return toState(row)
@@ -125,9 +156,44 @@ export async function recordTickResult(input: {
   )
 }
 
-export async function isPipelineRunning(): Promise<boolean> {
-  const result = await query<{ isRunning: boolean }>(
-    `SELECT is_running AS "isRunning" FROM automation_scan_state WHERE id = 'singleton'`,
+/**
+ * Период обхода. Меняет админ на закладке «Обход IN».
+ *
+ * 0 выключает расписание, но не кнопку «Обойти сейчас»: разовый прогон — явное
+ * действие администратора, и запрещать его из-за того, что таймер снят, значило бы
+ * отнимать единственный способ добрать застрявший файл сразу.
+ */
+export async function setSweepInterval(
+  intervalMin: number,
+): Promise<PipelineState> {
+  await query(
+    `UPDATE automation_scan_state
+        SET sweep_interval_min = $1,
+            updated_at = NOW()
+      WHERE id = 'singleton'`,
+    [intervalMin],
   )
-  return result.rows[0]?.isRunning === true
+  return readPipelineState()
+}
+
+/**
+ * Пишет итог обхода.
+ *
+ * `swept_at` двигается всегда, в том числе при ошибке и при нулевом результате:
+ * от него считается следующий срок, и замри он на неудаче — обход пошёл бы на
+ * каждом тике. Причина видна рядом в `last_sweep_error`.
+ */
+export async function recordSweepResult(input: {
+  created: number
+  error: string | null
+}): Promise<void> {
+  await query(
+    `UPDATE automation_scan_state
+        SET last_swept = $1,
+            last_sweep_error = $2,
+            swept_at = NOW(),
+            updated_at = NOW()
+      WHERE id = 'singleton'`,
+    [input.created, input.error],
+  )
 }

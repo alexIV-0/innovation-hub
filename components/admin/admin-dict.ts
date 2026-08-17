@@ -422,6 +422,30 @@ export const adminDict = {
       "Пользовательские алиасы, доступные в путях как $имя. Сегменты могут сами содержать маски — например $localFolder.",
     settingsPathLabelExtensions: "Расширения",
     settingsPathLabelSegments: "Сегменты",
+
+    // pipeline · страховочный обход папок IN
+    settingsDomainSweep: "Обход IN",
+    settingsDomainSweepHint:
+      "Задачи создаются по событиям заливки — это основная линия, и она мгновенная. Обход — страховка на случай, когда события не хватило: конвейер был выключен во время обновления, проект стоял на паузе, options.json был битый. Он идёт по каталогу, сравнивает содержимое папок IN с уже созданными задачами и добирает разницу. Обход подчинён тумблеру слежения: пока стоит «Стоп», задачи не появляются ни по событию, ни обходом.",
+    settingsSweepInterval: "Обходить каждые",
+    settingsSweepIntervalUnit: "минут",
+    settingsSweepIntervalHint:
+      "0 — обход по таймеру не ходит, остаётся только кнопка. Максимум — сутки (1440).",
+    settingsSweepOn: "расписание работает",
+    settingsSweepOff: "по таймеру не ходит",
+    settingsSweepOnce: "Элемент, по которому задача уже создавалась, обход не берёт — ни в очереди, ни готовый, ни упавший. Прогнать файл заново — это отдельное действие: перезалейте его, и событие создаст новую задачу.",
+    settingsSweepLast: "последний обход {time}, добрано {created}",
+    settingsSweepNever: "обхода ещё не было",
+    settingsSweepRunNow: "Обойти сейчас",
+    settingsSweepDone:
+      "Обход завершён: добрано {created}, осмотрено {scanned}, уже в очереди {known}.",
+    settingsSweepTruncated: " Часть элементов осталась на следующий обход.",
+    settingsSweepError: "Не удалось выполнить обход.",
+    settingsSweepStopped:
+      "Конвейер остановлен — сначала включите слежение на странице.",
+    settingsSweepSaved: "Настройки обхода сохранены.",
+    settingsSweepSaveError: "Не удалось сохранить настройки обхода.",
+    settingsSweepStateUnavailable: "Состояние обхода недоступно ({status})",
   },
   en: {
     all: "All",
@@ -829,6 +853,30 @@ export const adminDict = {
       "User aliases available in paths as $name. Segments may themselves contain masks — $localFolder, for instance.",
     settingsPathLabelExtensions: "Extensions",
     settingsPathLabelSegments: "Segments",
+
+    // pipeline · IN folder safety sweep
+    settingsDomainSweep: "IN sweep",
+    settingsDomainSweepHint:
+      "Tasks are created from upload events — that is the primary line and it is instant. The sweep is the safety net for when an event was not enough: the pipeline was off during an update, the project was paused, options.json was broken. It walks the catalog, compares the contents of IN folders against existing tasks and picks up the difference. The sweep obeys the watch toggle: while it says Stop, no tasks appear at all — neither from events nor from sweeps.",
+    settingsSweepInterval: "Sweep every",
+    settingsSweepIntervalUnit: "minutes",
+    settingsSweepIntervalHint:
+      "0 — no scheduled sweep, only the button stays. Maximum is a day (1440).",
+    settingsSweepOn: "schedule is on",
+    settingsSweepOff: "no scheduled sweep",
+    settingsSweepOnce:
+      "An element that already had a task is never picked up again — queued, done or failed alike. Running a file through again is a separate action: re-upload it and the event will create a new task.",
+    settingsSweepLast: "last sweep {time}, picked up {created}",
+    settingsSweepNever: "no sweep yet",
+    settingsSweepRunNow: "Sweep now",
+    settingsSweepDone:
+      "Sweep finished: picked up {created}, examined {scanned}, already queued {known}.",
+    settingsSweepTruncated: " Some elements are left for the next sweep.",
+    settingsSweepError: "Could not run the sweep.",
+    settingsSweepStopped: "The pipeline is stopped — start watching first.",
+    settingsSweepSaved: "Sweep settings saved.",
+    settingsSweepSaveError: "Could not save the sweep settings.",
+    settingsSweepStateUnavailable: "Sweep state unavailable ({status})",
   },
 } as const
 

@@ -171,6 +171,7 @@ export async function completeMultipartUpload(input: {
     }),
   )
   const file = await writeNotifyUpload({
+    userId: input.ownerId,
     projectId: input.projectId,
     s3Key: input.s3Key,
     folderPath: input.folderPath,

@@ -10,6 +10,7 @@ import { buildCopyPlan, copySingleFile, countCopyWork } from "@/lib/storage/copy
 import { createJob } from "@/lib/storage/jobs"
 import { scheduleJob } from "@/lib/storage/job-runner"
 import { StorageWriteError } from "@/lib/storage/errors"
+import { writeEnsureFolderPath } from "@/lib/storage/write-path"
 import { findProjectById } from "@/lib/repositories/projects"
 
 export const runtime = "nodejs"
@@ -76,6 +77,17 @@ export async function POST(request: NextRequest) {
 
     // Validate plan exists before enqueueing.
     await buildCopyPlan({ projectId: data.projectId, fileIds: data.fileIds })
+
+    // Папка назначения — строкой, один раз на задание, а не на каждый элемент:
+    // без неё скопированное поддерево не покажется в дереве проекта.
+    if (data.destFolderPath.replace(/^\/+|\/+$/g, "")) {
+      await writeEnsureFolderPath({
+        userId: destAccess.ownerId,
+        projectId: destAccess.projectId,
+        folderPath: data.destFolderPath,
+        actor: actorFromAuth(auth),
+      })
+    }
 
     const destProject = await findProjectById(destAccess.projectId)
     if (!destProject) {

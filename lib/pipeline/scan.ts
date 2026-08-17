@@ -12,6 +12,10 @@ import { listWatchedProjects } from "@/lib/pipeline/repository"
 import { getObjectText, projectOptionsKey } from "@/lib/project-storage"
 import { projectPrefix } from "@/lib/storage/keys"
 import { readFileTypeDictionary } from "@/lib/repositories/automation-settings"
+import {
+  listContactIdentities,
+  type ContactIdentity,
+} from "@/lib/repositories/users"
 
 /**
  * Сканер конвейера.
@@ -67,6 +71,8 @@ type ChangeRow = {
   op: "put" | "delete" | "move"
   size: string | null
   contentHash: string | null
+  /** Кто совершил запись; null у событий до появления атрибуции и у reindex. */
+  actorUserId: string | null
   payload: {
     fileId?: string
     name?: string
@@ -204,6 +210,79 @@ async function readFolderManifest(input: {
     }))
 }
 
+/**
+ * Кто заливал файлы внутри папки, с количеством файлов на человека.
+ *
+ * Нужно для двух разных вещей сразу: `uploaders` в описании задачи (папку могли
+ * наполнять втроём — статистике полезно видеть всех) и преобладающий заливщик как
+ * последнее звено отката, когда актора события готовности не сохранилось.
+ */
+async function readFolderUploaders(input: {
+  projectId: string
+  folderPath: string
+}): Promise<{ userId: string; files: number }[]> {
+  const result = await query<{ userId: string; files: string }>(
+    `SELECT uploaded_by AS "userId", COUNT(*)::text AS files
+       FROM project_files
+      WHERE project_id = $1
+        AND is_folder = FALSE
+        AND deleted_at IS NULL
+        AND uploaded_by IS NOT NULL
+        AND (folder_path = $2 OR folder_path LIKE $2 || '/%')
+      GROUP BY uploaded_by
+      ORDER BY COUNT(*) DESC, uploaded_by ASC`,
+    [input.projectId, input.folderPath],
+  )
+  return result.rows.map((row) => ({
+    userId: row.userId,
+    files: Number(row.files),
+  }))
+}
+
+/** Создатель папки верхнего уровня в IN. */
+async function readFolderCreator(input: {
+  projectId: string
+  name: string
+}): Promise<string | null> {
+  const result = await query<{ uploadedBy: string | null }>(
+    `SELECT uploaded_by AS "uploadedBy"
+       FROM project_files
+      WHERE project_id = $1
+        AND is_folder = TRUE
+        AND folder_path = 'IN'
+        AND name = $2
+        AND deleted_at IS NULL
+      LIMIT 1`,
+    [input.projectId, input.name],
+  )
+  return result.rows[0]?.uploadedBy ?? null
+}
+
+/**
+ * Заливщики файлов-кандидатов одним запросом.
+ *
+ * Именно `uploaded_by`, а не актор события: для файла contact — это тот, кто
+ * принёс байты, а последним событием по нему может быть переименование, сделанное
+ * другим человеком.
+ */
+async function readFileUploaders(
+  fileIds: string[],
+): Promise<Map<string, string>> {
+  const unique = [...new Set(fileIds)]
+  if (unique.length === 0) return new Map()
+  const result = await query<{ id: string; uploadedBy: string | null }>(
+    `SELECT id, uploaded_by AS "uploadedBy"
+       FROM project_files
+      WHERE id = ANY($1::text[])`,
+    [unique],
+  )
+  const map = new Map<string, string>()
+  for (const row of result.rows) {
+    if (row.uploadedBy) map.set(row.id, row.uploadedBy)
+  }
+  return map
+}
+
 /** Кандидат на задачу: элемент IN, к которому свелись события пачки. */
 type Candidate = {
   projectId: string
@@ -212,6 +291,14 @@ type Candidate = {
   fileId: string | null
   sizeBytes: number
   contentHash: string | null
+  /** Актор последнего put — кто принёс байты. */
+  putActorUserId: string | null
+  /**
+   * Актор move по самому элементу — кто снял `-`, то есть запустил виток. Для
+   * папки это и есть contact: файлы внутрь могли класть разные люди, а «готово,
+   * обрабатывай» сказал один.
+   */
+  readyActorUserId: string | null
 }
 
 /**
@@ -232,6 +319,7 @@ export async function collectTasks(): Promise<CollectResult> {
             op,
             size::text,
             content_hash AS "contentHash",
+            actor_user_id AS "actorUserId",
             payload
        FROM storage_changes
       WHERE seq > $1
@@ -301,16 +389,62 @@ export async function collectTasks(): Promise<CollectResult> {
     }
 
     const dedupKey = `${project.projectId}:${effective.key}`
+    const previous = candidates.get(dedupKey)
+    // Акторы накапливаются, остальное перезаписывается последним событием: put и
+    // move по одному элементу приезжают в одной пачке, и «кто принёс» с «кто
+    // запустил» — разные ответы, которые оба нужны.
     candidates.set(dedupKey, {
       projectId: project.projectId,
       entry: effective,
       fileId: effective.isFolder ? null : (change.payload?.fileId ?? null),
       sizeBytes: change.size ? Number(change.size) : 0,
       contentHash: change.contentHash,
+      putActorUserId:
+        (change.op === "put" ? change.actorUserId : null) ??
+        previous?.putActorUserId ??
+        null,
+      // Событием готовности считается переименование САМОГО элемента: `entry`
+      // из resolveInEntry помечен isFolder, только если ключ события указывал
+      // внутрь папки, а переименование файла внутри — не «обрабатывай».
+      readyActorUserId:
+        (renamedTo && !entry.isFolder ? change.actorUserId : null) ??
+        previous?.readyActorUserId ??
+        null,
     })
   }
 
   // ── Фаза 2: кандидаты → задачи ──────────────────────────────────────────────
+
+  /**
+   * Кто залил файлы-кандидаты — одним запросом на всю пачку, а не по файлу.
+   */
+  const fileUploaders = await readFileUploaders(
+    [...candidates.values()]
+      .filter((c) => !c.entry.isFolder && c.fileId)
+      .map((c) => c.fileId as string),
+  )
+
+  /**
+   * Имена для contact: кэш на проход, потому что в пачке обычно два-три человека
+   * на десятки элементов.
+   */
+  const identityCache = new Map<string, ContactIdentity | null>()
+  const loadIdentities = async (
+    ids: (string | null)[],
+  ): Promise<Map<string, ContactIdentity>> => {
+    const wanted = [...new Set(ids.filter((id): id is string => Boolean(id)))]
+    const missing = wanted.filter((id) => !identityCache.has(id))
+    if (missing.length > 0) {
+      const fetched = await listContactIdentities(missing)
+      for (const id of missing) identityCache.set(id, fetched.get(id) ?? null)
+    }
+    const out = new Map<string, ContactIdentity>()
+    for (const id of wanted) {
+      const identity = identityCache.get(id)
+      if (identity) out.set(id, identity)
+    }
+    return out
+  }
 
   /** options.json читается один раз на проект, а не на каждое событие. */
   const optionsCache = new Map<string, unknown | null>()
@@ -365,6 +499,10 @@ export async function collectTasks(): Promise<CollectResult> {
 
     const entry = candidate.entry
     let source: TaskSource
+    /** Кому принадлежит виток: он уедет в description.contact. */
+    let uploaderUserId: string | null = null
+    /** Все, кто наполнял папку, — для statistics по многолюдным виткам. */
+    let folderUploaders: { userId: string; files: number }[] = []
 
     if (entry.isFolder) {
       const folderPath = `IN/${entry.name}`
@@ -383,6 +521,21 @@ export async function collectTasks(): Promise<CollectResult> {
         noteSkip(project.projectId, project.name, "no-match")
         continue
       }
+      // Цепочка отката для папки: снявший `-` → создатель папки → тот, кто залил
+      // в неё больше всех файлов. Первое звено — главное: «обрабатывай» сказал он.
+      folderUploaders = await readFolderUploaders({
+        projectId: project.projectId,
+        folderPath,
+      })
+      uploaderUserId =
+        candidate.readyActorUserId ??
+        (await readFolderCreator({
+          projectId: project.projectId,
+          name: entry.name,
+        })) ??
+        folderUploaders[0]?.userId ??
+        null
+
       source = {
         fileId: null,
         s3Key: entry.key,
@@ -398,6 +551,13 @@ export async function collectTasks(): Promise<CollectResult> {
         noteSkip(project.projectId, project.name, "no-match")
         continue
       }
+      // Для файла contact — тот, кто принёс байты. uploaded_by главнее актора
+      // события: последним событием могло быть переименование чужой рукой.
+      uploaderUserId =
+        (candidate.fileId ? fileUploaders.get(candidate.fileId) : null) ??
+        candidate.putActorUserId ??
+        null
+
       source = {
         fileId: candidate.fileId,
         s3Key: entry.key,
@@ -408,6 +568,15 @@ export async function collectTasks(): Promise<CollectResult> {
       }
     }
 
+    const identities = await loadIdentities([
+      uploaderUserId,
+      project.ownerId,
+      ...folderUploaders.map((u) => u.userId),
+    ])
+    const uploaderIdentity = uploaderUserId
+      ? (identities.get(uploaderUserId) ?? null)
+      : null
+
     const built = buildTaskPayload({
       optionsJson,
       projectId: project.projectId,
@@ -416,6 +585,18 @@ export async function collectTasks(): Promise<CollectResult> {
       source,
       fileTypes: await fileTypeFallback(),
       collectedAt,
+      contact: uploaderIdentity,
+      ownerContact: identities.get(project.ownerId) ?? null,
+      // Один человек в списке ничего не добавляет к contact — только шум.
+      uploaders:
+        folderUploaders.length > 1
+          ? folderUploaders.flatMap((u) => {
+              const identity = identities.get(u.userId)
+              return identity
+                ? [{ name: identity.name, email: identity.email, files: u.files }]
+                : []
+            })
+          : undefined,
     })
 
     if (!built.ok) {

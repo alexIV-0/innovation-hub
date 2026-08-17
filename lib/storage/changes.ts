@@ -51,14 +51,17 @@ export async function appendStorageChange(
     contentHash?: string | null
     eventTime?: number
     eventId?: string | null
+    /** Пользователь сайта, совершивший запись; null — записи без человека. */
+    actorUserId?: string | null
     payload?: StorageChangePayload
   },
 ): Promise<number> {
   const result = await client.query<{ seq: string }>(
     `INSERT INTO storage_changes (
-        project_id, key, op, size, etag, content_hash, event_time, event_id, payload
+        project_id, key, op, size, etag, content_hash, event_time, event_id,
+        actor_user_id, payload
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
      ON CONFLICT (event_id) DO NOTHING
      RETURNING seq`,
     [
@@ -70,6 +73,7 @@ export async function appendStorageChange(
       input.contentHash ?? null,
       input.eventTime ?? nowUnixSec(),
       input.eventId ?? null,
+      input.actorUserId ?? null,
       JSON.stringify(input.payload ?? {}),
     ],
   )

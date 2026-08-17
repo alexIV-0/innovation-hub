@@ -6,6 +6,8 @@ export type DriveFile = {
   sizeBytes: number | null
   modifiedAt: string | null
   createdAt: string | null
+  /** Кто залил файл на сайт; null — файл появился до появления атрибуции. */
+  uploadedByName?: string | null
   children?: DriveFile[]
 }
 

@@ -71,6 +71,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         ownerId: existing.ownerId,
         paused: isPaused,
         updatedBy: siteUpdatedBy(auth.email),
+        actorUserId: auth.userId,
       })
     } catch (error) {
       if (error instanceof ProjectStorageError) {

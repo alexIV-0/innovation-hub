@@ -209,11 +209,16 @@ export function readSearchExts(
  *
  * Узел description необязателен: без него обработка возможна, просто в контексте
  * не будет ни контакта, ни комментария автора.
+ *
+ * Значение `contact` из графа кладётся сюда как `projectContact`, а не как
+ * `contact`: онлайн его перекрывает заливщик (см. buildTaskPayload). Терять его
+ * при этом нельзя — граф мог заполнить владелец осознанно, и это единственное,
+ * что останется, если атрибуции по элементу нет.
  */
 function buildDescription(nodes: FlowNode[]): Record<string, unknown> {
   const descriptionNode = nodes.find((n) => n.id.toLowerCase() === "description")
 
-  const contact = descriptionNode?.data?.properties?.find(
+  const projectContact = descriptionNode?.data?.properties?.find(
     (p) => p.id.toLowerCase() === "contact",
   )?.controlProps?.value
 
@@ -230,10 +235,25 @@ function buildDescription(nodes: FlowNode[]): Record<string, unknown> {
   ]
 
   return {
-    contact,
+    projectContact,
     automationType,
     discription: descriptionNode?.data?.comment,
   }
+}
+
+/** Кто отвечает за виток — имя уедет в contact, email остаётся идентичностью. */
+export type TaskContact = {
+  name: string
+  email: string
+}
+
+/** Откуда взялось значение contact — иначе имя владельца не отличить от находки. */
+export type ContactSource = "uploader" | "graph" | "owner" | "none"
+
+function normalizeContactName(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 export function buildTaskPayload(input: {
@@ -247,6 +267,15 @@ export function buildTaskPayload(input: {
   fileTypes?: FileTypeDictionary
   /** ISO-время сборки: на десктопе это findTime, метка прогона. */
   collectedAt: string
+  /**
+   * Кто принёс элемент. Для файла — заливщик, для папки — тот, кто снял `-` и
+   * запустил виток (lib/pipeline/scan.ts). null — атрибуции по элементу нет.
+   */
+  contact?: TaskContact | null
+  /** Владелец проекта — последнее звено отката. */
+  ownerContact?: TaskContact | null
+  /** Все заливщики папки, если их было больше одного. */
+  uploaders?: { name: string; email: string; files: number }[]
   onWarn?: (message: string) => void
 }): BuildTaskOutcome {
   const root = input.optionsJson
@@ -270,6 +299,33 @@ export function buildTaskPayload(input: {
   const isFolder = isFolderSource(source)
 
   const description = buildDescription(nodes)
+
+  // Приоритет: заливщик → вписанное в графе → владелец. Заливщик перекрывает
+  // граф безусловно: локально там указывают не конкретного пользователя сайта, а
+  // заглушку, и оставить её означало бы подписать чужой работой автора графа.
+  const graphContact = normalizeContactName(description.projectContact)
+  const resolved: { name: string; email: string | null; source: ContactSource } =
+    input.contact
+      ? { name: input.contact.name, email: input.contact.email, source: "uploader" }
+      : graphContact
+        ? { name: graphContact, email: null, source: "graph" }
+        : input.ownerContact
+          ? {
+              name: input.ownerContact.name,
+              email: input.ownerContact.email,
+              source: "owner",
+            }
+          : { name: "", email: null, source: "none" }
+
+  // contact остаётся простой строкой: его в этом виде читает десктоп и пишет в
+  // processing_stats. Машинная идентичность живёт отдельным полем.
+  description.contact = resolved.source === "none" ? undefined : resolved.name
+  description.contactEmail = resolved.email ?? undefined
+  description.contactSource = resolved.source
+  if (input.uploaders && input.uploaders.length > 0) {
+    description.uploaders = input.uploaders
+  }
+
   description.projectId = input.projectId
   description.projectName = input.projectName
   description.ownerEmail = input.ownerEmail

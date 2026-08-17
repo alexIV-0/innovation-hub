@@ -14,6 +14,19 @@ const FILE_FIELDS = `
   created_at AS "createdAt"
 `
 
+/** Те же поля с префиксом: в запросе с JOIN users `id` и `created_at` неоднозначны. */
+const FILE_FIELDS_PF = `
+  pf.id,
+  pf.project_id AS "projectId",
+  pf.folder_path AS "folderPath",
+  pf.name,
+  pf.is_folder AS "isFolder",
+  pf.s3_key AS "s3Key",
+  pf.size_bytes::float8 AS "sizeBytes",
+  pf.content_type AS "contentType",
+  pf.created_at AS "createdAt"
+`
+
 export async function listFilesInFolder(
   projectId: string,
   folderPath: string,
@@ -29,15 +42,24 @@ export async function listFilesInFolder(
   return result.rows
 }
 
+/**
+ * Дерево проекта для интерфейса — с именем заливщика.
+ *
+ * JOIN здесь, а не отдельным запросом на файл: список рисуется целиком, а
+ * «кто залил» нужен в панели свойств почти всегда, когда файл выделяют.
+ */
 export async function listAllProjectFiles(
   projectId: string,
 ): Promise<ProjectFileRecord[]> {
   const result = await query<ProjectFileRecord>(
-      `SELECT ${FILE_FIELDS}
-       FROM project_files
-      WHERE project_id = $1
-        AND deleted_at IS NULL
-      ORDER BY folder_path ASC, is_folder DESC, lower(name) ASC`,
+      `SELECT ${FILE_FIELDS_PF},
+              COALESCE(NULLIF(TRIM(u.contact_name), ''), NULLIF(TRIM(u.full_name), ''), u.email)
+                AS "uploadedByName"
+       FROM project_files pf
+       LEFT JOIN users u ON u.id = pf.uploaded_by
+      WHERE pf.project_id = $1
+        AND pf.deleted_at IS NULL
+      ORDER BY pf.folder_path ASC, pf.is_folder DESC, lower(pf.name) ASC`,
     [projectId],
   )
   return result.rows

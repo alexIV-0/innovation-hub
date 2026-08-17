@@ -10,6 +10,7 @@ import type {
 const PUBLIC_USER_FIELDS = `
   id,
   full_name AS "fullName",
+  contact_name AS "contactName",
   email,
   role,
   is_active AS "isActive",
@@ -23,6 +24,7 @@ const PUBLIC_USER_FIELDS = `
 const FULL_USER_FIELDS = `
   id,
   full_name AS "fullName",
+  contact_name AS "contactName",
   email,
   password_hash AS "passwordHash",
   role,
@@ -35,6 +37,42 @@ const FULL_USER_FIELDS = `
   COALESCE(must_change_password, FALSE) AS "mustChangePassword",
   COALESCE(automation_enabled, FALSE) AS "automationEnabled"
 `
+
+/**
+ * Контактная идентичность для статистики обработки.
+ *
+ * `name` — то, что уедет в `description.contact` задачи и дальше в
+ * `processing_stats` на машине. Приоритет у `contact_name`: при локальной
+ * обработке человек подписывается конкретной строкой, а статистика группируется
+ * по ней, поэтому «Aleksey Ivanov» вместо привычного «Алексей» расщепил бы
+ * одного человека на два ряда. Без него — full_name, в последнюю очередь email.
+ */
+export type ContactIdentity = {
+  userId: string
+  name: string
+  email: string
+}
+
+export async function listContactIdentities(
+  userIds: string[],
+): Promise<Map<string, ContactIdentity>> {
+  const unique = [...new Set(userIds.filter(Boolean))]
+  if (unique.length === 0) return new Map()
+
+  const result = await query<{
+    userId: string
+    name: string
+    email: string
+  }>(
+    `SELECT id AS "userId",
+            COALESCE(NULLIF(TRIM(contact_name), ''), NULLIF(TRIM(full_name), ''), email) AS name,
+            email
+       FROM users
+      WHERE id = ANY($1::text[])`,
+    [unique],
+  )
+  return new Map(result.rows.map((row) => [row.userId, row]))
+}
 
 export async function findUserById(id: string): Promise<UserRecord | null> {
   const result = await query<UserRecord>(
@@ -174,6 +212,8 @@ export async function updateUser(
   id: string,
   input: {
     fullName?: string
+    /** Пустая строка сбрасывает на fullName. */
+    contactName?: string | null
     email?: string
     passwordHash?: string
     role?: UserRole
@@ -189,6 +229,10 @@ export async function updateUser(
             role          = COALESCE($5, role),
             is_active     = COALESCE($6, is_active),
             must_change_password = COALESCE($7, must_change_password),
+            -- Пустая строка — осознанный сброс на full_name, поэтому NULLIF, а
+            -- не COALESCE по самому значению.
+            contact_name  = CASE WHEN $8::text IS NULL THEN contact_name
+                                 ELSE NULLIF(TRIM($8::text), '') END,
             updated_at    = NOW()
       WHERE id = $1
       RETURNING ${PUBLIC_USER_FIELDS}`,
@@ -200,6 +244,7 @@ export async function updateUser(
       input.role ?? null,
       input.isActive ?? null,
       input.mustChangePassword ?? null,
+      input.contactName ?? null,
     ],
   )
   return result.rows[0] ?? null

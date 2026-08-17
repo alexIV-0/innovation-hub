@@ -78,6 +78,12 @@ export function PreviewPane({ className }: { className?: string }) {
             {fmtDate(file.modifiedAt ?? file.createdAt, lang)}
           </dd>
         </div>
+        {file.uploadedByName ? (
+          <div className="flex justify-between gap-3 border-t border-white/[0.07] py-[9px] text-[12.5px]">
+            <dt className="shrink-0 text-ws-4">{t.uploadedByLabel}</dt>
+            <dd className="truncate text-ws-2">{file.uploadedByName}</dd>
+          </div>
+        ) : null}
       </dl>
     </aside>
   )

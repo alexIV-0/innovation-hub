@@ -13,6 +13,7 @@ export default async function ProfilePage() {
       user={{
         id: user.id,
         fullName: user.fullName ?? "",
+        contactName: user.contactName ?? "",
         email: user.email,
         role: user.role,
         isActive: user.isActive,

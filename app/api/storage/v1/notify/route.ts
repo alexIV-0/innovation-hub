@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const file = await writeNotifyUpload({
+      userId: access.ownerId,
       projectId: access.projectId,
       s3Key: data.s3Key,
       folderPath: data.folderPath,

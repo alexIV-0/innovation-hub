@@ -59,6 +59,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     try {
       const file = await writeNotifyUpload({
+        userId: project.ownerId,
         projectId,
         folderPath: parsed.data.folderPath,
         fileName: safeBaseFileName(parsed.data.fileName),

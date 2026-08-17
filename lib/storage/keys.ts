@@ -47,6 +47,28 @@ export function isOptionsFolderRow(input: {
   )
 }
 
+/**
+ * Строка каталога принадлежит служебной папке: сама `options` или что-то внутри.
+ *
+ * Нужно именно представлению, а не выборке. Кабинет пользователя эти файлы не
+ * показывает: настройки автоматизации живут на отдельной вкладке, а в дереве
+ * файлов и в списке материалов проекта они выглядели бы мусором. Админский
+ * «Конвейер», наоборот, работает ровно с ними, поэтому фильтр включается на
+ * стороне вида, а из каталога папка приезжает всегда — как любая другая.
+ */
+export function isServiceCatalogRow(row: {
+  folderPath: string
+  name: string
+  isFolder: boolean
+}): boolean {
+  if (isOptionsFolderRow(row)) return true
+  const folder = normalizeFolderPath(row.folderPath).toLowerCase()
+  return (
+    folder === OPTIONS_FOLDER_NAME ||
+    folder.startsWith(`${OPTIONS_FOLDER_NAME}/`)
+  )
+}
+
 /** MIME по логическому имени — сайдкары приходят без Content-Type от клиента. */
 export function contentTypeForSidecar(name: string): string {
   const lower = name.toLowerCase()

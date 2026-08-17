@@ -418,6 +418,8 @@ export async function writeFilePut(input: {
 }
 
 export async function writeNotifyUpload(input: {
+  /** Владелец проекта — для ключа строк-папок, которые заводятся по пути заливки. */
+  userId: string
   projectId: string
   s3Key: string
   folderPath: string
@@ -450,6 +452,31 @@ export async function writeNotifyUpload(input: {
   const head = await headObject(input.s3Key)
   if (!head) {
     throw new StorageWriteError("Object not found in storage.")
+  }
+
+  // Папки по пути заливки должны существовать строками, иначе файл попадает в
+  // каталог, но пропадает из дерева: и buildTree в кабинете, и «Конвейер»
+  // спускаются только по существующим строкам-папкам. Именно так пропадали IN и
+  // OUT — клиент заливал в них файлы, ни разу не позвав /mkdir.
+  //
+  // Отказ здесь не должен ронять заливку: байты уже в бакете, а строка файла
+  // полезна и сама по себе. Единственная причина отказа — занятое имя (файл с
+  // именем папки на том же уровне), и это повод для записи в лог, а не для 409.
+  if (input.folderPath.replace(/^\/+|\/+$/g, "")) {
+    try {
+      await writeEnsureFolderPath({
+        userId: input.userId,
+        projectId: input.projectId,
+        folderPath: input.folderPath,
+        actor: input.actor,
+      })
+    } catch (error) {
+      console.error(
+        "[storage] notify: could not ensure folder rows for",
+        input.folderPath,
+        error,
+      )
+    }
   }
 
   const contentHash =

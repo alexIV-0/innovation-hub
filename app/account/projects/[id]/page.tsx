@@ -2,7 +2,10 @@ import { notFound, redirect } from "next/navigation"
 import { ProjectDetailSection } from "@/components/account/sections/project-detail-section"
 import { getCurrentUser } from "@/lib/admin-auth"
 import { reconcileProjectPauseFromFolderState } from "@/lib/project-automation"
-import { loadProjectStorageState } from "@/lib/project-storage"
+import {
+  loadProjectStorageState,
+  withoutServiceRows,
+} from "@/lib/project-storage"
 import {
   findProjectForUser,
   listProjectMedia,
@@ -57,7 +60,7 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
   })
 
   const mediaRows = storage
-    ? (await listAllProjectFiles(project.id))
+    ? withoutServiceRows(await listAllProjectFiles(project.id))
         .filter((f) => !f.isFolder)
         .map((f) => ({
           id: f.id,

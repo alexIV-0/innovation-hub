@@ -14,6 +14,7 @@ import {
   validateLogicalName,
 } from "@/lib/storage/file-names"
 import { logicalKeyForFile } from "@/lib/storage/keys"
+import { writeEnsureFolderPath } from "@/lib/storage/write-path"
 import type { StorageActor } from "@/lib/storage/write-path"
 
 const FILE_FIELDS = `
@@ -234,6 +235,17 @@ export async function copySingleFile(input: {
   }
 
   const destFolder = input.destFolderPath.replace(/^\/+|\/+$/g, "")
+  // Папка назначения должна существовать строкой, иначе копия попадёт в каталог
+  // и пропадёт из дерева: оно строится спуском по строкам-папкам. Та же причина,
+  // по которой заливка заводит папки по пути (writeNotifyUpload).
+  if (destFolder) {
+    await writeEnsureFolderPath({
+      userId: input.destOwnerId,
+      projectId: input.destProjectId,
+      folderPath: destFolder,
+      actor: input.actor,
+    })
+  }
   const destKey = projectUploadObjectKey(
     input.destOwnerId,
     input.destProjectId,

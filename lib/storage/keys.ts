@@ -1,6 +1,59 @@
 import { buildProjectObjectKey, projectObjectPrefix } from "@/lib/s3-config"
 
 export const CATALOG_FOLDER_NAME = "_catalog"
+export const OPTIONS_FOLDER_NAME = "options"
+export const FOLDER_STATE_FILE_NAME = "folderState.json"
+export const OPTIONS_FILE_NAME = "options.json"
+export const DESCRIPTION_FILE_NAME = "description.md"
+
+/**
+ * Три сайдкара, которые сайт читает по фиксированному ключу
+ * (projectFolderStateKey и рядом в lib/project-storage.ts).
+ *
+ * В остальном это обычные файлы: их видно в дереве, можно скачать и перезалить.
+ * Закреплены только имя и место — переименование или перенос уводит объект с
+ * канонического ключа, и тумблер проекта вместе с настройками перестаёт
+ * читаться при целом и на вид исправном файле.
+ */
+export const CANONICAL_SIDECAR_NAMES = [
+  FOLDER_STATE_FILE_NAME,
+  OPTIONS_FILE_NAME,
+  DESCRIPTION_FILE_NAME,
+] as const
+
+function normalizeFolderPath(folderPath: string): string {
+  return folderPath.replace(/^\/+|\/+$/g, "")
+}
+
+/** Лежит ли (folderPath, name) на каноническом ключе сайдкара. */
+export function isCanonicalSidecar(folderPath: string, name: string): boolean {
+  if (normalizeFolderPath(folderPath).toLowerCase() !== OPTIONS_FOLDER_NAME) {
+    return false
+  }
+  const lower = name.toLowerCase()
+  return CANONICAL_SIDECAR_NAMES.some((known) => known.toLowerCase() === lower)
+}
+
+/** Сама служебная папка проекта — её тоже нельзя переносить и удалять. */
+export function isOptionsFolderRow(input: {
+  folderPath: string
+  name: string
+  isFolder: boolean
+}): boolean {
+  return (
+    input.isFolder &&
+    normalizeFolderPath(input.folderPath) === "" &&
+    input.name.toLowerCase() === OPTIONS_FOLDER_NAME
+  )
+}
+
+/** MIME по логическому имени — сайдкары приходят без Content-Type от клиента. */
+export function contentTypeForSidecar(name: string): string {
+  const lower = name.toLowerCase()
+  if (lower.endsWith(".json")) return "application/json"
+  if (lower.endsWith(".md")) return "text/markdown; charset=utf-8"
+  return "application/octet-stream"
+}
 
 const PROJECT_KEY_RE =
   /^projects\/([^/]+)\/([^/]+)\/(?:options\/(.+)|([^/]+)\/(.+)|([^/]+))$/
@@ -62,7 +115,9 @@ export function isOptionsKey(
   userId: string,
   projectId: string,
 ): boolean {
-  return key.startsWith(`${projectPrefix(userId, projectId)}options/`)
+  return key.startsWith(
+    `${projectPrefix(userId, projectId)}${OPTIONS_FOLDER_NAME}/`,
+  )
 }
 
 /** Physical object names are `{uuid}-{safeName}`. Strip the uuid for the catalog. */

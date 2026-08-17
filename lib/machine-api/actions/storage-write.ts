@@ -7,13 +7,13 @@ import { findFileById } from "@/lib/repositories/project-files"
 import { apiError, apiOk } from "@/lib/machine-api/http"
 import { defineAction } from "@/lib/machine-api/types"
 import {
+  actorFromAuth,
   requireEditableProjectAccess,
   requireOwnedProjectAccess,
   requireProjectAccess,
 } from "@/lib/storage/auth"
 import { projectPrefix } from "@/lib/storage/keys"
 import {
-  journalStorageEvent,
   reindexProject,
   StorageWriteError,
   writeFileDelete,
@@ -21,10 +21,11 @@ import {
   writeNotifyUpload,
   writeRename,
   writeSidecarPut,
+  writeSidecarSync,
 } from "@/lib/storage/write-path"
 import { setProjectPaused } from "@/lib/project-automation"
 import {
-  OPTIONS_FOLDER_NAME,
+  OPTIONS_FILE_NAME,
   ProjectStorageError,
   projectDescriptionKey,
   projectFolderStateKey,
@@ -146,6 +147,10 @@ export const notifyAction = defineAction(
         originMtime: data.originMtime,
         contentHash: data.contentHash,
         eventId: data.eventId,
+        // Машина парка ходит здесь под rc_-токеном, поэтому actorFromAuth
+        // помечает её как «не заливщик»: возврат результата в проект не должен
+        // переносить uploaded_by на админа, регистрировавшего компьютер.
+        actor: actorFromAuth(auth),
       })
       return apiOk({ file, fileIds: [file.id] }, 201)
     } catch (error) {
@@ -172,9 +177,6 @@ export const mkdirAction = defineAction(
     if (data.name.includes("/") || data.name.includes("\\")) {
       return apiError("Invalid folder name.", 400)
     }
-    if (data.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-      return apiError("This folder name is reserved.", 403)
-    }
 
     const access = await requireEditableProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
@@ -186,6 +188,7 @@ export const mkdirAction = defineAction(
         folderPath: data.folderPath,
         name: data.name,
         eventId: data.eventId,
+        actor: actorFromAuth(auth),
       })
       return apiOk({ file, fileIds: [file.id] }, 201)
     } catch (error) {
@@ -230,6 +233,7 @@ export const renameAction = defineAction(
         name: data.name,
         folderPath: data.folderPath,
         eventId: data.eventId,
+        actor: actorFromAuth(auth),
       })
       if (!file) return apiError("File not found.", 404)
       return apiOk({ file, fileIds: [file.id] })
@@ -260,18 +264,24 @@ export const deleteObjectAction = defineAction(
     if (!file || file.projectId !== access.projectId) {
       return apiError("File not found.", 404)
     }
-    if (file.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-      return apiError("This item is managed by automation.", 403)
+    try {
+      const result = await writeFileDelete({
+        userId: access.ownerId,
+        projectId: access.projectId,
+        fileId: data.fileId,
+        deletedBy: auth.userId,
+        eventId: data.eventId,
+        actor: actorFromAuth(auth),
+      })
+      return apiOk({ ok: true, ...result })
+    } catch (error) {
+      // 403 приходит на попытку снести канонический сайдкар или саму папку
+      // options: их место закреплено, всё остальное удаляется как обычно.
+      if (error instanceof StorageWriteError) {
+        return apiError(error.message, error.status)
+      }
+      throw error
     }
-
-    const result = await writeFileDelete({
-      userId: access.ownerId,
-      projectId: access.projectId,
-      fileId: data.fileId,
-      deletedBy: auth.userId,
-      eventId: data.eventId,
-    })
-    return apiOk({ ok: true, ...result })
   },
 )
 
@@ -336,6 +346,7 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
         ownerId: access.ownerId,
         paused: !data.enabled,
         updatedBy: siteUpdatedBy(auth.email),
+        actorUserId: auth.userId,
       })
       return apiOk({ folderState })
     }
@@ -346,11 +357,12 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
         projectId: access.projectId,
         changes: data.changes,
       })
-      await journalStorageEvent({
+      await writeSidecarSync({
+        userId: access.ownerId,
         projectId: access.projectId,
         key: projectOptionsKey(access.ownerId, access.projectId),
-        op: "put",
-        payload: { name: "options.json", folderPath: "options" },
+        name: OPTIONS_FILE_NAME,
+        actor: actorFromAuth(auth),
       })
       return apiOk({ options: result })
     }
@@ -361,18 +373,21 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
         : data.sidecar === "description"
           ? projectDescriptionKey(access.ownerId, access.projectId)
           : projectOptionsKey(access.ownerId, access.projectId)
-    const { etag } = await writeSidecarPut({
+    const { etag, file } = await writeSidecarPut({
+      userId: access.ownerId,
       projectId: access.projectId,
       key,
       body: data.body,
       ifMatch: data.ifMatch,
+      actor: actorFromAuth(auth),
     })
-    return apiOk({ ok: true, etag })
+    return apiOk({ ok: true, etag, file })
   } catch (error) {
-    if (
-      error instanceof ProjectStorageError ||
-      error instanceof StorageWriteError
-    ) {
+    // 412 — версия устарела, 409 — имя занято: клиент разбирает их по-разному.
+    if (error instanceof StorageWriteError) {
+      return apiError(error.message, error.status)
+    }
+    if (error instanceof ProjectStorageError) {
       return apiError(error.message, 409)
     }
     console.error("[machine-api] sidecar put failed", error)
@@ -417,6 +432,7 @@ export const copyAction = defineAction(
           destFolderPath: data.destFolderPath,
           source: syncSingle,
           eventId: data.eventId ?? null,
+          actor: actorFromAuth(auth),
         })
         return apiOk({ files: [file], fileIds: [file.id] })
       }
@@ -438,6 +454,8 @@ export const copyAction = defineAction(
           destFolderPath: data.destFolderPath,
           fileIds: data.fileIds,
           eventId: data.eventId,
+          actorUserId: auth.userId,
+          actorIsUploader: auth.computerId == null,
         },
       })
       scheduleJob(job.id)

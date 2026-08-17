@@ -9,7 +9,8 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 /**
  * Колонка 3 «Конвейера»: дерево проекта целиком, вместе со служебной папкой
- * options — в кабинете пользователя она скрыта, админ работает именно с ней.
+ * options — она приезжает из каталога наравне с остальными папками, отдельного
+ * флага для неё больше нет.
  *
  * Скоупинга по владельцу нет намеренно: администратор смотрит любые проекты,
  * поэтому findProjectById, а не findProjectForUser.
@@ -25,9 +26,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const state = await loadProjectStorageState(project.ownerId, project.id, {
-      includeServiceFiles: true,
-    })
+    const state = await loadProjectStorageState(project.ownerId, project.id)
     return NextResponse.json({
       ...state,
       storageAvailable: state.available,

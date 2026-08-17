@@ -2,13 +2,16 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react"
 import {
+  Ban,
   ChevronDown,
   ChevronRight,
   Folder,
   Loader2,
   RefreshCw,
+  Trash2,
   X,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { tf, useAdminI18n, type AdminDict } from "@/components/admin/admin-dict"
 import { useI18n, type Lang } from "@/components/account/i18n"
@@ -57,6 +60,8 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
   /** Раскрытые задачи. Свёрнутая не держит список шагов в DOM — тот же приём,
    *  что unmountOnExit у аккордеона лог-окна. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  /** Задача, по которой сейчас идёт запрос: гасим её кнопки, а не всю таблицу. */
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -74,6 +79,42 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void load()
   }, [load])
+
+  /**
+   * Снятие и удаление. Оба ответа приносят свежий список — перезапрашивать
+   * отдельно не нужно, и таблица не мигает загрузкой.
+   */
+  const mutate = async (taskId: string, mode: "cancel" | "delete") => {
+    if (mode === "delete" && !window.confirm(t.pipelineTaskDeleteConfirm)) return
+    setBusyId(taskId)
+    try {
+      const res =
+        mode === "cancel"
+          ? await fetch("/api/admin/pipeline/tasks", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ taskId }),
+            })
+          : await fetch(
+              `/api/admin/pipeline/tasks?taskId=${encodeURIComponent(taskId)}`,
+              { method: "DELETE" },
+            )
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        toast.error(data?.message ?? t.pipelineTaskActionError)
+        return
+      }
+      setTasks(data.tasks ?? [])
+      setCounts(data.counts ?? null)
+      toast.success(
+        mode === "cancel" ? t.pipelineTaskCancelled : t.pipelineTaskDeleted,
+      )
+    } catch {
+      toast.error(t.pipelineServerUnavailable)
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -146,6 +187,7 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
                   <th className="px-3 py-2.5 font-medium">{t.pipelineColMachine}</th>
                   <th className="px-3 py-2.5 font-medium">{t.pipelineColState}</th>
                   <th className="px-5 py-2.5 font-medium">{t.pipelineColCreated}</th>
+                  <th className="px-3 py-2.5 font-medium">{t.actions}</th>
                 </tr>
               </thead>
               <tbody>
@@ -244,10 +286,47 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
                     <td className="whitespace-nowrap px-5 py-2.5 text-ws-4">
                       {fmtTime(task.createdAt, lang)}
                     </td>
+                    {/* stopPropagation: клик по строке раскрывает шаги, и кнопки
+                        не должны заодно её разворачивать. */}
+                    <td
+                      className="whitespace-nowrap px-3 py-2.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="flex items-center gap-0.5">
+                        {task.status === "queued" ||
+                        task.status === "claimed" ||
+                        task.status === "running" ? (
+                          <button
+                            type="button"
+                            onClick={() => void mutate(task.id, "cancel")}
+                            disabled={busyId === task.id}
+                            title={t.pipelineTaskCancelTitle}
+                            aria-label={t.pipelineTaskCancel}
+                            className="flex h-7 w-7 items-center justify-center rounded-[7px] text-ws-4 hover:bg-white/5 hover:text-ws-1 disabled:opacity-40"
+                          >
+                            {busyId === task.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Ban className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void mutate(task.id, "delete")}
+                          disabled={busyId === task.id}
+                          title={t.pipelineTaskDeleteTitle}
+                          aria-label={t.delete}
+                          className="flex h-7 w-7 items-center justify-center rounded-[7px] text-ws-4 hover:bg-destructive/15 hover:text-destructive disabled:opacity-40"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    </td>
                   </tr>
                   {isOpen && hasSteps ? (
                     <tr className="border-t border-white/[0.04] bg-black/20">
-                      <td colSpan={6} className="px-5 py-1">
+                      <td colSpan={7} className="px-5 py-1">
                         <StepList steps={task.steps} />
                       </td>
                     </tr>

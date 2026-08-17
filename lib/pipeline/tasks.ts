@@ -201,6 +201,51 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
   })
 }
 
+/**
+ * Снимает задачу руками из окна очереди.
+ *
+ * Помечает `failed`, а НЕ удаляет строку — и это не мелочь. Страховочный обход
+ * (lib/pipeline/sweep.ts) берёт элементы IN, по которым задачи нет вообще: удали
+ * строку, и он через свой интервал завёл бы задачу заново по тому же файлу.
+ * Помеченная `failed` задача из очереди уходит, обходом не переоткрывается, а
+ * история остаётся видимой.
+ *
+ * Аренду снимаем: если задачу держала машина, её `taskDone` теперь получит 409 —
+ * это честнее, чем принять отчёт по снятой работе.
+ */
+export async function cancelPipelineTask(input: {
+  taskId: string
+  reason: string
+}): Promise<boolean> {
+  const result = await query(
+    `UPDATE tasks
+        SET status = 'failed',
+            error = $2,
+            claimed_by = NULL,
+            lease_expires_at = NULL,
+            updated_at = NOW()
+      WHERE id = $1
+        AND status IN ('queued', 'claimed', 'running')`,
+    [input.taskId, input.reason],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+/**
+ * Удаляет строку задачи насовсем.
+ *
+ * Нужна, когда задача не «снята», а не должна была существовать: мусор от
+ * экспериментов, дубль, задача по проекту, который уже не ведут. Отдельно от
+ * снятия именно потому, что у удаления есть последствие: элемент, который всё ещё
+ * лежит в IN, снова становится «незнакомым» для обхода, и задача по нему появится
+ * снова. Для живого файла это правильное поведение — «забудь и найди заново», — но
+ * выбирать его должен человек, а не кнопка с подписью «снять».
+ */
+export async function deletePipelineTask(taskId: string): Promise<boolean> {
+  const result = await query(`DELETE FROM tasks WHERE id = $1`, [taskId])
+  return (result.rowCount ?? 0) > 0
+}
+
 export type TaskCounts = Record<TaskStatus, number> & { total: number }
 
 export async function countPipelineTasksByStatus(): Promise<TaskCounts> {

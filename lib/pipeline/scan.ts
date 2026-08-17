@@ -123,6 +123,13 @@ async function writeCursor(seq: number): Promise<void> {
  * Конвенция десктопа с самого начала (findFilesForSingleFolder.ts,
  * processItem.ts): пока в начале имени стоит `-`, папка не готова. Пользователь
  * докладывает в неё файлы сколько нужно, снял `-` — папка укомплектована.
+ *
+ * Правило только для ПАПОК, и вызывать это надо под проверкой `isFolder`. У файла
+ * задерживать нечего: он готов в тот момент, когда байты доехали, а дефис в начале
+ * имени — просто дефис в имени. Раньше проверка стояла на всех элементах, но для
+ * файлов не срабатывала случайно: имя нарезалось из физического ключа, а тот
+ * начинается с uuid. После перехода на логические имена
+ * (docs/STORAGE_CLIENT_REQUESTS.md §14.1) она бы начала отсекать файлы.
  */
 export function isHeldBack(name: string): boolean {
   return name.startsWith("-")
@@ -386,19 +393,46 @@ export async function collectTasks(): Promise<CollectResult> {
     )
     if (!entry) continue
 
+    /**
+     * Имя элемента — ЛОГИЧЕСКОЕ, то есть то, которое видит человек.
+     *
+     * `resolveInEntry` нарезает имя из ключа, а ключ физический: presign минтит
+     * `{uuid}-{имя}`. Это имя уезжает в `description.curItem`, а на машине из него
+     * собираются имена результатов (маски `$curItemName`, `$clearName`) — и в OUT
+     * приезжал файл с uuid в названии. Технические имена хранилища до машины
+     * доходить не должны: `s3Key` — идентичность, `name` — то, что видит человек
+     * (docs/STORAGE_CLIENT_REQUESTS.md §14.1). Логическое имя лежит в payload
+     * события, второй раз за ним ходить не нужно.
+     *
+     * У папки имя и так логическое: это сегмент пути, а не имя объекта.
+     */
+    const logicalName =
+      !entry.isFolder && typeof change.payload?.name === "string"
+        ? change.payload.name
+        : entry.name
+
     // После move ключ в журнале — старый (переименование каталога физических
     // объектов не двигает), поэтому имя берём из payload.to.
     const renamedTo = change.op === "move" ? change.payload?.to?.name : undefined
+    const renamedFolder = entry.isFolder || change.payload?.isFolder === true
     const effective: InEntry = renamedTo
       ? {
           name: renamedTo,
-          key: entry.key.slice(0, entry.key.lastIndexOf("/") + 1) + renamedTo,
+          // Ключ — идентичность элемента и ключ дедупа, и она физическая. У файла
+          // переименование её не меняет: объект в R2 остаётся на прежнем ключе,
+          // поэтому берём ключ события, а не собираем из нового имени — иначе в
+          // задачу уехал бы ключ, которого в бакете нет. У папки физического
+          // объекта нет вовсе, её ключ логический и следует за именем.
+          key: renamedFolder
+            ? entry.key.slice(0, entry.key.lastIndexOf("/") + 1) + renamedTo
+            : entry.key,
           // Переименовали саму папку — событие пришло по ней, а не по потомку.
-          isFolder: entry.isFolder || change.payload?.isFolder === true,
+          isFolder: renamedFolder,
         }
-      : entry
+      : { ...entry, name: logicalName }
 
-    if (isHeldBack(effective.name)) {
+    // Только для папки: у файла дефис в начале имени ничего не значит.
+    if (effective.isFolder && isHeldBack(effective.name)) {
       noteSkip(project.projectId, project.name, "folder-not-ready")
       continue
     }

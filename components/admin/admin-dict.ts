@@ -368,6 +368,16 @@ export const adminDict = {
     pipelineColCreated: "Создана",
     pipelineAttempts: "попыток {count}",
     pipelineFolderSource: "Папка — обрабатывается целиком, в один результат",
+    pipelineTaskCancel: "Снять",
+    pipelineTaskCancelTitle:
+      "Снять задачу: помечается ошибкой и уходит из очереди. Обход её не переоткроет.",
+    pipelineTaskDeleteTitle:
+      "Удалить строку задачи. Если элемент ещё лежит в папке IN, обход заведёт задачу заново.",
+    pipelineTaskDeleteConfirm:
+      "Удалить строку задачи? Если элемент ещё лежит в папке IN, обход заведёт её заново — это и есть смысл удаления. Чтобы просто убрать задачу из очереди, снимите её.",
+    pipelineTaskCancelled: "Задача снята.",
+    pipelineTaskDeleted: "Задача удалена.",
+    pipelineTaskActionError: "Не удалось изменить задачу.",
 
     // токены доступа и машины под ними
     tokenScoped: "привязан к проекту",
@@ -799,6 +809,16 @@ export const adminDict = {
     pipelineColCreated: "Created",
     pipelineAttempts: "attempts {count}",
     pipelineFolderSource: "Folder — processed as a whole, into one result",
+    pipelineTaskCancel: "Cancel",
+    pipelineTaskCancelTitle:
+      "Cancel the task: it is marked failed and leaves the queue. The sweep will not reopen it.",
+    pipelineTaskDeleteTitle:
+      "Delete the task row. If the element still sits in the IN folder, the sweep will create the task again.",
+    pipelineTaskDeleteConfirm:
+      "Delete the task row? If the element still sits in the IN folder, the sweep will create it again — that is what deleting is for. To simply take the task out of the queue, cancel it instead.",
+    pipelineTaskCancelled: "Task cancelled.",
+    pipelineTaskDeleted: "Task deleted.",
+    pipelineTaskActionError: "Could not change the task.",
 
     // access tokens and their machines
     tokenScoped: "scoped to a project",

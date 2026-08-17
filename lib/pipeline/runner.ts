@@ -1,4 +1,4 @@
-import { reapExpiredLeases } from "@/lib/pipeline/queue"
+import { reapExpiredLeases, reapOrphanedTasks } from "@/lib/pipeline/queue"
 import { collectTasks } from "@/lib/pipeline/scan"
 import {
   readPipelineState,
@@ -67,6 +67,16 @@ export function startPipelineRunner(): void {
       if (reaped > 0) {
         console.log(
           `[pipeline-runner] возвращено задач по протухшей аренде: ${reaped}`,
+        )
+      }
+
+      // Тоже до проверки флага и независимо от него: задача без источника
+      // невыполнима, и держать её в очереди при остановленном слежении так же
+      // бессмысленно, как при включённом.
+      const orphaned = await reapOrphanedTasks()
+      if (orphaned > 0) {
+        console.log(
+          `[pipeline-runner] погашено задач без источника: ${orphaned}`,
         )
       }
 

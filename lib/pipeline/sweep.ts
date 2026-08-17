@@ -3,7 +3,6 @@ import { listWatchedProjects } from "@/lib/pipeline/repository"
 import {
   isHeldBack,
   materializeCandidates,
-  resolveInEntry,
   type Candidate,
   type InEntry,
   type SkipReason,
@@ -167,6 +166,11 @@ export async function sweepInFolders(): Promise<SweepResult> {
     // дедуп по source_key разъедется и обход задублировал бы уже созданное.
     // Для файла это его физический ключ; для папки — собранный, потому что у
     // строки-папки s3_key нет по схеме.
+    //
+    // А имя берём логическое, из каталога: физический сегмент ключа с uuid до
+    // машины доходить не должен, оттуда собираются имена результатов
+    // (docs/STORAGE_CLIENT_REQUESTS.md §14.1). Обе ветки здесь раньше расходились —
+    // у папки имя было логическое, у файла нарезанное из ключа.
     const entry: InEntry | null = row.isFolder
       ? {
           name: row.name,
@@ -174,11 +178,13 @@ export async function sweepInFolders(): Promise<SweepResult> {
           isFolder: true,
         }
       : row.s3Key
-        ? resolveInEntry(row.s3Key, project.ownerId, project.projectId)
+        ? { name: row.name, key: row.s3Key, isFolder: false }
         : null
     if (!entry) continue
 
-    if (isHeldBack(entry.name)) {
+    // Только для папки: файл готов, как только байты доехали, и дефис в начале
+    // его имени — это просто дефис в имени.
+    if (entry.isFolder && isHeldBack(entry.name)) {
       noteSkip(project.projectId, project.name, "folder-not-ready")
       continue
     }

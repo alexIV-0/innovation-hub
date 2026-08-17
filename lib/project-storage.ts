@@ -10,6 +10,7 @@ import { getS3Client, isS3Configured } from "@/lib/s3-client"
 import {
   DESCRIPTION_FILE_NAME,
   FOLDER_STATE_FILE_NAME,
+  isServiceCatalogRow,
   OPTIONS_FILE_NAME,
   OPTIONS_FOLDER_NAME,
 } from "@/lib/storage/keys"
@@ -449,14 +450,28 @@ export async function syncUserMeta(input: {
 }
 
 /**
- * Скрыт только манифест проекта: его пишет сайт, редактировать его человеку
- * нечем, и в дереве файлов он выглядел бы мусором.
+ * Манифест проекта скрыт всегда: его пишет сайт, редактировать его человеку
+ * нечем, и в списке файлов он выглядел бы мусором.
  *
- * `options` здесь больше нет намеренно: служебная папка показывается как любая
- * другая — с логическими именами, вложенностью и обычными операциями.
+ * Служебная папка `options` скрывается не здесь, а по представлению —
+ * `isServiceCatalogRow` плюс флаг `includeServiceFiles`.
  */
 function isHiddenName(name: string): boolean {
   return name.toLowerCase() === PROJECT_META_FILE_NAME
+}
+
+/**
+ * Отсекает служебную папку и её содержимое из плоского списка строк каталога.
+ *
+ * Нужна везде, где строки уходят пользователю списком, а не деревом: с
+ * появлением строк у сайдкаров (`writeSidecarSync`) `options/options.json` и
+ * `options/__stat/*.jsonl` иначе попадают в материалы проекта наравне с его
+ * файлами. Админский «Конвейер» этой функцией не пользуется — он показывает всё.
+ */
+export function withoutServiceRows<
+  T extends { folderPath: string; name: string; isFolder: boolean },
+>(rows: T[]): T[] {
+  return rows.filter((row) => !isServiceCatalogRow(row))
 }
 
 function toStorageFile(row: ProjectFileRecord): ProjectStorageFile {
@@ -476,8 +491,15 @@ function toStorageFile(row: ProjectFileRecord): ProjectStorageFile {
   }
 }
 
-function buildTree(rows: ProjectFileRecord[]): ProjectStorageFile[] {
-  const visible = rows.filter((r) => !isHiddenName(r.name))
+function buildTree(
+  rows: ProjectFileRecord[],
+  view: { includeServiceFiles: boolean },
+): ProjectStorageFile[] {
+  const visible = rows.filter(
+    (row) =>
+      !isHiddenName(row.name) &&
+      (view.includeServiceFiles || !isServiceCatalogRow(row)),
+  )
   const byParent = new Map<string, ProjectFileRecord[]>()
 
   for (const row of visible) {
@@ -510,19 +532,26 @@ function buildTree(rows: ProjectFileRecord[]): ProjectStorageFile[] {
 /**
  * Cabinet view: nested file tree from Postgres + automation JSON from R2.
  *
- * Служебная папка `options` приезжает из того же `project_files`, что и всё
- * остальное — отдельного листинга бакета для неё больше нет. Раньше он был
- * нужен, потому что сайдкарам не создавали строк; из-за него в кабинете
- * показывались физические имена (`{uuid}-folderState.json`) и любой мусор,
- * оставшийся под префиксом от прошлых заливок.
+ * `includeServiceFiles` включает в дерево служебную папку `options`. По
+ * умолчанию она скрыта: в кабинете пользователь работает с материалами проекта,
+ * а настройки автоматизации у него на отдельной вкладке. Включает флаг только
+ * админский «Конвейер» — он работает именно со служебными файлами.
+ *
+ * Сама папка при этом приезжает из того же `project_files`, что и всё остальное:
+ * отдельного листинга бакета для неё больше нет. Раньше он был нужен, потому что
+ * сайдкарам не создавали строк, и из-за него в «Конвейере» показывались
+ * физические имена (`{uuid}-folderState.json`) и мусор от прошлых заливок.
  */
 export async function loadProjectStorageState(
   userId: string,
   projectId: string,
+  view?: { includeServiceFiles?: boolean },
 ): Promise<ProjectStorageState> {
   const available = isS3Configured()
   const rows = await listAllProjectFiles(projectId)
-  const files = buildTree(rows)
+  const files = buildTree(rows, {
+    includeServiceFiles: view?.includeServiceFiles === true,
+  })
 
   if (!available) {
     return {

@@ -6,6 +6,7 @@ import {
   deleteFileSchema,
   renameFileSchema,
 } from "@/lib/project-schemas"
+import { withoutServiceRows } from "@/lib/project-storage"
 import { listFilesInFolder } from "@/lib/repositories/project-files"
 import { findOwnedProject } from "@/lib/repositories/projects"
 import {
@@ -30,7 +31,9 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 
   const folderPath = request.nextUrl.searchParams.get("folderPath") ?? ""
-  const files = await listFilesInFolder(id, folderPath)
+  // Отсекаем и саму папку options в корне, и попытку зайти внутрь неё по
+  // folderPath: это роут кабинета, служебные файлы показывает только «Конвейер».
+  const files = withoutServiceRows(await listFilesInFolder(id, folderPath))
   return NextResponse.json({ files, folderPath })
 }
 

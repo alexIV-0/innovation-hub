@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
+import { withoutServiceRows } from "@/lib/project-storage"
 import { listAllProjectFiles } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
 
@@ -21,7 +22,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return jsonError("Project not found.", 404)
   }
 
-  const files = (await listAllProjectFiles(project.id)).filter((f) => !f.isFolder)
+  // Служебные файлы из options — не материалы проекта: у сайдкаров появились
+  // строки в каталоге, и без фильтра options.json и статистика обработки
+  // оказались бы в списке наравне с файлами пользователя.
+  const files = withoutServiceRows(await listAllProjectFiles(project.id)).filter(
+    (f) => !f.isFolder,
+  )
   return NextResponse.json({
     media: files.map((f) => ({
       id: f.id,

@@ -290,9 +290,27 @@ export async function listMachineTokens(userId: string) {
   return result.rows
 }
 
+/**
+ * Отзывает токен и вместе с ним — машины, которые под ним ходили.
+ *
+ * Второе обязательно: машина существует в списке только как «кто обращался этим
+ * токеном». Оставить её после отзыва означало бы показывать парк машин, которого
+ * больше нет — ходить она всё равно не сможет, авторизация откажет.
+ *
+ * Машины помечаются отозванными, а не удаляются: та же машина по своему UUID
+ * спокойно заведётся заново под новым токеном (частичный уникальный индекс
+ * считает только неотозванные), а история останется.
+ */
 export async function revokeMachineToken(userId: string, tokenId: string) {
-  await query(
-    `UPDATE machine_tokens SET revoked_at = NOW() WHERE id = $1 AND user_id = $2`,
+  const result = await query(
+    `UPDATE machine_tokens SET revoked_at = NOW()
+      WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`,
     [tokenId, userId],
   )
+  if ((result.rowCount ?? 0) === 0) return
+
+  const { revokeComputersByToken } = await import(
+    "@/lib/repositories/remote-computers"
+  )
+  await revokeComputersByToken(tokenId)
 }

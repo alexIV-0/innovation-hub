@@ -160,6 +160,8 @@ export type RemoteComputerRecord = {
   status: RemoteComputerStatus
   currentProjectId: string | null
   currentTask: string | null
+  /** UUID машины при самозаписи; у заведённых руками — null. */
+  machineUuid: string | null
   lastHeartbeatAt: Date | null
   meta: Record<string, unknown>
   createdBy: string

@@ -1266,6 +1266,40 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
     exampleResponse: { ok: true },
   },
   {
+    action: "machinePing",
+    group: "queue",
+    summary: {
+      ru: "«Я на связи» — без запроса задачи.",
+      en: "“I am online” — without asking for a task.",
+    },
+    description: {
+      ru: "Звать на своём пульсе независимо от того, включён ли воркер. Без этого состояние «машина включена, но воркер выключен» сайту не видно вовсе: от токена `mch_` он слышит машину только когда та зовёт очередь. В админке от этого зависят два отдельных индикатора — «на связи» и «воркер следит», а не один на оба состояния.",
+      en: "Call it on your own pulse regardless of whether the worker is on. Without it the state “machine up, worker off” is invisible to the site: with an `mch_` token it only hears the machine when it asks for a task. Two separate indicators in the admin UI depend on this — “online” and “worker polling” — rather than one covering both.",
+    },
+    props: [
+      {
+        name: "machineUuid",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Обязателен для токена `mch_…`: им сайт опознаёт машину и заводит её сам.",
+          en: "Required for an `mch_…` token: the site identifies and registers the machine by it.",
+        },
+      },
+      {
+        name: "hostname",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Подпись для админки; обновляется на каждом обращении.",
+          en: "Label for the admin UI; refreshed on every call.",
+        },
+      },
+    ],
+    exampleProps: { machineUuid: "b1e2…", hostname: "render-box-1" },
+    exampleResponse: { ok: true },
+  },
+  {
     action: "claimTask",
     group: "queue",
     summary: {

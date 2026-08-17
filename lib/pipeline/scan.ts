@@ -86,11 +86,16 @@ async function readCursor(): Promise<number> {
   return result.rows[0] ? Number(result.rows[0].lastSeq) : 0
 }
 
+/**
+ * Двигает курсор. `scanned_at` здесь НЕ трогаем: он значит «когда цикл проверял
+ * последний раз», и пишет его recordTickResult на каждом тике. Курсор двигается
+ * только при новых событиях, поэтому отсюда это поле замерзало на моменте
+ * последней загрузки файла — см. комментарий в state.ts#recordTickResult.
+ */
 async function writeCursor(seq: number): Promise<void> {
   await query(
     `UPDATE automation_scan_state
         SET last_seq = $1,
-            scanned_at = NOW(),
             updated_at = NOW()
       WHERE id = 'singleton'`,
     [seq],

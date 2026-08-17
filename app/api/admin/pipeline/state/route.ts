@@ -2,7 +2,13 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { countPipelineTasksByStatus } from "@/lib/pipeline/tasks"
-import { readPipelineState, setPipelineRunning } from "@/lib/pipeline/state"
+import {
+  readPipelineState,
+  setPipelineRunning,
+  setSweepInterval,
+  SWEEP_INTERVAL_MAX,
+  SWEEP_INTERVAL_OFF,
+} from "@/lib/pipeline/state"
 
 export const runtime = "nodejs"
 
@@ -24,13 +30,34 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ state, counts })
 }
 
-const patchSchema = z.object({
-  running: z.boolean(),
-})
+/**
+ * Тумблер слежения и период обхода — одним роутом.
+ *
+ * Оба поля необязательные, но пустой запрос отвергаем: он значил бы «ничего не
+ * менять» и отличить его от опечатки в имени поля было бы нечем.
+ */
+const patchSchema = z
+  .object({
+    running: z.boolean().optional(),
+    /** Период обхода в минутах; 0 снимает расписание. */
+    sweepIntervalMin: z
+      .number()
+      .int()
+      .min(SWEEP_INTERVAL_OFF)
+      .max(SWEEP_INTERVAL_MAX)
+      .optional(),
+  })
+  .refine(
+    (v) => v.running !== undefined || v.sweepIntervalMin !== undefined,
+    { message: "Nothing to update." },
+  )
 
 /**
  * Запуск — начать слежение за папками и сборку объектов для обработки.
  * Стоп — прекратить и то, и другое. Уже созданные задачи остаются в очереди.
+ *
+ * Настройки страховочного обхода едут сюда же: они часть состояния конвейера, а
+ * не общий словарь, и на десктоп не синхронизируются.
  */
 export async function PATCH(request: NextRequest) {
   const auth = await requireAdminApi(request)
@@ -45,10 +72,16 @@ export async function PATCH(request: NextRequest) {
     )
   }
 
-  const state = await setPipelineRunning({
-    running: parsed.data.running,
-    adminUserId: auth.userId,
-  })
+  const { running, sweepIntervalMin } = parsed.data
+
+  let state = await readPipelineState()
+  if (sweepIntervalMin !== undefined) {
+    state = await setSweepInterval(sweepIntervalMin)
+  }
+  if (running !== undefined) {
+    state = await setPipelineRunning({ running, adminUserId: auth.userId })
+  }
+
   const counts = await countPipelineTasksByStatus()
   return NextResponse.json({ state, counts })
 }

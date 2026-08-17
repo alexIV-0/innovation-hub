@@ -387,13 +387,23 @@ ALTER TABLE users
 
 -- ===== Конвейер: сканер и очередь задач =====
 
--- Состояние сканера. Watcher'ов и обхода папок нет: любая запись в хранилище уже
+-- Состояние сканера. Основная линия — событийная: любая запись в хранилище уже
 -- журналируется в storage_changes (lib/storage/write-path.ts#journal), поэтому
 -- «что нового появилось в IN» — это выборка по seq > last_seq. Строка одна.
 --
+-- Вторая линия — страховочный обход каталога (lib/pipeline/sweep.ts), поля
+-- sweep_*. Он нужен потому, что курсор двигается независимо от того, создалась
+-- задача или нет: любой пропуск в событийной линии окончательный, и файл остаётся
+-- лежать в IN, пока его кто-нибудь не перезалил. Обход идёт по project_files,
+-- сравнивает элементы IN с уже созданными задачами и добирает разницу.
+-- Расписание — одно поле sweep_interval_min: период в минутах, 0 значит «по
+-- таймеру не ходить». Отдельного тумблера нет: рядом с периодом он был бы вторым
+-- переключателем на то же решение.
+--
 -- is_running — включено ли слежение. Живёт в базе, а не в памяти процесса:
 -- закрытая страница не должна останавливать конвейер, перезапуск процесса
--- должен его возобновлять, и все админы должны видеть одно состояние.
+-- должен его возобновлять, и все админы должны видеть одно состояние. Обход
+-- подчинён этому же флагу: «Стоп» значит, что задачи не появляются вообще.
 CREATE TABLE IF NOT EXISTS automation_scan_state (
   id           TEXT PRIMARY KEY DEFAULT 'singleton',
   last_seq     BIGINT NOT NULL DEFAULT 0,
@@ -403,8 +413,14 @@ CREATE TABLE IF NOT EXISTS automation_scan_state (
   last_created INTEGER NOT NULL DEFAULT 0,
   last_error   TEXT,
   scanned_at   TIMESTAMPTZ,
+  sweep_interval_min INTEGER NOT NULL DEFAULT 15,
+  swept_at           TIMESTAMPTZ,
+  last_swept         INTEGER NOT NULL DEFAULT 0,
+  last_sweep_error   TEXT,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT automation_scan_state_singleton_chk CHECK (id = 'singleton')
+  CONSTRAINT automation_scan_state_singleton_chk CHECK (id = 'singleton'),
+  CONSTRAINT automation_scan_state_sweep_interval_chk
+    CHECK (sweep_interval_min = 0 OR sweep_interval_min BETWEEN 1 AND 1440)
 );
 
 INSERT INTO automation_scan_state (id, last_seq)
@@ -446,6 +462,12 @@ CREATE INDEX IF NOT EXISTS tasks_project_idx
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_active_source_idx
   ON tasks (project_id, source_key)
   WHERE status IN ('queued', 'claimed', 'running');
+
+-- Обход каталога спрашивает «была ли по этому элементу задача вообще» — включая
+-- done и failed, иначе он переоткрывал бы уже обработанное. Частичный индекс
+-- выше для этого вопроса не годится.
+CREATE INDEX IF NOT EXISTS tasks_source_key_idx
+  ON tasks (project_id, source_key);
 
 -- Индекс под сборщик протухших аренд на тике runner.ts. Без него это скан
 -- таблицы каждые 15 секунд.

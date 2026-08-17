@@ -1,6 +1,12 @@
 import { reapExpiredLeases } from "@/lib/pipeline/queue"
 import { collectTasks } from "@/lib/pipeline/scan"
-import { isPipelineRunning, recordTickResult } from "@/lib/pipeline/state"
+import {
+  readPipelineState,
+  recordSweepResult,
+  recordTickResult,
+  type PipelineState,
+} from "@/lib/pipeline/state"
+import { sweepInFolders } from "@/lib/pipeline/sweep"
 
 /**
  * Фоновый цикл конвейера.
@@ -17,9 +23,30 @@ import { isPipelineRunning, recordTickResult } from "@/lib/pipeline/state"
  * Тик дешёвый, когда ничего не происходит: выборка по storage_changes с
  * seq > last_seq по индексу, и при пустом результате в объектное хранилище цикл
  * вообще не ходит.
+ *
+ * На тике две линии сборки. Событийная идёт каждый раз, страховочный обход
+ * каталога (lib/pipeline/sweep.ts) — по своему интервалу, раз в 15 минут по
+ * умолчанию. Обе подчинены одному флагу: «Стоп» значит, что задачи не появляются
+ * вообще.
  */
 
 const TICK_INTERVAL_MS = 15_000
+
+/**
+ * Пора ли обходить.
+ *
+ * Период 0 — расписание снято, обход остаётся только по кнопке в настройках.
+ * Срок считается от конца прошлого обхода, а не от старта слежения: иначе
+ * перезапуск процесса или пауза сдвигали бы расписание. Ни разу не проходил —
+ * проходим сейчас.
+ */
+function sweepDue(state: PipelineState): boolean {
+  if (state.sweepIntervalMin <= 0) return false
+  if (!state.sweptAt) return true
+  const dueAt =
+    new Date(state.sweptAt).getTime() + state.sweepIntervalMin * 60_000
+  return Date.now() >= dueAt
+}
 
 let started = false
 /** Защита от наложения: тик может занять больше интервала на большой пачке. */
@@ -43,7 +70,8 @@ export function startPipelineRunner(): void {
         )
       }
 
-      if (!(await isPipelineRunning())) return
+      const state = await readPipelineState()
+      if (!state.isRunning) return
 
       const result = await collectTasks()
       await recordTickResult({ created: result.created, error: null })
@@ -52,6 +80,25 @@ export function startPipelineRunner(): void {
         console.log(
           `[pipeline-runner] создано задач: ${result.created} (событий ${result.scannedEvents}, курсор ${result.cursor})`,
         )
+      }
+
+      // Обход в своём try: он вторая линия, и его падение не должно ни ронять
+      // тик, ни затирать итог событийной сборки. Причина уезжает в
+      // last_sweep_error, отдельно от last_error.
+      if (sweepDue(state)) {
+        try {
+          const swept = await sweepInFolders()
+          await recordSweepResult({ created: swept.created, error: null })
+          if (swept.created > 0) {
+            console.log(
+              `[pipeline-sweep] добрано задач: ${swept.created} (осмотрено ${swept.scanned}, уже в очереди ${swept.known})`,
+            )
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.error("[pipeline-sweep] обход не удался", error)
+          await recordSweepResult({ created: 0, error: message }).catch(() => {})
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

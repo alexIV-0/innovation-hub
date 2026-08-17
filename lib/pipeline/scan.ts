@@ -8,7 +8,10 @@ import {
   type TaskSource,
   type TaskSourceEntry,
 } from "@/lib/pipeline/build-task"
-import { listWatchedProjects } from "@/lib/pipeline/repository"
+import {
+  listWatchedProjects,
+  type WatchedProject,
+} from "@/lib/pipeline/repository"
 import { getObjectText, projectOptionsKey } from "@/lib/project-storage"
 import { projectPrefix } from "@/lib/storage/keys"
 import { readFileTypeDictionary } from "@/lib/repositories/automation-settings"
@@ -18,9 +21,9 @@ import {
 } from "@/lib/repositories/users"
 
 /**
- * Сканер конвейера.
+ * Сканер конвейера — событийная линия сборки задач.
  *
- * Watcher'ов и обхода папок нет. Любая запись в хранилище уже журналируется в
+ * Watcher'ов и листинга бакета нет. Любая запись в хранилище уже журналируется в
  * storage_changes (lib/storage/write-path.ts#journal) — и загрузка из браузера,
  * и notify от машины, и mkdir/rename/delete. Журнал сквозной и упорядочен
  * монотонным seq, поэтому «что нового появилось в IN» — это выборка по
@@ -29,6 +32,12 @@ import {
  * Из этого следует важное свойство: ни одно событие не теряется и ни одно не
  * обрабатывается дважды, пока курсор двигается только после успешной обработки
  * пачки.
+ *
+ * И следует ограничение, из-за которого рядом живёт вторая линия
+ * (lib/pipeline/sweep.ts): курсор двигается независимо от того, создалась задача
+ * или нет. Пропуск по любой причине — пауза проекта, битый options.json, ошибка
+ * в коде — окончательный, потому что второго события по этому файлу не будет.
+ * Обход каталога добирает такие элементы по расписанию.
  *
  * Единица работы — ОДИН элемент верхнего уровня в папке IN: файл или папка.
  * Папка обрабатывается целиком, в один результат, и даёт ровно одну задачу — а не
@@ -115,12 +124,12 @@ async function writeCursor(seq: number): Promise<void> {
  * processItem.ts): пока в начале имени стоит `-`, папка не готова. Пользователь
  * докладывает в неё файлы сколько нужно, снял `-` — папка укомплектована.
  */
-function isHeldBack(name: string): boolean {
+export function isHeldBack(name: string): boolean {
   return name.startsWith("-")
 }
 
 /** Элемент верхнего уровня в IN, к которому относится событие. */
-type InEntry = {
+export type InEntry = {
   /** Имя элемента: `clip.mp4` или `myfolder`. */
   name: string
   /** Логический ключ элемента — он же source_key задачи и ключ дедупа. */
@@ -139,7 +148,7 @@ type InEntry = {
  * её витка, а не отдельный виток. Иначе одна папка с десятью файлами дала бы
  * десять задач, каждая со своим финальным результатом.
  */
-function resolveInEntry(
+export function resolveInEntry(
   key: string,
   ownerId: string,
   projectId: string,
@@ -283,8 +292,14 @@ async function readFileUploaders(
   return map
 }
 
-/** Кандидат на задачу: элемент IN, к которому свелись события пачки. */
-type Candidate = {
+/**
+ * Кандидат на задачу: элемент IN, к которому свелись события пачки.
+ *
+ * Его же собирает страховочный обход каталога (lib/pipeline/sweep.ts) — там
+ * акторов нет вообще, оба поля приходят null, и цепочка отката доходит до
+ * заливщика из каталога.
+ */
+export type Candidate = {
   projectId: string
   entry: InEntry
   /** Данные последнего события по этому элементу — для файла это его размер и хеш. */
@@ -414,12 +429,56 @@ export async function collectTasks(): Promise<CollectResult> {
   }
 
   // ── Фаза 2: кандидаты → задачи ──────────────────────────────────────────────
+  const materialized = await materializeCandidates({
+    candidates: [...candidates.values()],
+    watchedById,
+    collectedAt,
+  })
+  skipped.push(...materialized.skipped)
+
+  // Курсор двигаем последним: упади что-то выше — пачка перечитается,
+  // а дубли отсечёт уникальный индекс по (project_id, source_key).
+  if (cursor !== since) await writeCursor(cursor)
+
+  return { created: materialized.created, scannedEvents, cursor, skipped }
+}
+
+/**
+ * Кандидаты → задачи. Вторая половина сборки, общая с обходом каталога.
+ *
+ * Отдельной функцией, потому что источников кандидатов два и они принципиально
+ * разные: журнал (событие → элемент) и каталог (состояние → элемент). А вот всё
+ * дальнейшее у них обязано совпадать до буквы — options.json, расширения,
+ * манифест папки, цепочка contact, дедуп по source_key. Разъедься эти две
+ * половины, и задача из обхода отличалась бы от задачи из события по тому же
+ * файлу; машина бы этого не заметила, а статистика разошлась.
+ */
+export async function materializeCandidates(input: {
+  candidates: Candidate[]
+  watchedById: Map<string, WatchedProject>
+  /** ISO-время прогона: на десктопе это findTime, метка всей пачки. */
+  collectedAt: string
+}): Promise<{ created: number; skipped: SkippedProject[] }> {
+  const { watchedById, collectedAt } = input
+
+  const skipped: SkippedProject[] = []
+  const seenSkips = new Set<string>()
+  const noteSkip = (
+    projectId: string,
+    projectName: string,
+    reason: SkipReason,
+  ) => {
+    const dedupKey = `${projectId}:${reason}`
+    if (seenSkips.has(dedupKey)) return
+    seenSkips.add(dedupKey)
+    skipped.push({ projectId, projectName, reason })
+  }
 
   /**
    * Кто залил файлы-кандидаты — одним запросом на всю пачку, а не по файлу.
    */
   const fileUploaders = await readFileUploaders(
-    [...candidates.values()]
+    input.candidates
       .filter((c) => !c.entry.isFolder && c.fileId)
       .map((c) => c.fileId as string),
   )
@@ -460,7 +519,7 @@ export async function collectTasks(): Promise<CollectResult> {
 
   let created = 0
 
-  for (const candidate of candidates.values()) {
+  for (const candidate of input.candidates) {
     const project = watchedById.get(candidate.projectId)
     if (!project) continue
 
@@ -614,11 +673,7 @@ export async function collectTasks(): Promise<CollectResult> {
     else noteSkip(project.projectId, project.name, "already-queued")
   }
 
-  // Курсор двигаем последним: упади что-то выше — пачка перечитается,
-  // а дубли отсечёт уникальный индекс по (project_id, source_key).
-  if (cursor !== since) await writeCursor(cursor)
-
-  return { created, scannedEvents, cursor, skipped }
+  return { created, skipped }
 }
 
 /**

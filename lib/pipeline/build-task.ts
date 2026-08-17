@@ -349,7 +349,14 @@ export function buildTaskPayload(input: {
   description.projectId = input.projectId
   description.projectName = input.projectName
   description.ownerEmail = input.ownerEmail
+  // Два поля на одно значение, и это не дубль по недосмотру. `findTime` на
+  // десктопе — не таймстемп, а КОМПОНЕНТ ИМЕНИ: маска `$findTime` подставляет
+  // `DD.MM-HH.mm`, и сырая ISO-строка приезжала в имя результата вместе с
+  // двоеточиями, на которых потом падала заливка в OUT. Имя оставляем, потому что
+  // по нему уже работают машины, а рядом кладём `collectedAt` — то же время, но с
+  // именем, которое читается однозначно (docs/STORAGE_CLIENT_REQUESTS.md §14.2).
   description.findTime = input.collectedAt
+  description.collectedAt = input.collectedAt
   description.infoText = `${input.ownerEmail}/${input.projectName}`
   description.curItem = source.name
   description.isFolder = isFolder

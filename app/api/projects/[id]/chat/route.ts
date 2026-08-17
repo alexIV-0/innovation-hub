@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { findUserById } from "@/lib/repositories/users"
-import { findProjectForUser, setProjectYougileChatId } from "@/lib/repositories/projects"
+import { findProjectForUser } from "@/lib/repositories/projects"
 import {
   insertProjectChatMessage,
   listProjectChatMessages,
@@ -10,13 +10,8 @@ import {
 } from "@/lib/repositories/project-chat"
 import { sendProjectChatMessageSchema } from "@/lib/project-chat-schemas"
 import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
-import {
-  createProjectGroupChat,
-  getYouGileConfig,
-  isYouGileConfigured,
-  sendChatMessage,
-  YouGileError,
-} from "@/lib/yougile"
+import { deliverProjectMessageToYouGile } from "@/lib/project-yougile-chat"
+import { isYouGileConfigured, YouGileError } from "@/lib/yougile"
 
 export const runtime = "nodejs"
 
@@ -43,26 +38,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   const messages = await listProjectChatMessages(project.id)
   return NextResponse.json({ messages })
-}
-
-/**
- * Ensures the project has a YouGile group chat, creating one lazily on the
- * first message so project creation never depends on YouGile being up.
- */
-async function ensureYouGileChatId(
-  project: { id: string; name: string; yougileChatId: string | null },
-  ownerEmail: string,
-): Promise<string> {
-  if (project.yougileChatId) return project.yougileChatId
-
-  const config = getYouGileConfig()
-  const chat = await createProjectGroupChat({
-    title: `${project.name} — ${ownerEmail}`,
-    botUserId: config.botUserId,
-    memberIds: config.memberIds,
-  })
-  await setProjectYougileChatId(project.id, chat.id)
-  return chat.id
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -108,12 +83,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
   // not make the user lose it — just log and leave `delivered: false`.
   if (isYouGileConfigured()) {
     try {
-      const chatId = await ensureYouGileChatId(project, auth.email)
-      const sent = await sendChatMessage({
-        chatId,
+      const yougileMessageId = await deliverProjectMessageToYouGile({
+        projectId: project.id,
+        projectName: project.name,
+        yougileChatId: project.yougileChatId,
+        writerEmail: auth.email,
         text: `${senderName}: ${parsed.data.text}`,
       })
-      const yougileMessageId = String(sent.id)
       await markProjectChatMessageDelivered(message.id, yougileMessageId)
       message = { ...message, yougileMessageId, delivered: true }
     } catch (error) {

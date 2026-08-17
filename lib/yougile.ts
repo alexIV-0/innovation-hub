@@ -190,8 +190,10 @@ export async function sendChatMessage(input: {
   chatId: string
   text: string
   textHtml?: string
-  label?: string
 }): Promise<YouGileChatMessage> {
+  // Do not send `label`: YouGile treats it as a "быстрая ссылка" and pins
+  // every labelled message at the top of the chat (we used to pass
+  // "site-chat", which produced a pin per site message).
   return yougileRequest<YouGileChatMessage>(
     `/chats/${encodeURIComponent(input.chatId)}/messages`,
     {
@@ -199,7 +201,6 @@ export async function sendChatMessage(input: {
       body: JSON.stringify({
         text: input.text,
         textHtml: input.textHtml ?? input.text,
-        label: input.label ?? "site-chat",
       }),
     },
   )

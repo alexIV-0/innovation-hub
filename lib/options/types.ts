@@ -1,0 +1,91 @@
+import type { NumericConfig } from "./numeric-format"
+
+/**
+ * Контракт настроек, которые автор графа отдал клиенту на сайт.
+ *
+ * Форма свойства задана программой (`PropertyBase` в
+ * `fs.manager.tauri/src/NODE_WIN/definitions/types.ts`): флаг `exposedToSite`
+ * стоит на самом свойстве, а значение и все его настройки — уровнем ниже, в
+ * `controlProps`. Сайт ничего не досочиняет: как контрол настроен в программе,
+ * так он и рисуется здесь.
+ */
+
+/**
+ * Контролы, которым в редакторе доступна галочка «показать на сайте»
+ * (`EXPOSABLE_CONTROL_TYPES` в программе). Всё остальное — тяжёлые контролы с
+ * объектом в `value`; сайт их не рисует и не отдаёт.
+ */
+export const EXPOSED_CONTROL_TYPES = [
+  "checkbox",
+  "slider",
+  "timecode",
+  "ddm",
+  "autocomplete",
+  "textedit",
+  "valueRange",
+] as const
+
+export type ExposedOptionControl = (typeof EXPOSED_CONTROL_TYPES)[number]
+
+export function isExposedControl(raw: unknown): raw is ExposedOptionControl {
+  return (
+    typeof raw === "string" &&
+    (EXPOSED_CONTROL_TYPES as readonly string[]).includes(raw)
+  )
+}
+
+/**
+ * Значение свойства. Массивы обязательны: `valueRange` хранит пару чисел, а
+ * `autocomplete` — список строк даже в одиночном режиме.
+ */
+export type ExposedOptionValue =
+  | boolean
+  | number
+  | string
+  | string[]
+  | [number, number]
+
+export type ExposedOption = {
+  /** Путь до объекта, в котором лежит `value` — то есть до `controlProps`. */
+  path: string[]
+  /** `id` свойства в графе. Для человека это не имя — имя в `label`. */
+  key: string
+  label: string
+  /** Подсказка автора графа, приведённая к простому тексту. */
+  tooltip: string | null
+  control: ExposedOptionControl
+  value: ExposedOptionValue
+
+  /** Варианты, которые сайт может показать сам (`ddm`, `autocomplete`). */
+  options: string[]
+  /**
+   * Токены `#…` из списка вариантов: `#tgChannels`, `#vkGroups`, `#folders` и
+   * прочие. Их резолвит только программа — у неё есть учётки и локальные папки.
+   */
+  dynamicOptions: string[]
+  /**
+   * false — список вариантов знает только машина, менять с сайта нечем.
+   * Свойство всё равно показываем: пользователю важно видеть, что параметр
+   * существует и какое у него значение.
+   */
+  editable: boolean
+
+  /** `slider` и `valueRange`: формат, границы, шаг — как их задал автор. */
+  numeric: NumericConfig | null
+  /** `slider`: показывать подписи границ (`minMaxValueVisible`). */
+  showMinMax: boolean
+  /** `slider`: рядом со шкалой поле ввода, а не только значение. */
+  manualInput: boolean
+
+  /** `ddm`: разрешён свободный ввод помимо списка. */
+  freeInput: boolean
+  /** `autocomplete`: выбор нескольких значений. */
+  multiSelect: boolean
+  /** `autocomplete`: только из списка, своё вписать нельзя. */
+  optionsOnly: boolean
+  /** `autocomplete`: одно и то же значение можно выбрать дважды. */
+  allowDuplicates: boolean
+
+  /** `textedit`: подсветка синтаксиса в программе; на сайте — просто текст. */
+  language: string | null
+}

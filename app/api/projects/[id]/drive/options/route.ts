@@ -45,7 +45,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const options = await updateProjectExposedOptions({
+    const { options, etag } = await updateProjectExposedOptions({
       userId: project.ownerId,
       projectId: project.id,
       changes: parsed.data.changes,
@@ -57,7 +57,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       name: OPTIONS_FILE_NAME,
       actor: { userId: auth.userId },
     })
-    return NextResponse.json({ options })
+    return NextResponse.json({ options, optionsEtag: etag })
   } catch (error) {
     if (error instanceof ProjectStorageError) {
       return NextResponse.json({ message: error.message }, { status: 409 })

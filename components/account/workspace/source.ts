@@ -30,6 +30,7 @@ export const CABINET_SOURCE: WorkspaceSource = {
   uploadUrl: (projectId, params) =>
     `/api/projects/${projectId}/media?${params.toString()}`,
   moveUrl: () => "/api/storage/v1/rename",
+  exposedOptionsUrl: (projectId) => `/api/projects/${projectId}/drive/options`,
   chatUrl: (projectId) => `/api/projects/${projectId}/chat`,
   chatReadUrl: (projectId) => `/api/projects/${projectId}/chat/read`,
   chatPerspective: "client",

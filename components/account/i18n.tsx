@@ -71,6 +71,14 @@ export const dict = {
     settingPauseTitle: "Проект на паузе",
     settingPauseDesc:
       "Приостановить обработку. В списке проект отображается блёклым.",
+    optionsHeading: "ПАРАМЕТРЫ ОБРАБОТКИ",
+    optionsSave: "Сохранить параметры",
+    optionsSaved: "Параметры сохранены",
+    optionsSaveFailed: "Не удалось сохранить параметры",
+    optionsLocked: "Настраивается в программе",
+    optionsSelect: "Выбрать…",
+    optionsEmptyValue: "не задано",
+    optionsNothingFound: "Ничего не найдено",
     chatPlaceholder: "Напишите сообщение…",
     chatEmpty:
       "Пока нет сообщений. Расскажите о проекте — команда ответит здесь.",
@@ -335,6 +343,14 @@ export const dict = {
     settingPauseTitle: "Project on pause",
     settingPauseDesc:
       "Suspend processing. The project appears dimmed in the list.",
+    optionsHeading: "PROCESSING PARAMETERS",
+    optionsSave: "Save parameters",
+    optionsSaved: "Parameters saved",
+    optionsSaveFailed: "Could not save the parameters",
+    optionsLocked: "Configured in the desktop app",
+    optionsSelect: "Select…",
+    optionsEmptyValue: "not set",
+    optionsNothingFound: "Nothing found",
     chatPlaceholder: "Write a message…",
     chatEmpty:
       "No messages yet. Tell us about the project — the team will reply here.",

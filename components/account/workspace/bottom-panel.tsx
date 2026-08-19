@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react"
 
+import { ExposedOptionsList } from "@/components/account/options/exposed-options"
 import { cn } from "@/lib/utils"
 import { DescriptionMdEditor } from "./description-md-editor"
 import { fmtDate, fmtTime } from "./format"
@@ -62,8 +63,16 @@ export function DescriptionTab() {
 }
 
 export function SettingsTab() {
-  const { t, source, selected, patchProject, setArchived, deleteProject } =
-    useWorkspace()
+  const {
+    t,
+    source,
+    selected,
+    patchProject,
+    setArchived,
+    deleteProject,
+    exposedOptions,
+    saveExposedOptions,
+  } = useWorkspace()
   if (!selected) return null
   const can = source.can
   return (
@@ -94,6 +103,14 @@ export function SettingsTab() {
           />
         </button>
       </div>
+      {/* Параметры обработки: их открыл клиенту автор графа в программе.
+          Ниже — действия над самим проектом, они к обработке не относятся. */}
+      <ExposedOptionsList
+        options={exposedOptions}
+        onSave={saveExposedOptions}
+        className="mt-4 border-t border-white/[0.07] pt-4"
+      />
+
       {can.archiveProject || can.deleteProject ? (
         <div className="mt-4 flex flex-wrap gap-2 border-t border-white/[0.07] pt-4">
           {can.archiveProject ? (

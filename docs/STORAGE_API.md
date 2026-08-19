@@ -624,17 +624,25 @@ Toggle automation (`folderState.json` + `projects.is_active` cache).
 
 Patch `exposedToSite` parameters in `options.json`.
 
+`path` points at the property's `controlProps` — that is where the value lives and
+where the desktop app reads it from. `value` is a boolean, number, string, a list of
+strings (`autocomplete`) or a pair of numbers (`valueRange`); bounds, step and the
+list of allowed choices come from the graph itself, never from the request.
+
 ```json
 {
   "kind": "options",
   "projectId": "uuid",
   "changes": [
-    { "path": ["plugins", "0", "enabled"], "value": true }
+    { "path": ["nodes", "2", "data", "properties", "3", "controlProps"], "value": 30 }
   ]
 }
 ```
 
-**Response `200`:** `{ "options": [ /* ExposedOption[] */ ] }`
+**Response `200`:** `{ "options": [ /* ExposedOption[] */ ], "etag": "…" }`  
+**`409`:** the parameter is not exposed, has a control the site cannot edit, or the
+value is not one of the choices the graph allows. Numbers out of range are clamped
+rather than rejected — see [PROJECT_OPTIONS_PANEL.md](./PROJECT_OPTIONS_PANEL.md).
 
 ### `kind: "raw"`
 

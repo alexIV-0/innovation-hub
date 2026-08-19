@@ -18,6 +18,8 @@ import {
   type Dictionary,
   type Lang,
 } from "@/components/account/i18n"
+import type { ExposedOptionChange } from "@/lib/options/apply"
+import type { ExposedOption } from "@/lib/options/types"
 import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import {
   findChildByName,
@@ -130,6 +132,16 @@ type WorkspaceValue = {
   refreshDrive: () => void
   inFolder: DriveFile | null
   outFolder: DriveFile | null
+
+  // параметры обработки, открытые клиенту (exposedToSite в options.json)
+  exposedOptions: ExposedOption[]
+  /**
+   * Сохранение правок. null — источник не даёт адреса (админский вид):
+   * панель тогда только показывает значения.
+   */
+  saveExposedOptions:
+    | ((changes: ExposedOptionChange[]) => Promise<ExposedOption[]>)
+    | null
 
   // навигация по дереву (полный режим)
   path: DriveFile[]
@@ -340,6 +352,7 @@ export function WorkspaceProvider({
   )
 
   const [rootFiles, setRootFiles] = useState<DriveFile[]>([])
+  const [exposedOptions, setExposedOptions] = useState<ExposedOption[]>([])
   const [driveAvailable, setDriveAvailable] = useState(true)
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [path, setPath] = useState<DriveFile[]>([])
@@ -460,11 +473,13 @@ export function WorkspaceProvider({
         if (!data.available) {
           setDriveAvailable(false)
           setRootFiles([])
+          setExposedOptions([])
           setPath([])
           toast.error(tRef.current.driveUnavailable)
           return
         }
         setDriveAvailable(true)
+        setExposedOptions(Array.isArray(data.options) ? data.options : [])
         const files: DriveFile[] = data.files ?? []
         setRootFiles(files)
         setPath((prev) => (keepPath ? resolvePath(files, prev) : []))
@@ -755,6 +770,34 @@ export function WorkspaceProvider({
       })
     },
     [t, clearSelection, loadProjects],
+  )
+
+  /**
+   * Пишет правки клиента в options.json и возвращает свежий список: сервер мог
+   * зажать число в границы, заданные автором графа, и показать надо то, что
+   * реально сохранилось.
+   */
+  const saveExposedOptions = useCallback(
+    async (changes: ExposedOptionChange[]): Promise<ExposedOption[]> => {
+      const buildUrl = sourceRef.current.exposedOptionsUrl
+      if (!buildUrl || !selectedId) throw new Error("")
+      const res = await fetch(buildUrl(selectedId), {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes }),
+      })
+      const data = (await res.json().catch(() => null)) as {
+        options?: ExposedOption[]
+        message?: string
+      } | null
+      if (!res.ok || !data?.options) {
+        throw new Error(data?.message ?? "")
+      }
+      setExposedOptions(data.options)
+      return data.options
+    },
+    [selectedId],
   )
 
   const saveDescription = useCallback(() => {
@@ -1274,6 +1317,8 @@ export function WorkspaceProvider({
     refreshDrive,
     inFolder,
     outFolder,
+    exposedOptions,
+    saveExposedOptions: source.exposedOptionsUrl ? saveExposedOptions : null,
     path,
     currentItems,
     currentTarget,

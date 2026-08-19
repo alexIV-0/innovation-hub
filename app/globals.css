@@ -181,3 +181,307 @@
     background: transparent;
   }
 }
+
+/* ===========================================================================
+   Описание проекта — options/description.md
+   ---------------------------------------------------------------------------
+   Контракт формата с программой (fs.manager.tauri): docs/DESCRIPTION_FORMAT.md.
+   В файле описания лежит ИМЯ цвета (`<span class="fg-yellow">`), а не код, —
+   здесь имя превращается в токен темы. Ступень насыщенности — прозрачность
+   того же токена, приём из UI_TOKENS §2.7: новых цветов не заводим.
+
+   Почему всё вложено в `.md-palette`, а не лежит глобально: имя `bg-muted` из
+   контракта совпадает с утилитой Tailwind из токена --muted, и без вложенности
+   они спорили бы за одно правило. Плюс имена палитры не текут в остальной
+   интерфейс. Тот же класс висит на сетке образцов в тулбаре — цвет кнопки
+   берётся оттуда же, откуда цвет текста, и не может разъехаться.
+   =========================================================================== */
+@layer utilities {
+  /* ── Цвет текста ────────────────────────────────────────────────────────── */
+  .md-palette .fg-blue { color: hsl(var(--primary)); }
+  .md-palette .fg-blue-2 { color: hsl(var(--primary) / 0.7); }
+  .md-palette .fg-blue-3 { color: hsl(var(--primary) / 0.45); }
+  .md-palette .fg-green { color: hsl(var(--success)); }
+  .md-palette .fg-green-2 { color: hsl(var(--success) / 0.7); }
+  .md-palette .fg-green-3 { color: hsl(var(--success) / 0.45); }
+  .md-palette .fg-orange { color: hsl(var(--warning)); }
+  .md-palette .fg-orange-2 { color: hsl(var(--warning) / 0.7); }
+  .md-palette .fg-orange-3 { color: hsl(var(--warning) / 0.45); }
+  .md-palette .fg-red { color: hsl(var(--destructive)); }
+  .md-palette .fg-red-2 { color: hsl(var(--destructive) / 0.7); }
+  .md-palette .fg-red-3 { color: hsl(var(--destructive) / 0.45); }
+  .md-palette .fg-yellow { color: hsl(var(--chart-4)); }
+  .md-palette .fg-yellow-2 { color: hsl(var(--chart-4) / 0.7); }
+  .md-palette .fg-yellow-3 { color: hsl(var(--chart-4) / 0.45); }
+  .md-palette .fg-teal { color: hsl(var(--chart-3)); }
+  .md-palette .fg-teal-2 { color: hsl(var(--chart-3) / 0.7); }
+  .md-palette .fg-teal-3 { color: hsl(var(--chart-3) / 0.45); }
+  .md-palette .fg-purple { color: hsl(var(--chart-2)); }
+  .md-palette .fg-purple-2 { color: hsl(var(--chart-2) / 0.7); }
+  .md-palette .fg-purple-3 { color: hsl(var(--chart-2) / 0.45); }
+  .md-palette .fg-cyan { color: hsl(var(--info)); }
+  .md-palette .fg-cyan-2 { color: hsl(var(--info) / 0.7); }
+  .md-palette .fg-cyan-3 { color: hsl(var(--info) / 0.45); }
+  .md-palette .fg-pink { color: hsl(var(--chart-5)); }
+  .md-palette .fg-pink-2 { color: hsl(var(--chart-5) / 0.7); }
+  .md-palette .fg-pink-3 { color: hsl(var(--chart-5) / 0.45); }
+  .md-palette .fg-muted { color: hsl(var(--muted-foreground)); }
+  .md-palette .fg-muted-2 { color: hsl(var(--muted-foreground) / 0.7); }
+  .md-palette .fg-muted-3 { color: hsl(var(--muted-foreground) / 0.45); }
+
+  /* Серая шкала — «текст потише/поярче», без ступеней насыщенности. */
+  .md-palette .fg-gray-0 { color: hsl(var(--foreground)); }
+  .md-palette .fg-gray-1 { color: hsl(var(--ws-text-2)); }
+  .md-palette .fg-gray-2 { color: hsl(var(--muted-foreground)); }
+  .md-palette .fg-gray-3 { color: hsl(var(--ws-text-4)); }
+  .md-palette .fg-gray-4 { color: hsl(var(--ws-text-5)); }
+  .md-palette .fg-gray-5 { color: hsl(var(--background)); }
+
+  /* ── Заливка фона: тот же токен прозрачностью ───────────────────────────
+     Цвет текста при заливке НЕ меняется: `fg-*` и `bg-*` могут стоять на одном
+     span (`class="fg-red bg-yellow"`), и заливка не должна перебивать цвет. */
+  .md-palette .bg-blue { background-color: hsl(var(--primary) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-blue-2 { background-color: hsl(var(--primary) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-blue-3 { background-color: hsl(var(--primary) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-green { background-color: hsl(var(--success) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-green-2 { background-color: hsl(var(--success) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-green-3 { background-color: hsl(var(--success) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-orange { background-color: hsl(var(--warning) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-orange-2 { background-color: hsl(var(--warning) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-orange-3 { background-color: hsl(var(--warning) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-red { background-color: hsl(var(--destructive) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-red-2 { background-color: hsl(var(--destructive) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-red-3 { background-color: hsl(var(--destructive) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-yellow { background-color: hsl(var(--chart-4) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-yellow-2 { background-color: hsl(var(--chart-4) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-yellow-3 { background-color: hsl(var(--chart-4) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-teal { background-color: hsl(var(--chart-3) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-teal-2 { background-color: hsl(var(--chart-3) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-teal-3 { background-color: hsl(var(--chart-3) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-purple { background-color: hsl(var(--chart-2) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-purple-2 { background-color: hsl(var(--chart-2) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-purple-3 { background-color: hsl(var(--chart-2) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-cyan { background-color: hsl(var(--info) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-cyan-2 { background-color: hsl(var(--info) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-cyan-3 { background-color: hsl(var(--info) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-pink { background-color: hsl(var(--chart-5) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-pink-2 { background-color: hsl(var(--chart-5) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-pink-3 { background-color: hsl(var(--chart-5) / 0.1); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-muted { background-color: hsl(var(--muted-foreground) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-muted-2 { background-color: hsl(var(--muted-foreground) / 0.18); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-muted-3 { background-color: hsl(var(--muted-foreground) / 0.1); border-radius: 3px; padding: 0 2px; }
+
+  .md-palette .bg-gray-0 { background-color: hsl(var(--foreground) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-gray-1 { background-color: hsl(var(--ws-text-2) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-gray-2 { background-color: hsl(var(--muted-foreground) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-gray-3 { background-color: hsl(var(--ws-text-4) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-gray-4 { background-color: hsl(var(--ws-text-5) / 0.28); border-radius: 3px; padding: 0 2px; }
+  .md-palette .bg-gray-5 { background-color: hsl(var(--background) / 0.28); border-radius: 3px; padding: 0 2px; }
+
+  /* ── Выравнивание и красная строка ──────────────────────────────────────── */
+  .md-palette .align-left { text-align: left; }
+  .md-palette .align-center { text-align: center; }
+  .md-palette .align-right { text-align: right; }
+  .md-palette .align-justify { text-align: justify; }
+  .md-palette .indent { text-indent: 2em; }
+}
+
+/* ===========================================================================
+   Типографика отрисованного описания
+   ---------------------------------------------------------------------------
+   @tailwindcss/typography в проекте нет, и он всё равно не знает про классы
+   `fg-*` / `align-*` / `indent`, — поэтому набор свой (контракт §8).
+
+   Здесь же живут правила адаптивности, без которых описание ломает страницу:
+   жёстких размеров в файле нет by design, значит ширину картинки, прокрутку
+   широкой таблицы и перенос длинных путей задаёт только рендерер.
+
+   `--md-font-size` — базовый кегль: вся остальная типографика считается от него
+   в `em`, поэтому переключатель размера в модалке меняет одну переменную.
+   `--md-measure` — ширина колонки текста; контейнер при этом тянется.
+   =========================================================================== */
+@layer utilities {
+  .md-body {
+    --md-font-size: 14px;
+    --md-measure: 820px;
+    font-size: var(--md-font-size);
+    line-height: 1.55;
+    color: hsl(var(--ws-text-2));
+    /* Длинный путь или URL иначе распирает layout. */
+    overflow-wrap: anywhere;
+  }
+
+  .md-body > * {
+    max-width: var(--md-measure);
+  }
+
+  .md-body h1,
+  .md-body h2,
+  .md-body h3,
+  .md-body h4 {
+    color: hsl(var(--ws-text-1));
+    font-weight: 600;
+  }
+  .md-body h1 { font-size: 1.7em; font-weight: 700; margin: 18px 0 8px; }
+  .md-body h2 { font-size: 1.4em; font-weight: 700; margin: 16px 0 6px; }
+  .md-body h3 { font-size: 1.2em; margin: 14px 0 6px; }
+  .md-body h4 { font-size: 1.05em; margin: 12px 0 4px; }
+  .md-body > *:first-child { margin-top: 0; }
+
+  .md-body p { margin: 0 0 8px; }
+  .md-body strong { color: hsl(var(--ws-text-1)); font-weight: 600; }
+
+  .md-body ul,
+  .md-body ol {
+    margin: 6px 0;
+    padding-left: 22px;
+  }
+  .md-body ul { list-style: disc; }
+  .md-body ol { list-style: decimal; }
+  .md-body li { margin-bottom: 3px; }
+  .md-body li::marker { color: hsl(var(--ws-text-4)); }
+
+  /* Чеклисты GFM: remark-gfm отдаёт ul.contains-task-list + input[checked]. */
+  .md-body ul.contains-task-list { list-style: none; padding-left: 4px; }
+  .md-body li.task-list-item::marker { content: ""; }
+  .md-body li input[type="checkbox"] {
+    margin-right: 6px;
+    accent-color: hsl(var(--ws-select));
+    vertical-align: baseline;
+  }
+
+  .md-body blockquote {
+    margin: 10px 0;
+    padding: 2px 0 2px 12px;
+    border-left: 3px solid hsl(var(--ws-select) / 0.55);
+    color: hsl(var(--ws-text-3));
+  }
+
+  .md-body hr {
+    margin: 14px 0;
+    border: none;
+    border-top: 1px solid hsl(var(--border));
+  }
+
+  .md-body a {
+    color: hsl(var(--primary));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .md-body a:hover { color: hsl(var(--primary) / 0.8); }
+
+  .md-body code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background-color: hsl(var(--ws-raised));
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.92em;
+  }
+
+  .md-body pre {
+    margin: 10px 0;
+    padding: 8px 10px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
+    background-color: hsl(var(--ws-well));
+    /* Код с длинными строками прокручивается, а не ломает вёрстку. */
+    overflow-x: auto;
+  }
+  .md-body pre code {
+    padding: 0;
+    background-color: transparent;
+  }
+
+  /* Широкая таблица прокручивается внутри своей обёртки, а не растягивает
+     страницу. Из markdown такую обёртку задать нельзя — её ставит рендерер
+     (components.table в react-markdown). */
+  .md-body .md-table-wrap {
+    margin: 12px 0;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .md-body table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .md-body th,
+  .md-body td {
+    padding: 4px 8px;
+    border: 1px solid hsl(var(--border));
+    text-align: left;
+  }
+  .md-body th {
+    background-color: hsl(var(--ws-raised));
+    color: hsl(var(--ws-text-1));
+    font-weight: 600;
+  }
+  /* Выравнивание колонок GFM (`|:---:|`) едет атрибутом align на th/td. */
+  .md-body th[align="center"],
+  .md-body td[align="center"] { text-align: center; }
+  .md-body th[align="right"],
+  .md-body td[align="right"] { text-align: right; }
+
+  .md-body img {
+    display: block;
+    margin: 10px 0;
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+  }
+
+  .md-body mark {
+    padding: 0 2px;
+    border-radius: 3px;
+    background-color: hsl(var(--chart-4) / 0.28);
+    color: inherit;
+  }
+
+  .md-body u { text-decoration: underline; }
+  .md-body del { text-decoration: line-through; }
+
+  .md-body details {
+    margin: 10px 0;
+    padding: 6px 10px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
+  }
+  .md-body summary {
+    cursor: pointer;
+    color: hsl(var(--ws-text-1));
+    font-weight: 600;
+  }
+
+  /* Полотно правки «как выглядит»: только то, чего нет и не должно быть в
+     готовом описании — рамка фокуса, высота на всю панель, подсветка выделенной
+     ячейки таблицы. Типографика и цвета приходят из .md-body/.md-palette выше,
+     поэтому правка и превью не могут разъехаться. */
+  .md-canvas .ProseMirror {
+    outline: none;
+    min-height: 100%;
+  }
+  .md-canvas .ProseMirror table { min-width: 320px; }
+  .md-canvas .ProseMirror th,
+  .md-canvas .ProseMirror td { position: relative; }
+  .md-canvas .ProseMirror .selectedCell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: hsl(var(--ws-select) / 0.18);
+    pointer-events: none;
+  }
+  .md-canvas .ProseMirror .ProseMirror-gapcursor::after {
+    border-top-color: hsl(var(--ws-text-3));
+  }
+
+  /* Незнакомый язык фенса обязан выглядеть обычным блоком кода, а не ошибкой:
+     диаграмма получает свой контейнер, всё остальное остаётся <pre>. */
+  .md-body .md-mermaid {
+    margin: 12px 0;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .md-body .md-mermaid svg {
+    max-width: 100%;
+    height: auto;
+  }
+}

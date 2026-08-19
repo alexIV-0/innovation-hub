@@ -14,6 +14,10 @@ import {
   OPTIONS_FILE_NAME,
   OPTIONS_FOLDER_NAME,
 } from "@/lib/storage/keys"
+import { applyExposedOptionChanges, type ExposedOptionChange } from "@/lib/options/apply"
+import { ProjectStorageError } from "@/lib/options/errors"
+import { extractExposedOptions } from "@/lib/options/extract"
+import type { ExposedOption } from "@/lib/options/types"
 
 /**
  * R2/S3 layout for a project (replaces the Google Drive tree):
@@ -50,12 +54,23 @@ export {
 
 export const PROJECT_META_FILE_NAME = "project-meta.json"
 
-export class ProjectStorageError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "ProjectStorageError"
-  }
+/**
+ * Разбор `options.json` живёт в `lib/options/`: его читает и вкладка настроек в
+ * браузере, и запись на сервере, а тянуть ради типов весь этот модуль (а с ним
+ * и клиент S3) в клиентский компонент нельзя. Здесь реэкспорт — чтобы прежние
+ * импорты из `@/lib/project-storage` продолжали работать.
+ */
+export {
+  applyExposedOptionChanges,
+  extractExposedOptions,
+  ProjectStorageError,
 }
+export type { ExposedOptionChange } from "@/lib/options/apply"
+export type {
+  ExposedOption,
+  ExposedOptionControl,
+  ExposedOptionValue,
+} from "@/lib/options/types"
 
 export type ProjectStorageFile = {
   id: string
@@ -82,34 +97,17 @@ export type ProjectFolderState = {
   updatedBy: string | null
 }
 
-export type ExposedOptionValue = string | number | boolean
-
-export type ExposedOption = {
-  path: string[]
-  key: string
-  label: string
-  description: string | null
-  type: "boolean" | "number" | "string"
-  value: ExposedOptionValue
-  /** Тип контрола из графа (`slider`, `checkbox`, `ddm`, …) — им UI выбирает, чем рисовать. */
-  controlType: string | null
-  /**
-   * Границы для числовых контролов, как их задал автор графа.
-   * Лежат в `controlProps` рядом со значением, поэтому достаются бесплатно —
-   * отдельного канала для ограничений не нужно.
-   */
-  minValue: number | null
-  maxValue: number | null
-  step: number | null
-  /** Варианты для `ddm` / `autocomplete`. */
-  options: string[] | null
-}
-
 export type ProjectStorageState = {
   files: ProjectStorageFile[]
   folderState: ProjectFolderState | null
   options: ExposedOption[]
   optionsFileExists: boolean
+  /**
+   * Версия options.json в хранилище. Приоритет у правки клиента — условной
+   * записи с сайта нет, — но программе нужен признак «в облаке версия новее
+   * моей», иначе Ctrl+S затрёт правку молча (docs/PROJECT_OPTIONS_PANEL.md §4).
+   */
+  optionsEtag: string | null
   available: boolean
 }
 
@@ -210,103 +208,6 @@ function parseFolderState(data: unknown): ProjectFolderState | null {
   }
 }
 
-function optionalString(raw: unknown): string | null {
-  return typeof raw === "string" && raw.trim() ? raw : null
-}
-
-function optionalNumber(raw: unknown): number | null {
-  return typeof raw === "number" && Number.isFinite(raw) ? raw : null
-}
-
-function optionalStringList(raw: unknown): string[] | null {
-  if (!Array.isArray(raw)) return null
-  const items = raw.filter((item): item is string => typeof item === "string")
-  return items.length > 0 ? items : null
-}
-
-/**
- * Ищет в графе свойства, помеченные `exposedToSite`.
- *
- * Форма свойства задана в программе (`PropertyBase` в
- * fs.manager.tauri/src/NODE_WIN/definitions/types.ts): флаг стоит на самом
- * свойстве, а значение и его ограничения — уровнем ниже, в `controlProps`.
- *
- *     { id, controlType: "slider", exposedToSite: true,
- *       controlProps: { label, value: 30, minValue: 5, maxValue: 120, step: 1 } }
- *
- * Раньше здесь читалось `obj.value` — на том же объекте, где флаг. Такого поля
- * у свойства нет, поэтому список выходил всегда пустым, а вкладка настроек
- * выглядела «просто ещё не заполненной». Плоский `value` всё же оставлен как
- * запасной путь: им пользуются свойства попроще и старые файлы.
- */
-function collectExposedOptions(
-  node: unknown,
-  path: string[],
-  out: ExposedOption[],
-): void {
-  if (!node || typeof node !== "object") return
-
-  if (Array.isArray(node)) {
-    node.forEach((child, index) =>
-      collectExposedOptions(child, [...path, String(index)], out),
-    )
-    return
-  }
-
-  const obj = node as Record<string, unknown>
-  if (obj.exposedToSite === true) {
-    const controlProps =
-      obj.controlProps && typeof obj.controlProps === "object" && !Array.isArray(obj.controlProps)
-        ? (obj.controlProps as Record<string, unknown>)
-        : null
-
-    // Путь ведёт туда, где реально лежит value: запись потом идёт по нему же,
-    // иначе рядом с controlProps появилось бы второе поле value, которого
-    // программа не читает.
-    const valueHost = controlProps && "value" in controlProps ? controlProps : obj
-    const valuePath = valueHost === obj ? path : [...path, "controlProps"]
-
-    const value = valueHost.value
-    const type = typeof value
-    if (type === "boolean" || type === "number" || type === "string") {
-      const key = typeof obj.id === "string" && obj.id.trim()
-        ? obj.id
-        : (path[path.length - 1] ?? "option")
-      out.push({
-        path: valuePath,
-        key,
-        label:
-          optionalString(valueHost.label) ??
-          optionalString(obj.label) ??
-          optionalString(obj.title) ??
-          key,
-        description:
-          optionalString(valueHost.tooltip) ??
-          optionalString(obj.description) ??
-          optionalString(valueHost.description),
-        type,
-        value: value as ExposedOptionValue,
-        controlType: optionalString(obj.controlType),
-        minValue: optionalNumber(valueHost.minValue),
-        maxValue: optionalNumber(valueHost.maxValue),
-        step: optionalNumber(valueHost.step),
-        options: optionalStringList(valueHost.options),
-      })
-    }
-    return
-  }
-
-  for (const [key, child] of Object.entries(obj)) {
-    collectExposedOptions(child, [...path, key], out)
-  }
-}
-
-export function extractExposedOptions(root: unknown): ExposedOption[] {
-  const out: ExposedOption[] = []
-  collectExposedOptions(root, [], out)
-  return out
-}
-
 export type ObjectTextWithMeta = {
   body: string
   etag: string | null
@@ -362,15 +263,16 @@ export async function getObjectText(key: string): Promise<string | null> {
   return object?.body ?? null
 }
 
+/** Пишет объект и отдаёт его новую версию — её сайт возвращает клиенту. */
 async function putObjectText(
   key: string,
   content: string,
   contentType = "application/json",
-): Promise<void> {
+): Promise<string | null> {
   if (!isS3Configured()) {
     throw new ProjectStorageError("Object storage is not configured.")
   }
-  await getS3Client().send(
+  const response = await getS3Client().send(
     new PutObjectCommand({
       Bucket: getS3Bucket(),
       Key: key,
@@ -378,6 +280,7 @@ async function putObjectText(
       ContentType: contentType,
     }),
   )
+  return response.ETag?.replace(/"/g, "") ?? null
 }
 
 export async function objectExists(key: string): Promise<boolean> {
@@ -559,21 +462,22 @@ export async function loadProjectStorageState(
       folderState: null,
       options: [],
       optionsFileExists: false,
+      optionsEtag: null,
       available: false,
     }
   }
 
-  const [stateRaw, optionsRaw] = await Promise.all([
+  const [stateRaw, optionsObject] = await Promise.all([
     getObjectText(projectFolderStateKey(userId, projectId)),
-    getObjectText(projectOptionsKey(userId, projectId)),
+    getObjectTextWithMeta(projectOptionsKey(userId, projectId)),
   ])
 
   const folderState = stateRaw
     ? parseFolderState(parseJson(stateRaw))
     : null
-  const optionsFileExists = optionsRaw != null
-  const options = optionsFileExists
-    ? extractExposedOptions(parseJson(optionsRaw ?? "null"))
+  const optionsFileExists = optionsObject != null
+  const options = optionsObject
+    ? extractExposedOptions(parseJson(optionsObject.body))
     : []
 
   return {
@@ -581,6 +485,7 @@ export async function loadProjectStorageState(
     folderState,
     options,
     optionsFileExists,
+    optionsEtag: optionsObject?.etag ?? null,
     available: true,
   }
 }
@@ -629,106 +534,24 @@ export async function setProjectAutomationEnabled(input: {
   return state
 }
 
-/** Спускается по пути внутрь разобранного JSON. `null`, если путь никуда не ведёт. */
-function resolvePath(root: unknown, path: string[]): unknown {
-  let node: unknown = root
-  for (const segment of path) {
-    if (!node || typeof node !== "object") return null
-    node = Array.isArray(node)
-      ? node[Number.parseInt(segment, 10)]
-      : (node as Record<string, unknown>)[segment]
-  }
-  return node && typeof node === "object" && !Array.isArray(node) ? node : null
-}
-
 /**
- * Зажимает число в границы `minValue`/`maxValue` и по возможности выравнивает по
- * `step`. Отсутствующая граница ничего не ограничивает.
+ * Правка клиента поверх свежей версии графа.
  *
- * Зажимаем, а не отклоняем: значение вне диапазона — это почти всегда устаревшая
- * страница, а не злой умысел, и отказ здесь выглядел бы поломкой ползунка.
- */
-function clampToBounds(value: number, host: Record<string, unknown>): number {
-  const min = typeof host.minValue === "number" ? host.minValue : null
-  const max = typeof host.maxValue === "number" ? host.maxValue : null
-  const step = typeof host.step === "number" && host.step > 0 ? host.step : null
-
-  let next = value
-  if (min != null && next < min) next = min
-  if (max != null && next > max) next = max
-  if (step != null && min != null) {
-    next = min + Math.round((next - min) / step) * step
-    // Выравнивание по шагу может вытолкнуть за верхнюю границу — возвращаем.
-    if (max != null && next > max) next = max
-  }
-  // Шаг вроде 0.1 даёт хвост в двоичной дроби; округляем до разумной точности.
-  return Number.isInteger(next) ? next : Number(next.toFixed(6))
-}
-
-/**
- * Применяет правки к разобранному графу — на месте, без обращений к хранилищу.
+ * Читаем файл прямо здесь, а не берём снимок, с которым открылась страница:
+ * клиент присылает только путь и значение, поэтому структурные изменения
+ * автора (новые ноды, переименованные свойства) правка не затирает — она
+ * ложится на то, что лежит в хранилище сейчас.
  *
- * Отдельно от `updateProjectExposedOptions`, потому что вся содержательная часть
- * (разрешение, тип, границы) здесь, а без R2 её иначе не проверить.
+ * Обратная сторона гонки — Ctrl+S в программе поверх этой правки — здесь не
+ * лечится намеренно: приоритет у клиента, а программа сравнивает `etag` своей
+ * копии с облачной и решает сама (docs/PROJECT_OPTIONS_PANEL.md §4). Поэтому
+ * новую версию возвращаем наружу.
  */
-export function applyExposedOptionChanges(
-  root: unknown,
-  changes: { path: string[]; value: ExposedOptionValue }[],
-): void {
-  for (const change of changes) {
-    let node: unknown = root
-    for (const segment of change.path) {
-      if (!node || typeof node !== "object") {
-        node = undefined
-        break
-      }
-      node = Array.isArray(node)
-        ? node[Number.parseInt(segment, 10)]
-        : (node as Record<string, unknown>)[segment]
-    }
-
-    if (!node || typeof node !== "object" || Array.isArray(node)) {
-      throw new ProjectStorageError(
-        `Parameter "${change.path.join(".")}" was not found in options.json.`,
-      )
-    }
-    const target = node as Record<string, unknown>
-
-    // Путь из extractExposedOptions ведёт туда, где лежит value — обычно это
-    // controlProps. Флаг же стоит на самом свойстве, то есть на родителе,
-    // поэтому разрешение проверяем там.
-    const isControlProps =
-      change.path[change.path.length - 1] === "controlProps"
-    const owner = isControlProps
-      ? (resolvePath(root, change.path.slice(0, -1)) as Record<string, unknown> | null)
-      : target
-
-    if (!owner || owner.exposedToSite !== true) {
-      throw new ProjectStorageError(
-        `Parameter "${change.path.join(".")}" is not editable from the site.`,
-      )
-    }
-    if (typeof target.value !== typeof change.value) {
-      throw new ProjectStorageError(
-        `Parameter "${change.path.join(".")}" has a different value type.`,
-      )
-    }
-
-    // Границы задал автор графа и они лежат здесь же, рядом со значением.
-    // Проверяем их и на сервере: контрол в браузере зажимает ввод, но границы
-    // могли поменяться в программе уже после того, как страница загрузилась.
-    target.value =
-      typeof change.value === "number"
-        ? clampToBounds(change.value, target)
-        : change.value
-  }
-}
-
 export async function updateProjectExposedOptions(input: {
   userId: string
   projectId: string
-  changes: { path: string[]; value: ExposedOptionValue }[]
-}): Promise<ExposedOption[]> {
+  changes: ExposedOptionChange[]
+}): Promise<{ options: ExposedOption[]; etag: string | null }> {
   const key = projectOptionsKey(input.userId, input.projectId)
   const raw = await getObjectText(key)
   if (raw == null) {
@@ -746,10 +569,6 @@ export async function updateProjectExposedOptions(input: {
 
   applyExposedOptionChanges(root, input.changes)
 
-  // ⬜ Запись безусловная: между чтением и записью программа могла сохранить
-  // граф целиком по Ctrl+S, и тогда эта правка затрёт её изменения (или её
-  // сохранение — эту правку). Нужна условная запись по ETag — см.
-  // docs/PROJECT_OPTIONS_PANEL.md §4.
-  await putObjectText(key, JSON.stringify(root, null, 2))
-  return extractExposedOptions(root)
+  const etag = await putObjectText(key, JSON.stringify(root, null, 2))
+  return { options: extractExposedOptions(root), etag }
 }

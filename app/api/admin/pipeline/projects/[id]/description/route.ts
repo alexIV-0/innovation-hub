@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { DESCRIPTION_SIZE_MAX } from "@/lib/markdown/description-format"
 import {
   DESCRIPTION_FILE_NAME,
   projectDescriptionKey,
@@ -39,7 +40,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 }
 
 const putSchema = z.object({
-  body: z.string().max(200_000),
+  // Предел взят из контракта, а не с потолка: одна картинка 1600 px в base64
+  // (контракт §4) — это ~200 КБ, и прежние 200 000 символов отбивали бы 400 на
+  // описании с парой картинок.
+  body: z.string().max(DESCRIPTION_SIZE_MAX),
 })
 
 export async function PUT(request: NextRequest, context: RouteContext) {

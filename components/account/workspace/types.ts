@@ -81,6 +81,11 @@ export type WorkspaceCapabilities = {
   renameItem: boolean
   deleteItem: boolean
   move: boolean
+  /**
+   * Править развёрнутое описание проекта (options/description.md). В кабинете
+   * его читают, а пишет команда: адрес `descriptionMdUrl` там отдаёт только GET.
+   */
+  editDescription: boolean
 }
 
 /**
@@ -134,9 +139,16 @@ export type WorkspaceSource = {
   /** Перемещение элемента между папками. */
   moveUrl: () => string
   /**
-   * Развёрнутое описание проекта — options/description.md. Необязательный:
-   * наличие адреса включает редактор в панели описания. В кабинете его нет,
-   * потому что описание пишет администрация, а пользователь его читает.
+   * Параметры обработки из options.json: PATCH — сохранить правки клиента.
+   * Необязательный — без него панель настроек показывает значения, но не даёт
+   * их менять. Так в админском «Конвейере»: там своя роль и свой путь записи
+   * (docs/PROJECT_OPTIONS_PANEL.md §2), а этот эндпоинт — клиентский.
+   */
+  exposedOptionsUrl?: (projectId: string) => string
+  /**
+   * Развёрнутое описание проекта — options/description.md. Наличие адреса
+   * включает панель описания: GET есть в обеих зонах, а PUT принимает только
+   * админский роут — за это отвечает право `can.editDescription`.
    */
   descriptionMdUrl?: (projectId: string) => string
   chatUrl: (projectId: string) => string

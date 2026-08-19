@@ -16,6 +16,7 @@ import {
   siteUpdatedBy,
   updateProjectExposedOptions,
 } from "@/lib/project-storage"
+import { exposedOptionChangeSchema } from "@/lib/project-schemas"
 import {
   StorageWriteError,
   writeSidecarPut,
@@ -45,12 +46,7 @@ const putSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("options"),
     projectId: z.string().min(1),
-    changes: z.array(
-      z.object({
-        path: z.array(z.string()),
-        value: z.union([z.string(), z.number(), z.boolean()]),
-      }),
-    ),
+    changes: z.array(exposedOptionChangeSchema),
   }),
   z.object({
     kind: z.literal("raw"),
@@ -138,7 +134,7 @@ export async function PUT(request: NextRequest) {
     }
 
     if (data.kind === "options") {
-      const result = await updateProjectExposedOptions({
+      const { options, etag } = await updateProjectExposedOptions({
         userId: access.ownerId,
         projectId: access.projectId,
         changes: data.changes,
@@ -150,7 +146,7 @@ export async function PUT(request: NextRequest) {
         name: OPTIONS_FILE_NAME,
         actor: { userId: auth.userId },
       })
-      return NextResponse.json({ options: result })
+      return NextResponse.json({ options, etag })
     }
 
     const key = sidecarKey(data.sidecar, access.ownerId, access.projectId)

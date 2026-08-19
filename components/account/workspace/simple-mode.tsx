@@ -1,8 +1,20 @@
 "use client"
 
 import { useState } from "react"
-import { Download, FolderOpen, MessageCircle, Pause, Plus, RefreshCw, Search, Upload } from "lucide-react"
+import {
+  Download,
+  FolderOpen,
+  MessageCircle,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Upload,
+  Users,
+} from "lucide-react"
 
+import { tf } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
 import { BottomPanel } from "./bottom-panel"
 import { Breadcrumbs, FileBrowser } from "./file-browser"
@@ -332,13 +344,45 @@ export function AllProjectsPage() {
                     }
                   }}
                   onContextMenu={(e) => openMenu("project", e, { project: p })}
-                  className="flex cursor-pointer flex-col gap-4 rounded-2xl border border-white/10 bg-ws-panel p-[22px] text-left hover:border-white/[0.18] hover:bg-ws-hover"
+                  className={cn(
+                    "flex cursor-pointer flex-col gap-4 rounded-2xl border border-white/10 bg-ws-panel p-[22px] text-left hover:border-white/[0.18] hover:bg-ws-hover",
+                    // Проекты на паузе не должны спорить за внимание с активными.
+                    p.isPaused && "opacity-[0.45] hover:opacity-100",
+                  )}
                 >
-                  <span className="flex h-[46px] w-[46px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
-                    <FolderOpen className="h-[22px] w-[22px] text-ws-3" />
-                  </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <span
+                      className={cn(
+                        "flex h-[46px] w-[46px] items-center justify-center rounded-full border",
+                        p.isPaused
+                          ? "border-white/10 bg-white/[0.04]"
+                          : "border-ws-out/30 bg-ws-out/[0.08]",
+                      )}
+                    >
+                      <FolderOpen
+                        className={cn(
+                          "h-[22px] w-[22px]",
+                          p.isPaused ? "text-ws-4" : "text-ws-out",
+                        )}
+                      />
+                    </span>
+                    {p.memberCount > 0 ? (
+                      <span
+                        title={tf(t.projectSharedWith, { users: p.memberCount })}
+                        className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[12.5px] tabular-nums text-ws-4"
+                      >
+                        <Users className="h-[15px] w-[15px]" />
+                        {p.memberCount}
+                      </span>
+                    ) : null}
+                  </div>
                   <div>
-                    <p className="text-[20px] font-semibold tracking-tight text-ws-1">
+                    <p
+                      className={cn(
+                        "text-[20px] font-semibold tracking-tight",
+                        p.isPaused ? "text-ws-2" : "text-ws-1",
+                      )}
+                    >
                       {p.name}
                     </p>
                     <p className="mt-2.5 text-[13px] text-ws-4">
@@ -346,7 +390,19 @@ export function AllProjectsPage() {
                     </p>
                   </div>
                   <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] pt-4">
-                    <span className="text-[13px] text-ws-3">
+                    <span
+                      className={cn(
+                        "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-[5px] text-[13px]",
+                        p.isPaused
+                          ? "border-white/[0.10] text-ws-4"
+                          : "border-ws-out/40 bg-ws-out/10 text-ws-out",
+                      )}
+                    >
+                      {p.isPaused ? (
+                        <Pause className="h-3.5 w-3.5" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" />
+                      )}
                       {p.isPaused ? t.statusPaused : t.statusActive}
                     </span>
                     <button

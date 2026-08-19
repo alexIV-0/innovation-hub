@@ -34,6 +34,7 @@ import {
   siteUpdatedBy,
   updateProjectExposedOptions,
 } from "@/lib/project-storage"
+import { exposedOptionChangeSchema } from "@/lib/project-schemas"
 import { isAllowedProjectContentType } from "@/lib/project-upload-policy"
 import { safeBaseFileName } from "@/lib/s3-upload-policy"
 import { getS3Bucket } from "@/lib/s3-config"
@@ -319,12 +320,7 @@ const putSidecarSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("options"),
     projectId: z.string().min(1),
-    changes: z.array(
-      z.object({
-        path: z.array(z.string()),
-        value: z.union([z.string(), z.number(), z.boolean()]),
-      }),
-    ),
+    changes: z.array(exposedOptionChangeSchema),
   }),
   z.object({
     kind: z.literal("raw"),
@@ -353,7 +349,7 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
     }
 
     if (data.kind === "options") {
-      const result = await updateProjectExposedOptions({
+      const { options, etag } = await updateProjectExposedOptions({
         userId: access.ownerId,
         projectId: access.projectId,
         changes: data.changes,
@@ -365,7 +361,7 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
         name: OPTIONS_FILE_NAME,
         actor: actorFromAuth(auth),
       })
-      return apiOk({ options: result })
+      return apiOk({ options, etag })
     }
 
     const key =

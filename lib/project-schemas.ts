@@ -111,22 +111,31 @@ export const updateFolderStateSchema = z.object({
 
 export type UpdateFolderStateInput = z.infer<typeof updateFolderStateSchema>
 
+/**
+ * Значение свойства из options.json. Массивы обязательны: `valueRange` хранит
+ * пару чисел, `autocomplete` — список строк даже в одиночном режиме.
+ *
+ * Здесь только форма значения. Содержательная проверка — границы, список
+ * вариантов, режим контрола — в [lib/options/apply.ts](./options/apply.ts):
+ * она смотрит в сам граф, потому что клиент эти настройки не присылает и
+ * присылать не должен.
+ */
 const exposedOptionValueSchema = z.union([
   z.boolean(),
   z.number().finite(),
   z.string().max(10_000),
+  z.array(z.string().max(1_000)).max(200),
+  z.tuple([z.number().finite(), z.number().finite()]),
 ])
 
+/** Одна правка: путь до `controlProps` и новое значение. */
+export const exposedOptionChangeSchema = z.object({
+  path: z.array(z.string().min(1).max(200)).min(1).max(32),
+  value: exposedOptionValueSchema,
+})
+
 export const updateExposedOptionsSchema = z.object({
-  changes: z
-    .array(
-      z.object({
-        path: z.array(z.string().min(1).max(200)).min(1).max(32),
-        value: exposedOptionValueSchema,
-      }),
-    )
-    .min(1)
-    .max(100),
+  changes: z.array(exposedOptionChangeSchema).min(1).max(100),
 })
 
 export type UpdateExposedOptionsInput = z.infer<

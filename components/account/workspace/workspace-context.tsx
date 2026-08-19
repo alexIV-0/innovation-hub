@@ -540,9 +540,16 @@ export function WorkspaceProvider({
     void loadProjects()
   }, [loadProjects, source.scopeKey])
 
+  /**
+   * Выделение читается из URL в обе стороны, включая «в URL никого».
+   *
+   * Пункты бокового меню («Проекты», «Расшаренные», «Архив») — обычные ссылки
+   * без `id`. Пока сброса здесь не было, после них оставался открытым прежний
+   * проект: раздел в меню подсвечивался новый, а рабочая область показывала
+   * проект из старого — в простом режиме вместо страницы списка вообще.
+   */
   useEffect(() => {
-    const id = searchParams.get("id")
-    if (id) setSelectedId(id)
+    setSelectedId(searchParams.get("id"))
   }, [searchParams])
 
   useEffect(() => {

@@ -31,6 +31,8 @@ export const CABINET_SOURCE: WorkspaceSource = {
     `/api/projects/${projectId}/media?${params.toString()}`,
   moveUrl: () => "/api/storage/v1/rename",
   exposedOptionsUrl: (projectId) => `/api/projects/${projectId}/drive/options`,
+  // Только чтение: у роута нет PUT, а `can.editDescription` ниже — false.
+  descriptionMdUrl: (projectId) => `/api/projects/${projectId}/description`,
   chatUrl: (projectId) => `/api/projects/${projectId}/chat`,
   chatReadUrl: (projectId) => `/api/projects/${projectId}/chat/read`,
   chatPerspective: "client",
@@ -45,5 +47,8 @@ export const CABINET_SOURCE: WorkspaceSource = {
     renameItem: true,
     deleteItem: true,
     move: true,
+    // Описание — бриф от команды: пользователь его читает, а пишут в программе
+    // или в админском «Конвейере».
+    editDescription: false,
   },
 }

@@ -66,6 +66,9 @@ export function createPipelineSource(userId: string | null): WorkspaceSource {
       renameItem: false,
       deleteItem: false,
       move: false,
+      // Единственная запись в чужой проект, кроме паузы: описание — это как раз
+      // то, что команда пишет клиенту.
+      editDescription: true,
     },
   }
 }

@@ -12,8 +12,8 @@ import {
 
 import { ExposedOptionsList } from "@/components/account/options/exposed-options"
 import { cn } from "@/lib/utils"
-import { DescriptionMdEditor } from "./description-md-editor"
-import { fmtDate, fmtTime } from "./format"
+import { DescriptionMdPanel } from "./description-md-panel"
+import { fmtTime } from "./format"
 import type { BottomTab } from "./types"
 import { useWorkspace } from "./workspace-context"
 
@@ -23,42 +23,17 @@ const TABS: { id: BottomTab; icon: typeof FileText; labelKey: "tabDesc" | "tabSe
   { id: "chat", icon: MessageCircle, labelKey: "tabChat" },
 ]
 
+/**
+ * Закладка «Описание» — только развёрнутое описание из `options/description.md`.
+ *
+ * Короткой подписи из БД здесь больше нет: два поля с одним названием на одном
+ * экране путали, а бриф проекта живёт в файле — его видят и сайт, и программа.
+ */
 export function DescriptionTab() {
-  const { t, lang, selected, descDraft, setDescDraft, saveDescription } =
-    useWorkspace()
+  const { selected } = useWorkspace()
   if (!selected) return null
   return (
-    <div className="max-w-[720px]">
-      <p className="text-[11px] font-semibold tracking-[1.4px] text-ws-accent">
-        {t.descHeading}
-      </p>
-      <textarea
-        value={descDraft}
-        onChange={(e) => setDescDraft(e.target.value)}
-        placeholder={t.descEmpty}
-        rows={5}
-        className="mt-2.5 w-full resize-y rounded-[10px] border border-white/10 bg-ws-control p-3 text-[14px] leading-relaxed text-ws-2 outline-none focus:border-ws-select"
-      />
-      <div className="mt-4 flex flex-wrap items-center gap-2.5">
-        <span className="rounded-full border border-white/[0.12] px-3 py-[5px] text-[12px] text-ws-3">
-          {t.createdLabel} {fmtDate(selected.createdAt, lang)}
-        </span>
-        <span className="rounded-full border border-white/[0.12] px-3 py-[5px] text-[12px] text-ws-3">
-          {t.updatedLabel} {fmtDate(selected.updatedAt, lang)}
-        </span>
-        <button
-          type="button"
-          onClick={saveDescription}
-          className="ml-auto rounded-[9px] bg-ws-action px-4 py-2 text-[13px] text-white hover:bg-ws-action-hover"
-        >
-          {t.saveDescription}
-        </button>
-      </div>
-
-      {/* Короткая подпись выше живёт в БД и нужна на карточке в списке.
-          Развёрнутое описание — файл в папке проекта, редактируется отдельно. */}
-      <DescriptionMdEditor projectId={selected.id} />
-    </div>
+    <DescriptionMdPanel projectId={selected.id} projectName={selected.name} />
   )
 }
 
@@ -112,7 +87,7 @@ export function SettingsTab() {
       />
 
       {can.archiveProject || can.deleteProject ? (
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-white/[0.07] pt-4">
+        <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-white/[0.07] pt-4">
           {can.archiveProject ? (
             <button
               type="button"

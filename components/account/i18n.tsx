@@ -296,6 +296,13 @@ export const dict = {
     descPlaceholder:
       "# Заголовок\n\nТекст, **жирный**, таблицы, ссылки на картинки.",
     descMdEmpty: "Описания ещё нет. Оно сохранится в папку options проекта.",
+    descMdEmptyReadonly: "Команда ещё не добавила описание этого проекта.",
+    descMdTitle: "Описание проекта",
+    descExpand: "Развернуть",
+    descLoadError: "Не удалось загрузить описание.",
+    descConflict:
+      "Описание изменилось с момента открытия — возможно, его правили в программе или в другом окне. Перезаписать своей версией?",
+    descUnsaved: "Описание не сохранено. Закрыть без сохранения?",
 
     // прочее в воркспейсе
     projectSharedWith: "Проект расшарен: {users}",
@@ -569,6 +576,13 @@ export const dict = {
       "# Heading\n\nText, **bold**, tables, links to images.",
     descMdEmpty:
       "No description yet. It will be saved into the project’s options folder.",
+    descMdEmptyReadonly: "The team has not added a description for this project yet.",
+    descMdTitle: "Project description",
+    descExpand: "Expand",
+    descLoadError: "Could not load the description.",
+    descConflict:
+      "The description changed since you opened it — it may have been edited in the desktop app or another window. Overwrite it with your version?",
+    descUnsaved: "The description is not saved. Close without saving?",
 
     // elsewhere in the workspace
     projectSharedWith: "Shared with: {users}",

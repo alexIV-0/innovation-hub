@@ -4,7 +4,17 @@ import {
   insertProjectChatMessage,
   listProjectChatMessages,
 } from "@/lib/repositories/project-chat"
-import { getCompanyUserNameMap, getYouGileConfig, isYouGileConfigured, listChatMessages } from "@/lib/yougile"
+import { clearProjectYougileChatId } from "@/lib/repositories/projects"
+import {
+  getCompanyUserNameMap,
+  getYouGileConfig,
+  isYouGileConfigured,
+  listChatMessages,
+  YouGileError,
+} from "@/lib/yougile"
+
+/** Chat ids YouGile already said are gone — skip further pulls this process. */
+const missingYouGileChatIds = new Set<string>()
 
 /**
  * Pulls team replies from a project's YouGile chat into the site's DB.
@@ -40,7 +50,9 @@ export async function syncProjectChatFromYouGile(project: {
   name: string
   yougileChatId: string | null
 }): Promise<void> {
-  if (!project.yougileChatId || !isYouGileConfigured()) return
+  const chatId = project.yougileChatId
+  if (!chatId || !isYouGileConfigured()) return
+  if (missingYouGileChatIds.has(chatId)) return
 
   try {
     const config = getYouGileConfig()
@@ -54,7 +66,7 @@ export async function syncProjectChatFromYouGile(project: {
     }, 0)
 
     const remote = await listChatMessages({
-      chatId: project.yougileChatId,
+      chatId,
       // A little slack so we never miss a message that landed in the same
       // millisecond as our last known one.
       sinceMs: lastKnownAt > 0 ? lastKnownAt - 1000 : undefined,
@@ -107,6 +119,22 @@ export async function syncProjectChatFromYouGile(project: {
       })
     }
   } catch (error) {
+    if (error instanceof YouGileError && (error.status === 404 || error.status === 403)) {
+      // Chat/task was deleted in YouGile (or this API key cannot see it).
+      // Unlink so the 30s poller stops retrying; the next site message
+      // recreates a group chat via ensureProjectYouGileChat.
+      missingYouGileChatIds.add(chatId)
+      console.warn(
+        `[project-chat-sync] YouGile chat gone, unlinking project ${project.id} (${chatId})`,
+      )
+      await clearProjectYougileChatId(project.id).catch((clearError) => {
+        console.error("[project-chat-sync] failed to unlink missing YouGile chat", {
+          projectId: project.id,
+          error: clearError,
+        })
+      })
+      return
+    }
     console.error("[project-chat-sync] pull from YouGile failed", {
       projectId: project.id,
       error,

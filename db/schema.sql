@@ -576,6 +576,64 @@ CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_idx
 CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx
   ON push_subscriptions (user_id);
 
+-- Архив обработок с машин и курсоры его импорта. Обоснование и правила —
+-- db/migrations/2026-08-20-processing-stats.sql, docs/PIPELINE.md §14.
+CREATE TABLE IF NOT EXISTS processing_stats (
+  item_id        TEXT PRIMARY KEY,
+  project_id     TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  schema_version INTEGER NOT NULL,
+  status         TEXT NOT NULL,
+  project_name   TEXT NOT NULL DEFAULT '',
+  main_folder    TEXT NOT NULL DEFAULT '',
+  cur_item       TEXT NOT NULL DEFAULT '',
+  in_type        TEXT,
+  out_type       TEXT,
+  registered_at  TIMESTAMPTZ,
+  started_at     TIMESTAMPTZ,
+  ended_at       TIMESTAMPTZ,
+  out_sec        INTEGER,
+  render_sec     INTEGER,
+  out_paths      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  total_cost     NUMERIC(12, 6),
+  machine        TEXT,
+  imported_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS processing_stats_ended_idx
+  ON processing_stats (ended_at);
+CREATE INDEX IF NOT EXISTS processing_stats_project_ended_idx
+  ON processing_stats (project_id, ended_at);
+CREATE INDEX IF NOT EXISTS processing_stats_machine_idx
+  ON processing_stats (machine);
+
+CREATE TABLE IF NOT EXISTS stats_import_state (
+  s3_key         TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  lines_imported INTEGER NOT NULL DEFAULT 0,
+  etag           TEXT,
+  imported_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Ежедневные срезы состояний: объём и число файлов на проект за день.
+-- Подробности и обоснование — db/migrations/2026-08-20-storage-snapshots.sql.
+-- Гранулярность одна (проект × день), срез пользователя — SUM по его проектам.
+-- Внешних ключей нет: история переживает удаление проекта и пользователя.
+CREATE TABLE IF NOT EXISTS storage_snapshots (
+  day        DATE NOT NULL,
+  project_id TEXT NOT NULL,
+  owner_id   TEXT NOT NULL,
+  files      INTEGER NOT NULL DEFAULT 0,
+  bytes      BIGINT  NOT NULL DEFAULT 0,
+  taken_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (day, project_id)
+);
+
+CREATE INDEX IF NOT EXISTS storage_snapshots_owner_day_idx
+  ON storage_snapshots (owner_id, day);
+
+CREATE INDEX IF NOT EXISTS storage_snapshots_day_idx
+  ON storage_snapshots (day);
+
 -- Idempotent data migration: admin uploads used to bake an absolute origin into
 -- media URLs via `new URL(..., request.url)`, so local runs left values like
 -- `https://localhost:3000/api/media/...` in the DB. Strip any host and keep the

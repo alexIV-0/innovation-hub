@@ -200,9 +200,22 @@ export function PipelineRunBar() {
           >
             <ListOrdered className="h-[18px] w-[18px]" />
             {t.pipelineQueue}
-            {counts && counts.total > 0 ? (
-              <span className="rounded-full bg-white/10 px-2 py-[2px] text-[12px] tabular-nums text-ws-1">
-                {counts.total}
+            {/* Только живые задачи, а не все за всё время: с `counts.total` цифра
+                росла с каждой обработанной задачей и ничего не сообщала. Ошибки —
+                вторым числом в скобках и только когда они есть: их не видно в
+                первом числе, а знать о них надо, не открывая окно. */}
+            {counts && (inFlight + counts.queued > 0 || counts.failed > 0) ? (
+              <span
+                title={tf(t.pipelineQueueBadgeTitle, {
+                  live: counts.queued + inFlight,
+                  failed: counts.failed,
+                })}
+                className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-[2px] text-[12px] tabular-nums text-ws-1"
+              >
+                {counts.queued + inFlight}
+                {counts.failed > 0 ? (
+                  <span className="text-destructive">({counts.failed})</span>
+                ) : null}
               </span>
             ) : null}
           </button>

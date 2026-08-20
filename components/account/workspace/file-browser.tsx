@@ -116,11 +116,13 @@ function FileRow({
   file,
   size,
   onOpen,
+  onPreview,
   onContext,
 }: {
   file: DriveFile
   size: Size
   onOpen: (e: React.MouseEvent) => void
+  onPreview: () => void
   onContext: (e: React.MouseEvent) => void
 }) {
   const { t, lang, isSelected: checkSelected, isCut, menu } = useWorkspace()
@@ -133,6 +135,7 @@ function FileRow({
     <button
       type="button"
       onClick={onOpen}
+      onDoubleClick={onPreview}
       onContextMenu={onContext}
       className={cn(
         "flex w-full select-none items-center border text-left transition-opacity hover:bg-white/5",
@@ -188,11 +191,13 @@ function FileCard({
   file,
   size,
   onOpen,
+  onPreview,
   onContext,
 }: {
   file: DriveFile
   size: Size
   onOpen: (e: React.MouseEvent) => void
+  onPreview: () => void
   onContext: (e: React.MouseEvent) => void
 }) {
   const { t, lang, isSelected: checkSelected, isCut, menu } = useWorkspace()
@@ -205,6 +210,7 @@ function FileCard({
     <button
       type="button"
       onClick={onOpen}
+      onDoubleClick={onPreview}
       onContextMenu={onContext}
       className={cn(
         "select-none border bg-ws-control text-left transition-opacity hover:border-white/[0.18]",
@@ -307,6 +313,7 @@ function FileColumn({
               onContextMenu={(e) =>
                 openMenu("file", e, { file: f, target: colTarget })
               }
+              onDoubleClick={() => ws.openPreview(f)}
               onClick={(e) => {
                 if (e.shiftKey) {
                   ws.selectRange(list, f)
@@ -393,7 +400,8 @@ export function FileBrowser({
 
   /**
    * Cmd/Ctrl — добавить или снять один элемент, Shift — выделить диапазон.
-   * Обычный клик по папке заходит внутрь, по файлу — выделяет его.
+   * Обычный клик по папке заходит внутрь, по файлу — выделяет его,
+   * двойной по файлу открывает окно превью (`openPreview` игнорирует папки).
    */
   const openItem = (f: DriveFile, event: React.MouseEvent) => {
     if (event.shiftKey) {
@@ -477,6 +485,7 @@ export function FileBrowser({
               file={f}
               size={size}
               onOpen={(e) => openItem(f, e)}
+              onPreview={() => ws.openPreview(f)}
               onContext={(e) => openMenu("file", e, { file: f, target })}
             />
           ))}
@@ -491,6 +500,7 @@ export function FileBrowser({
               file={f}
               size={size}
               onOpen={(e) => openItem(f, e)}
+              onPreview={() => ws.openPreview(f)}
               onContext={(e) => openMenu("file", e, { file: f, target })}
             />
           ))}

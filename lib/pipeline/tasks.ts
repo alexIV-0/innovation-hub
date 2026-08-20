@@ -67,7 +67,27 @@ type TaskRow = Omit<
   stepMeta: Record<string, { pluginId?: string; nodeType?: string }> | null
 }
 
-export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
+/** Живые задачи: те, по которым работа ещё идёт или вот-вот начнётся. */
+export const LIVE_TASK_STATUSES: TaskStatus[] = ["queued", "claimed", "running"]
+/** Завершённые: дальше с ними ничего не произойдёт, это уже история. */
+export const FINISHED_TASK_STATUSES: TaskStatus[] = ["done", "failed"]
+
+/**
+ * Список задач с фильтром по состояниям.
+ *
+ * Фильтр обязателен по смыслу окна: живое и завершённое показываются отдельными
+ * зонами, и смешивать их в одной выборке незачем — за неделю работы завершённых
+ * накапливается столько, что живая задача тонет в них даже при правильной
+ * сортировке.
+ */
+export async function listPipelineTasks(
+  options: { statuses?: TaskStatus[]; limit?: number } = {},
+): Promise<PipelineTask[]> {
+  const statuses = options.statuses ?? [
+    ...LIVE_TASK_STATUSES,
+    ...FINISHED_TASK_STATUSES,
+  ]
+  const limit = options.limit ?? 200
   const result = await query<TaskRow>(
     `SELECT t.id,
             t.status,
@@ -114,6 +134,7 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
        JOIN projects p ON p.id = t.project_id
        JOIN users u ON u.id = p.user_id
        LEFT JOIN remote_computers c ON c.id = t.claimed_by
+      WHERE t.status = ANY($1)
       ORDER BY
         -- Живые задачи выше завершённых: в работе интересует то, что происходит.
         CASE t.status
@@ -124,8 +145,8 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
           ELSE 4
         END,
         t.created_at DESC
-      LIMIT $1`,
-    [limit],
+      LIMIT $2`,
+    [statuses, limit],
   )
 
   // Прогресс — одним запросом на всю выборку, а не по задаче: строк там столько
@@ -199,6 +220,34 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
       createdAt: row.createdAt.toISOString(),
     }
   })
+}
+
+/** Сколько завершённых задач показываем. Зона «Завершено» — справка, а не
+ *  рабочий список: всю историю за месяцы туда тянуть незачем. */
+const FINISHED_ZONE_LIMIT = 50
+
+export type TaskZones = {
+  /** `queued` + `claimed` + `running` — то, ради чего окно открывают. */
+  live: PipelineTask[]
+  /** `done` + `failed`, последние FINISHED_ZONE_LIMIT по дате создания. */
+  finished: PipelineTask[]
+}
+
+/**
+ * Обе зоны окна очереди одним вызовом.
+ *
+ * Два запроса, а не один с разбором на клиенте: у зон разные лимиты, и живая
+ * задача не должна вытесняться из выборки сотней завершённых.
+ */
+export async function listPipelineTaskZones(): Promise<TaskZones> {
+  const [live, finished] = await Promise.all([
+    listPipelineTasks({ statuses: LIVE_TASK_STATUSES }),
+    listPipelineTasks({
+      statuses: FINISHED_TASK_STATUSES,
+      limit: FINISHED_ZONE_LIMIT,
+    }),
+  ])
+  return { live, finished }
 }
 
 /**

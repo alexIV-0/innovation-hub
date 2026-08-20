@@ -27,6 +27,7 @@ import {
   mapProject,
   pathToFolderPath,
   resolvePath,
+  siblingFiles,
 } from "./format"
 import { CABINET_SOURCE } from "./source"
 import type {
@@ -171,6 +172,17 @@ type WorkspaceValue = {
   setView: (v: ViewMode) => void
   bottomTab: BottomTab
   setBottomTab: (tab: BottomTab) => void
+
+  // окно быстрого просмотра
+  /** Открыто ли модальное окно превью. Показывает `selectedFile`. */
+  previewOpen: boolean
+  /** Открыть окно: без аргумента — для уже выделенного файла. */
+  openPreview: (file?: DriveFile) => void
+  closePreview: () => void
+  /** Файлы той же папки — по ним листает окно превью (стрелками). */
+  previewSiblings: DriveFile[]
+  /** Перелистнуть превью на соседний файл: -1 — назад, +1 — вперёд. */
+  stepPreview: (delta: number) => void
 
   // операции с файлами
   uploading: boolean
@@ -402,6 +414,8 @@ export function WorkspaceProvider({
     setSelection(list.slice(start, end + 1))
   }, [])
 
+  const [previewOpen, setPreviewOpen] = useState(false)
+
   const [density, setDensityState] = useState<Density>("full")
   const [view, setViewState] = useState<ViewMode>("list")
   const [bottomTab, setBottomTab] = useState<BottomTab>("desc")
@@ -418,6 +432,43 @@ export function WorkspaceProvider({
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
 
   const selected = projects.find((p) => p.id === selectedId) ?? null
+
+  /**
+   * Соседи по папке для перелистывания в окне превью. Считаем от id, а не от
+   * текущего пути: у панелей IN / OUT и мобильного вида свои пути, а дерево одно.
+   */
+  const previewSiblings = useMemo(
+    () => (selectedFile ? siblingFiles(rootFiles, selectedFile.id) : []),
+    [rootFiles, selectedFile],
+  )
+
+  const openPreview = useCallback(
+    (file?: DriveFile) => {
+      const target = file ?? selectedFile
+      if (!target || target.isFolder) return
+      if (file) selectFile(file)
+      setPreviewOpen(true)
+    },
+    [selectedFile, selectFile],
+  )
+
+  const closePreview = useCallback(() => setPreviewOpen(false), [])
+
+  // Выделение сбросили (сменили проект, ушли в папку) — окну нечего показывать.
+  useEffect(() => {
+    if (!selectedFile || selectedFile.isFolder) setPreviewOpen(false)
+  }, [selectedFile])
+
+  const stepPreview = useCallback(
+    (delta: number) => {
+      if (!selectedFile || previewSiblings.length < 2) return
+      const at = previewSiblings.findIndex((f) => f.id === selectedFile.id)
+      if (at === -1) return
+      const len = previewSiblings.length
+      selectFile(previewSiblings[(at + delta + len) % len])
+    },
+    [selectedFile, previewSiblings, selectFile],
+  )
 
   const notImplemented = useCallback(() => {
     toast.message(t.notImplemented)
@@ -1345,6 +1396,11 @@ export function WorkspaceProvider({
     setView,
     bottomTab,
     setBottomTab,
+    previewOpen,
+    openPreview,
+    closePreview,
+    previewSiblings,
+    stepPreview,
     uploading,
     createFolder,
     renameItem,

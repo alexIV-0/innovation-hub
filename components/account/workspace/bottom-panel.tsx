@@ -4,6 +4,7 @@ import {
   Archive,
   ArchiveRestore,
   FileText,
+  Image as ImageIcon,
   MessageCircle,
   Send,
   Settings2,
@@ -13,11 +14,17 @@ import {
 import { ExposedOptionsList } from "@/components/account/options/exposed-options"
 import { cn } from "@/lib/utils"
 import { DescriptionMdPanel } from "./description-md-panel"
+import { PreviewTab } from "./file-preview"
 import { fmtTime } from "./format"
 import type { BottomTab } from "./types"
 import { useWorkspace } from "./workspace-context"
 
-const TABS: { id: BottomTab; icon: typeof FileText; labelKey: "tabDesc" | "tabSettings" | "tabChat" }[] = [
+const TABS: {
+  id: BottomTab
+  icon: typeof FileText
+  labelKey: "tabPreview" | "tabDesc" | "tabSettings" | "tabChat"
+}[] = [
+  { id: "preview", icon: ImageIcon, labelKey: "tabPreview" },
   { id: "desc", icon: FileText, labelKey: "tabDesc" },
   { id: "settings", icon: Settings2, labelKey: "tabSettings" },
   { id: "chat", icon: MessageCircle, labelKey: "tabChat" },
@@ -221,7 +228,9 @@ export function BottomPanel({ onResize }: { onResize?: React.ReactNode }) {
         })}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto border-t border-white/[0.07] px-6 py-5">
-        {bottomTab === "desc" ? (
+        {bottomTab === "preview" ? (
+          <PreviewTab />
+        ) : bottomTab === "desc" ? (
           <DescriptionTab />
         ) : bottomTab === "settings" ? (
           <SettingsTab />

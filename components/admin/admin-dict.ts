@@ -355,9 +355,15 @@ export const adminDict = {
     // pipeline · очередь задач
     pipelineQueueTitle: "Очередь задач",
     pipelineQueueCounts:
-      "всего {total} · в очереди {queued} · в работе {inFlight} · готово {done} · ошибок {failed}",
+      "в очереди {queued} · в работе {inFlight} · готово {done} · ошибок {failed}",
     pipelineQueueEmpty:
       "Задач пока нет. Включите слежение — задачи появятся, когда в папке IN отслеживаемого проекта окажется подходящий файл.",
+    pipelineZoneLive: "В работе",
+    pipelineZoneFinished: "Завершено",
+    pipelineZoneLiveEmpty: "Сейчас ничего не обрабатывается.",
+    pipelineZoneFinishedEmpty: "Завершённых задач пока нет.",
+    pipelineZoneShownLast: "показаны последние {shown}",
+    pipelineQueueBadgeTitle: "В работе {live}, с ошибками {failed}",
     pipelineQueueFootnote:
       "Строку задачи можно раскрыть — видны шаги цепочки и последний отчёт по каждому. Логи шагов на сайт не приходят, только состояния.",
     pipelineColFile: "Файл",
@@ -796,9 +802,15 @@ export const adminDict = {
     // pipeline · task queue
     pipelineQueueTitle: "Task queue",
     pipelineQueueCounts:
-      "total {total} · queued {queued} · in progress {inFlight} · done {done} · failed {failed}",
+      "queued {queued} · in progress {inFlight} · done {done} · failed {failed}",
     pipelineQueueEmpty:
       "No tasks yet. Turn watching on — tasks appear once a matching file lands in the IN folder of a watched project.",
+    pipelineZoneLive: "In progress",
+    pipelineZoneFinished: "Finished",
+    pipelineZoneLiveEmpty: "Nothing is being processed right now.",
+    pipelineZoneFinishedEmpty: "No finished tasks yet.",
+    pipelineZoneShownLast: "last {shown} shown",
+    pipelineQueueBadgeTitle: "{live} in progress, {failed} failed",
     pipelineQueueFootnote:
       "A task row expands — it shows the chain of steps and the latest report for each. Step logs never reach the site, only states.",
     pipelineColFile: "File",

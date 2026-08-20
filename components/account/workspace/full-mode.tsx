@@ -4,7 +4,6 @@ import { FolderOpen, Pause, Plus, RefreshCw } from "lucide-react"
 
 import { BottomPanel } from "./bottom-panel"
 import { Breadcrumbs, FileBrowser } from "./file-browser"
-import { PreviewPane } from "./preview-pane"
 import { ResizeGrip } from "@/components/account/resize-grip"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { useWorkspace } from "./workspace-context"
@@ -88,16 +87,15 @@ export function FullMode() {
           />
         </div>
 
-        <div className="relative mt-2.5 flex min-h-0 flex-1 overflow-hidden rounded-xl border border-white/[0.07] bg-ws-panel shadow-ws-panel">
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <FileBrowser
-              root={rootFiles}
-              path={path}
-              view={view}
-              onNavigate={goToPath}
-            />
-          </div>
-          <PreviewPane />
+        {/* Превью выбранного файла живёт в закладке нижней панели и в окне
+            быстрого просмотра (пробел), поэтому вся ширина здесь — файлам. */}
+        <div className="relative mt-2.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-ws-panel shadow-ws-panel">
+          <FileBrowser
+            root={rootFiles}
+            path={path}
+            view={view}
+            onNavigate={goToPath}
+          />
         </div>
       </div>
 

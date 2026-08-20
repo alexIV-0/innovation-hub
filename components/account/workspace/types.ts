@@ -51,7 +51,12 @@ export type ViewMode = "list" | "grid" | "columns"
 /** Режим рабочей области: полный (3 колонки) или упрощённый (IN / OUT). */
 export type Density = "full" | "simple"
 
-export type BottomTab = "desc" | "settings" | "chat"
+/**
+ * Закладки нижней панели. `preview` относится к выбранному файлу, остальные —
+ * к проекту: превью переехало сюда из правой колонки, где вертикальное видео
+ * занимало полосу во всю высоту и почти ничего не показывало.
+ */
+export type BottomTab = "preview" | "desc" | "settings" | "chat"
 
 /** Куда загружать файлы / создавать папку. */
 export type UploadTarget = {

@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Eye,
   FilePlus,
   FileText,
   FolderInput,
@@ -31,6 +32,8 @@ type MenuEntry =
       sep?: false
       icon: LucideIcon
       label: string
+      /** Горячая клавиша справа от пункта, например «Пробел». */
+      hint?: string
       danger?: boolean
       onClick: () => void
     }
@@ -75,9 +78,15 @@ export function WorkspaceContextMenu() {
     const suffix = many ? ` (${targets.length})` : ""
 
     entries = [
-      // Скачивание и переименование осмысленны только для одного элемента.
+      // Скачивание, просмотр и переименование осмысленны только для одного элемента.
       ...(!many && !file.isFolder
         ? [
+            {
+              icon: Eye,
+              label: t.mPreview,
+              hint: t.previewSpaceHint,
+              onClick: () => ws.openPreview(file),
+            } as MenuEntry,
             {
               icon: Download,
               label: t.mDownload,
@@ -279,7 +288,12 @@ export function WorkspaceContextMenu() {
               )}
             >
               <entry.icon className="h-[18px] w-[18px] shrink-0 opacity-85" />
-              {entry.label}
+              <span className="flex-1">{entry.label}</span>
+              {entry.hint ? (
+                <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-px text-[11px] font-normal text-ws-4">
+                  {entry.hint}
+                </kbd>
+              ) : null}
             </button>
           ),
         )}

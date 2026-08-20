@@ -5,21 +5,31 @@ import {
   cancelPipelineTask,
   countPipelineTasksByStatus,
   deletePipelineTask,
-  listPipelineTasks,
+  listPipelineTaskZones,
 } from "@/lib/pipeline/tasks"
 
 export const runtime = "nodejs"
+
+/**
+ * Снимок для окна очереди: две зоны и счётчики по состояниям.
+ *
+ * Один и тот же снимок отдают все три метода — окно после снятия или удаления
+ * задачи получает готовый список и не перезапрашивает его вторым кругом.
+ */
+async function queueSnapshot() {
+  const [zones, counts] = await Promise.all([
+    listPipelineTaskZones(),
+    countPipelineTasksByStatus(),
+  ])
+  return { ...zones, counts }
+}
 
 /** Очередь задач: что нашлось, кто взял, в каком состоянии. */
 export async function GET(request: NextRequest) {
   const auth = await requireAdminApi(request)
   if (auth instanceof NextResponse) return auth
 
-  const [tasks, counts] = await Promise.all([
-    listPipelineTasks(),
-    countPipelineTasksByStatus(),
-  ])
-  return NextResponse.json({ tasks, counts })
+  return NextResponse.json(await queueSnapshot())
 }
 
 const taskIdSchema = z.object({ taskId: z.string().min(1) })
@@ -52,11 +62,7 @@ export async function PATCH(request: NextRequest) {
     )
   }
 
-  const [tasks, counts] = await Promise.all([
-    listPipelineTasks(),
-    countPipelineTasksByStatus(),
-  ])
-  return NextResponse.json({ tasks, counts })
+  return NextResponse.json(await queueSnapshot())
 }
 
 /**
@@ -80,9 +86,5 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ message: "Task not found." }, { status: 404 })
   }
 
-  const [tasks, counts] = await Promise.all([
-    listPipelineTasks(),
-    countPipelineTasksByStatus(),
-  ])
-  return NextResponse.json({ tasks, counts })
+  return NextResponse.json(await queueSnapshot())
 }

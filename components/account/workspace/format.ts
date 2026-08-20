@@ -89,6 +89,26 @@ export function itemsAtPath(root: DriveFile[], path: DriveFile[]): DriveFile[] {
   return path.length ? (path[path.length - 1].children ?? []) : root
 }
 
+/**
+ * Файлы (без папок) из той же папки, что и элемент с этим id.
+ *
+ * Ищем по всему дереву, а не по текущему пути: перелистывание в окне превью
+ * нужно и в упрощённом режиме, где у панелей IN / OUT свои локальные пути, и на
+ * мобильном — а дерево проекта одно и то же для всех этих видов.
+ */
+export function siblingFiles(root: DriveFile[], id: string): DriveFile[] {
+  const walk = (list: DriveFile[]): DriveFile[] | null => {
+    if (list.some((f) => f.id === id)) return list.filter((f) => !f.isFolder)
+    for (const f of list) {
+      if (!f.isFolder) continue
+      const found = walk(f.children ?? [])
+      if (found) return found
+    }
+    return null
+  }
+  return walk(root) ?? []
+}
+
 /** Пере-пройти путь по id после обновления дерева хранилища. */
 export function resolvePath(
   root: DriveFile[],

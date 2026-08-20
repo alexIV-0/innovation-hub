@@ -6,6 +6,8 @@ export type DriveFile = {
   sizeBytes: number | null
   modifiedAt: string | null
   createdAt: string | null
+  /** Кто залил файл на сайт; null — файл появился до появления атрибуции. */
+  uploadedByName?: string | null
   children?: DriveFile[]
 }
 
@@ -49,7 +51,12 @@ export type ViewMode = "list" | "grid" | "columns"
 /** Режим рабочей области: полный (3 колонки) или упрощённый (IN / OUT). */
 export type Density = "full" | "simple"
 
-export type BottomTab = "desc" | "settings" | "chat"
+/**
+ * Закладки нижней панели. `preview` относится к выбранному файлу, остальные —
+ * к проекту: превью переехало сюда из правой колонки, где вертикальное видео
+ * занимало полосу во всю высоту и почти ничего не показывало.
+ */
+export type BottomTab = "preview" | "desc" | "settings" | "chat"
 
 /** Куда загружать файлы / создавать папку. */
 export type UploadTarget = {
@@ -79,6 +86,11 @@ export type WorkspaceCapabilities = {
   renameItem: boolean
   deleteItem: boolean
   move: boolean
+  /**
+   * Править развёрнутое описание проекта (options/description.md). В кабинете
+   * его читают, а пишет команда: адрес `descriptionMdUrl` там отдаёт только GET.
+   */
+  editDescription: boolean
 }
 
 /**
@@ -132,9 +144,16 @@ export type WorkspaceSource = {
   /** Перемещение элемента между папками. */
   moveUrl: () => string
   /**
-   * Развёрнутое описание проекта — options/description.md. Необязательный:
-   * наличие адреса включает редактор в панели описания. В кабинете его нет,
-   * потому что описание пишет администрация, а пользователь его читает.
+   * Параметры обработки из options.json: PATCH — сохранить правки клиента.
+   * Необязательный — без него панель настроек показывает значения, но не даёт
+   * их менять. Так в админском «Конвейере»: там своя роль и свой путь записи
+   * (docs/PROJECT_OPTIONS_PANEL.md §2), а этот эндпоинт — клиентский.
+   */
+  exposedOptionsUrl?: (projectId: string) => string
+  /**
+   * Развёрнутое описание проекта — options/description.md. Наличие адреса
+   * включает панель описания: GET есть в обеих зонах, а PUT принимает только
+   * админский роут — за это отвечает право `can.editDescription`.
    */
   descriptionMdUrl?: (projectId: string) => string
   chatUrl: (projectId: string) => string

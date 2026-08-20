@@ -807,7 +807,10 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
         name: "changes",
         type: "{ path: string[], value }[]",
         required: false,
-        notes: { ru: "Для kind=options.", en: "For kind=options." },
+        notes: {
+          ru: "Для kind=options. path ведёт в controlProps свойства; value — bool/число/строка/список строк/пара чисел.",
+          en: "For kind=options. path points at the property's controlProps; value is a bool, number, string, list of strings or pair of numbers.",
+        },
       },
       {
         name: "sidecar",

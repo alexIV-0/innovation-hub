@@ -18,6 +18,8 @@ import {
   type Dictionary,
   type Lang,
 } from "@/components/account/i18n"
+import type { ExposedOptionChange } from "@/lib/options/apply"
+import type { ExposedOption } from "@/lib/options/types"
 import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import {
   findChildByName,
@@ -25,6 +27,7 @@ import {
   mapProject,
   pathToFolderPath,
   resolvePath,
+  siblingFiles,
 } from "./format"
 import { CABINET_SOURCE } from "./source"
 import type {
@@ -131,6 +134,16 @@ type WorkspaceValue = {
   inFolder: DriveFile | null
   outFolder: DriveFile | null
 
+  // параметры обработки, открытые клиенту (exposedToSite в options.json)
+  exposedOptions: ExposedOption[]
+  /**
+   * Сохранение правок. null — источник не даёт адреса (админский вид):
+   * панель тогда только показывает значения.
+   */
+  saveExposedOptions:
+    | ((changes: ExposedOptionChange[]) => Promise<ExposedOption[]>)
+    | null
+
   // навигация по дереву (полный режим)
   path: DriveFile[]
   currentItems: DriveFile[]
@@ -159,6 +172,17 @@ type WorkspaceValue = {
   setView: (v: ViewMode) => void
   bottomTab: BottomTab
   setBottomTab: (tab: BottomTab) => void
+
+  // окно быстрого просмотра
+  /** Открыто ли модальное окно превью. Показывает `selectedFile`. */
+  previewOpen: boolean
+  /** Открыть окно: без аргумента — для уже выделенного файла. */
+  openPreview: (file?: DriveFile) => void
+  closePreview: () => void
+  /** Файлы той же папки — по ним листает окно превью (стрелками). */
+  previewSiblings: DriveFile[]
+  /** Перелистнуть превью на соседний файл: -1 — назад, +1 — вперёд. */
+  stepPreview: (delta: number) => void
 
   // операции с файлами
   uploading: boolean
@@ -340,6 +364,7 @@ export function WorkspaceProvider({
   )
 
   const [rootFiles, setRootFiles] = useState<DriveFile[]>([])
+  const [exposedOptions, setExposedOptions] = useState<ExposedOption[]>([])
   const [driveAvailable, setDriveAvailable] = useState(true)
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [path, setPath] = useState<DriveFile[]>([])
@@ -389,6 +414,8 @@ export function WorkspaceProvider({
     setSelection(list.slice(start, end + 1))
   }, [])
 
+  const [previewOpen, setPreviewOpen] = useState(false)
+
   const [density, setDensityState] = useState<Density>("full")
   const [view, setViewState] = useState<ViewMode>("list")
   const [bottomTab, setBottomTab] = useState<BottomTab>("desc")
@@ -405,6 +432,43 @@ export function WorkspaceProvider({
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
 
   const selected = projects.find((p) => p.id === selectedId) ?? null
+
+  /**
+   * Соседи по папке для перелистывания в окне превью. Считаем от id, а не от
+   * текущего пути: у панелей IN / OUT и мобильного вида свои пути, а дерево одно.
+   */
+  const previewSiblings = useMemo(
+    () => (selectedFile ? siblingFiles(rootFiles, selectedFile.id) : []),
+    [rootFiles, selectedFile],
+  )
+
+  const openPreview = useCallback(
+    (file?: DriveFile) => {
+      const target = file ?? selectedFile
+      if (!target || target.isFolder) return
+      if (file) selectFile(file)
+      setPreviewOpen(true)
+    },
+    [selectedFile, selectFile],
+  )
+
+  const closePreview = useCallback(() => setPreviewOpen(false), [])
+
+  // Выделение сбросили (сменили проект, ушли в папку) — окну нечего показывать.
+  useEffect(() => {
+    if (!selectedFile || selectedFile.isFolder) setPreviewOpen(false)
+  }, [selectedFile])
+
+  const stepPreview = useCallback(
+    (delta: number) => {
+      if (!selectedFile || previewSiblings.length < 2) return
+      const at = previewSiblings.findIndex((f) => f.id === selectedFile.id)
+      if (at === -1) return
+      const len = previewSiblings.length
+      selectFile(previewSiblings[(at + delta + len) % len])
+    },
+    [selectedFile, previewSiblings, selectFile],
+  )
 
   const notImplemented = useCallback(() => {
     toast.message(t.notImplemented)
@@ -460,11 +524,13 @@ export function WorkspaceProvider({
         if (!data.available) {
           setDriveAvailable(false)
           setRootFiles([])
+          setExposedOptions([])
           setPath([])
           toast.error(tRef.current.driveUnavailable)
           return
         }
         setDriveAvailable(true)
+        setExposedOptions(Array.isArray(data.options) ? data.options : [])
         const files: DriveFile[] = data.files ?? []
         setRootFiles(files)
         setPath((prev) => (keepPath ? resolvePath(files, prev) : []))
@@ -525,9 +591,16 @@ export function WorkspaceProvider({
     void loadProjects()
   }, [loadProjects, source.scopeKey])
 
+  /**
+   * Выделение читается из URL в обе стороны, включая «в URL никого».
+   *
+   * Пункты бокового меню («Проекты», «Расшаренные», «Архив») — обычные ссылки
+   * без `id`. Пока сброса здесь не было, после них оставался открытым прежний
+   * проект: раздел в меню подсвечивался новый, а рабочая область показывала
+   * проект из старого — в простом режиме вместо страницы списка вообще.
+   */
   useEffect(() => {
-    const id = searchParams.get("id")
-    if (id) setSelectedId(id)
+    setSelectedId(searchParams.get("id"))
   }, [searchParams])
 
   useEffect(() => {
@@ -755,6 +828,34 @@ export function WorkspaceProvider({
       })
     },
     [t, clearSelection, loadProjects],
+  )
+
+  /**
+   * Пишет правки клиента в options.json и возвращает свежий список: сервер мог
+   * зажать число в границы, заданные автором графа, и показать надо то, что
+   * реально сохранилось.
+   */
+  const saveExposedOptions = useCallback(
+    async (changes: ExposedOptionChange[]): Promise<ExposedOption[]> => {
+      const buildUrl = sourceRef.current.exposedOptionsUrl
+      if (!buildUrl || !selectedId) throw new Error("")
+      const res = await fetch(buildUrl(selectedId), {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes }),
+      })
+      const data = (await res.json().catch(() => null)) as {
+        options?: ExposedOption[]
+        message?: string
+      } | null
+      if (!res.ok || !data?.options) {
+        throw new Error(data?.message ?? "")
+      }
+      setExposedOptions(data.options)
+      return data.options
+    },
+    [selectedId],
   )
 
   const saveDescription = useCallback(() => {
@@ -1274,6 +1375,8 @@ export function WorkspaceProvider({
     refreshDrive,
     inFolder,
     outFolder,
+    exposedOptions,
+    saveExposedOptions: source.exposedOptionsUrl ? saveExposedOptions : null,
     path,
     currentItems,
     currentTarget,
@@ -1293,6 +1396,11 @@ export function WorkspaceProvider({
     setView,
     bottomTab,
     setBottomTab,
+    previewOpen,
+    openPreview,
+    closePreview,
+    previewSiblings,
+    stepPreview,
     uploading,
     createFolder,
     renameItem,

@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowUpRight, ChevronRight } from "lucide-react"
 import { useI18n } from "@/components/account/i18n"
 import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
-import { adminNavItems, isItemActive } from "./nav-config"
+import { adminAllNavItems, isItemActive } from "./nav-config"
 import { AdminMobileSidebar } from "./admin-mobile-sidebar"
 
 type Props = {
@@ -18,7 +18,9 @@ export function AdminTopbar({ email, fullName }: Props) {
   const pathname = usePathname() ?? ""
   const { t } = useI18n()
   const adminT = useAdminI18n()
-  const current = adminNavItems.find((item) => isItemActive(item, pathname))
+  const current = adminAllNavItems.find((item) =>
+    isItemActive(item, pathname),
+  )
 
   return (
     <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl lg:px-8">

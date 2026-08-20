@@ -13,7 +13,11 @@ import { getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
 import { safeBaseFileName } from "@/lib/s3-upload-policy"
 import { projectPrefix } from "@/lib/storage/keys"
-import { StorageWriteError, writeNotifyUpload } from "@/lib/storage/write-path"
+import {
+  StorageWriteError,
+  writeNotifyUpload,
+  type StorageActor,
+} from "@/lib/storage/write-path"
 
 export const createMultipartSchema = z.object({
   projectId: z.string().uuid(),
@@ -146,6 +150,7 @@ export async function completeMultipartUpload(input: {
   contentHash?: string
   originMtime?: number
   eventId?: string
+  actor?: StorageActor | null
 }) {
   assertStorageConfigured()
   const expectedPrefix = projectPrefix(input.ownerId, input.projectId)
@@ -166,6 +171,7 @@ export async function completeMultipartUpload(input: {
     }),
   )
   const file = await writeNotifyUpload({
+    userId: input.ownerId,
     projectId: input.projectId,
     s3Key: input.s3Key,
     folderPath: input.folderPath,
@@ -175,6 +181,7 @@ export async function completeMultipartUpload(input: {
     contentHash: input.contentHash,
     originMtime: input.originMtime,
     eventId: input.eventId,
+    actor: input.actor,
   })
   return file
 }

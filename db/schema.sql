@@ -16,6 +16,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT '
 ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_account_id TEXT;
 ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
+-- Имя для статистики обработки: должно совпадать со строкой, которой человек
+-- подписывается при локальной обработке (статистика группируется по contact).
+-- NULL — берём full_name. См. db/migrations/2026-08-17-upload-attribution.sql.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS contact_name TEXT;
+
 -- One Google `sub` (or any provider's account id) maps to at most one user;
 -- partial unique index lets multiple rows have NULL provider_account_id.
 CREATE UNIQUE INDEX IF NOT EXISTS users_provider_account_idx
@@ -219,6 +224,9 @@ CREATE TABLE IF NOT EXISTS project_files (
   etag          TEXT,
   content_hash  TEXT,
   origin_mtime  INTEGER,
+  -- Кто принёс файл. Перезапись переносит атрибуцию на нового заливщика; записи
+  -- машин парка (rc_) её не трогают. Отсюда конвейер берёт description.contact.
+  uploaded_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
   deleted_at    TIMESTAMPTZ,
   deleted_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -241,6 +249,9 @@ CREATE TABLE IF NOT EXISTS storage_changes (
   content_hash TEXT,
   event_time   INTEGER NOT NULL,
   event_id     TEXT UNIQUE,
+  -- Кто совершил запись. Нужен конвейеру: для папки виток запускает не заливщик
+  -- файла, а тот, кто снял `-` с имени, то есть актор move-события.
+  actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   payload      JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
@@ -376,13 +387,23 @@ ALTER TABLE users
 
 -- ===== Конвейер: сканер и очередь задач =====
 
--- Состояние сканера. Watcher'ов и обхода папок нет: любая запись в хранилище уже
+-- Состояние сканера. Основная линия — событийная: любая запись в хранилище уже
 -- журналируется в storage_changes (lib/storage/write-path.ts#journal), поэтому
 -- «что нового появилось в IN» — это выборка по seq > last_seq. Строка одна.
 --
+-- Вторая линия — страховочный обход каталога (lib/pipeline/sweep.ts), поля
+-- sweep_*. Он нужен потому, что курсор двигается независимо от того, создалась
+-- задача или нет: любой пропуск в событийной линии окончательный, и файл остаётся
+-- лежать в IN, пока его кто-нибудь не перезалил. Обход идёт по project_files,
+-- сравнивает элементы IN с уже созданными задачами и добирает разницу.
+-- Расписание — одно поле sweep_interval_min: период в минутах, 0 значит «по
+-- таймеру не ходить». Отдельного тумблера нет: рядом с периодом он был бы вторым
+-- переключателем на то же решение.
+--
 -- is_running — включено ли слежение. Живёт в базе, а не в памяти процесса:
 -- закрытая страница не должна останавливать конвейер, перезапуск процесса
--- должен его возобновлять, и все админы должны видеть одно состояние.
+-- должен его возобновлять, и все админы должны видеть одно состояние. Обход
+-- подчинён этому же флагу: «Стоп» значит, что задачи не появляются вообще.
 CREATE TABLE IF NOT EXISTS automation_scan_state (
   id           TEXT PRIMARY KEY DEFAULT 'singleton',
   last_seq     BIGINT NOT NULL DEFAULT 0,
@@ -392,8 +413,14 @@ CREATE TABLE IF NOT EXISTS automation_scan_state (
   last_created INTEGER NOT NULL DEFAULT 0,
   last_error   TEXT,
   scanned_at   TIMESTAMPTZ,
+  sweep_interval_min INTEGER NOT NULL DEFAULT 15,
+  swept_at           TIMESTAMPTZ,
+  last_swept         INTEGER NOT NULL DEFAULT 0,
+  last_sweep_error   TEXT,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT automation_scan_state_singleton_chk CHECK (id = 'singleton')
+  CONSTRAINT automation_scan_state_singleton_chk CHECK (id = 'singleton'),
+  CONSTRAINT automation_scan_state_sweep_interval_chk
+    CHECK (sweep_interval_min = 0 OR sweep_interval_min BETWEEN 1 AND 1440)
 );
 
 INSERT INTO automation_scan_state (id, last_seq)
@@ -435,6 +462,12 @@ CREATE INDEX IF NOT EXISTS tasks_project_idx
 CREATE UNIQUE INDEX IF NOT EXISTS tasks_active_source_idx
   ON tasks (project_id, source_key)
   WHERE status IN ('queued', 'claimed', 'running');
+
+-- Обход каталога спрашивает «была ли по этому элементу задача вообще» — включая
+-- done и failed, иначе он переоткрывал бы уже обработанное. Частичный индекс
+-- выше для этого вопроса не годится.
+CREATE INDEX IF NOT EXISTS tasks_source_key_idx
+  ON tasks (project_id, source_key);
 
 -- Индекс под сборщик протухших аренд на тике runner.ts. Без него это скан
 -- таблицы каждые 15 секунд.
@@ -542,6 +575,64 @@ CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_idx
   ON push_subscriptions (endpoint);
 CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx
   ON push_subscriptions (user_id);
+
+-- Архив обработок с машин и курсоры его импорта. Обоснование и правила —
+-- db/migrations/2026-08-20-processing-stats.sql, docs/PIPELINE.md §14.
+CREATE TABLE IF NOT EXISTS processing_stats (
+  item_id        TEXT PRIMARY KEY,
+  project_id     TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  schema_version INTEGER NOT NULL,
+  status         TEXT NOT NULL,
+  project_name   TEXT NOT NULL DEFAULT '',
+  main_folder    TEXT NOT NULL DEFAULT '',
+  cur_item       TEXT NOT NULL DEFAULT '',
+  in_type        TEXT,
+  out_type       TEXT,
+  registered_at  TIMESTAMPTZ,
+  started_at     TIMESTAMPTZ,
+  ended_at       TIMESTAMPTZ,
+  out_sec        INTEGER,
+  render_sec     INTEGER,
+  out_paths      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  total_cost     NUMERIC(12, 6),
+  machine        TEXT,
+  imported_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS processing_stats_ended_idx
+  ON processing_stats (ended_at);
+CREATE INDEX IF NOT EXISTS processing_stats_project_ended_idx
+  ON processing_stats (project_id, ended_at);
+CREATE INDEX IF NOT EXISTS processing_stats_machine_idx
+  ON processing_stats (machine);
+
+CREATE TABLE IF NOT EXISTS stats_import_state (
+  s3_key         TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  lines_imported INTEGER NOT NULL DEFAULT 0,
+  etag           TEXT,
+  imported_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Ежедневные срезы состояний: объём и число файлов на проект за день.
+-- Подробности и обоснование — db/migrations/2026-08-20-storage-snapshots.sql.
+-- Гранулярность одна (проект × день), срез пользователя — SUM по его проектам.
+-- Внешних ключей нет: история переживает удаление проекта и пользователя.
+CREATE TABLE IF NOT EXISTS storage_snapshots (
+  day        DATE NOT NULL,
+  project_id TEXT NOT NULL,
+  owner_id   TEXT NOT NULL,
+  files      INTEGER NOT NULL DEFAULT 0,
+  bytes      BIGINT  NOT NULL DEFAULT 0,
+  taken_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (day, project_id)
+);
+
+CREATE INDEX IF NOT EXISTS storage_snapshots_owner_day_idx
+  ON storage_snapshots (owner_id, day);
+
+CREATE INDEX IF NOT EXISTS storage_snapshots_day_idx
+  ON storage_snapshots (day);
 
 -- Idempotent data migration: admin uploads used to bake an absolute origin into
 -- media URLs via `new URL(..., request.url)`, so local runs left values like

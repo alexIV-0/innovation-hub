@@ -34,6 +34,7 @@ import {
 } from "@/components/account/i18n"
 import {
   adminNavItems,
+  adminStandaloneItems,
   isItemActive,
 } from "@/components/admin/shell/nav-config"
 
@@ -149,12 +150,17 @@ function SidebarContent({
   const tab = searchParams.get("tab") ?? "projects"
   const isTab = (name: ProjectTab) => inProjects && tab === name
   const isProfile = pathname.startsWith("/account/profile")
-  const isAdmin = pathname.startsWith("/admin")
-  const [adminOpen, setAdminOpen] = useState(isAdmin)
+  // Разделы, поднятые из «Админки» на верхний уровень, подсвечивают сами себя:
+  // свёртка при них не считается активной и не раскрывается.
+  const isStandaloneAdmin = adminStandaloneItems.some((item) =>
+    isItemActive(item, pathname),
+  )
+  const isAdminGroup = pathname.startsWith("/admin") && !isStandaloneAdmin
+  const [adminOpen, setAdminOpen] = useState(isAdminGroup)
 
   useEffect(() => {
-    if (isAdmin) setAdminOpen(true)
-  }, [isAdmin])
+    if (isAdminGroup) setAdminOpen(true)
+  }, [isAdminGroup])
 
   const signOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" })
@@ -293,11 +299,32 @@ function SidebarContent({
       <nav className="flex shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-2">
         {user.role === "ADMIN" && (
           <div className="flex flex-col gap-0.5">
+            {/* Отбивка: админская зона отделена от рабочего места */}
+            <div
+              className={cn(
+                "mb-1 h-px bg-white/10",
+                collapsed ? "mx-1" : "mx-2.5",
+              )}
+            />
+            {adminStandaloneItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <div key={item.href} onClick={onNavigate}>
+                  <NavItem
+                    href={item.href}
+                    active={isItemActive(item, pathname)}
+                    collapsed={collapsed}
+                    icon={<Icon className="h-5 w-5" />}
+                    label={t[item.labelKey]}
+                  />
+                </div>
+              )
+            })}
             {collapsed ? (
               <div onClick={onNavigate}>
                 <NavItem
                   href="/admin"
-                  active={isAdmin}
+                  active={isAdminGroup}
                   collapsed
                   icon={<Shield className="h-5 w-5" />}
                   label={t.adminPanel}
@@ -310,16 +337,18 @@ function SidebarContent({
                   onClick={() => setAdminOpen((v) => !v)}
                   className={cn(
                     "relative flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-medium transition-colors",
-                    isAdmin
+                    isAdminGroup
                       ? "bg-[rgba(45,131,206,0.16)] text-[#eef1f6]"
                       : "text-[#c3c8d2] hover:bg-white/5 hover:text-[#eef1f6]",
                   )}
                 >
-                  {isAdmin && (
+                  {isAdminGroup && (
                     <span className="absolute bottom-[9px] left-0 top-[9px] w-[3px] rounded-[3px] bg-[#2f80ed]" />
                   )}
                   <span
-                    className={cn(isAdmin ? "text-[#6aa5e8]" : "text-[#8b909c]")}
+                    className={cn(
+                      isAdminGroup ? "text-[#6aa5e8]" : "text-[#8b909c]",
+                    )}
                   >
                     <Shield className="h-5 w-5" />
                   </span>
@@ -470,15 +499,17 @@ function WorkspaceShellInner({
   const title =
     pathname === "/account"
       ? t.dashboard
-      : pathname.startsWith("/account/projects")
-        ? searchParams.get("tab") === "archive"
-          ? t.archiveTab
-          : t.projects
-        : pathname.startsWith("/account/profile")
-          ? t.profileTitle
-          : pathname.startsWith("/admin")
-            ? t.adminPanel
-            : "FF Works"
+      : pathname.startsWith("/account/statistics")
+        ? t.statsAdvanced
+        : pathname.startsWith("/account/projects")
+          ? searchParams.get("tab") === "archive"
+            ? t.archiveTab
+            : t.projects
+          : pathname.startsWith("/account/profile")
+            ? t.profileTitle
+            : pathname.startsWith("/admin")
+              ? t.adminPanel
+              : "FF Works"
 
   return (
     <div

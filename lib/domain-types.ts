@@ -5,6 +5,11 @@ export type AuthProvider = "local" | "google"
 export type UserRecord = {
   id: string
   fullName: string
+  /**
+   * Имя для статистики обработки — им подписаны задачи, которые человек залил
+   * (description.contact). NULL — берём fullName.
+   */
+  contactName: string | null
   email: string
   role: UserRole
   /** Аккаунт не заблокирован — к автоматизации отношения не имеет. */
@@ -64,6 +69,20 @@ export type ProjectFileRecord = {
   s3Key: string | null
   sizeBytes: number
   contentType: string
+  /**
+   * Версия объекта в хранилище. Есть не во всех выборках: репозитории читают
+   * строку без них, путь записи (lib/storage/write-path.ts) — вместе с ними,
+   * потому что клиенту после заливки нужно чем-то сравнивать локальную копию с
+   * облачной.
+   */
+  etag?: string | null
+  contentHash?: string | null
+  /**
+   * Кто принёс файл — имя из users.contact_name / full_name. Как и etag, есть не
+   * во всех выборках: заполняется там, где список строится для показа человеку
+   * (listAllProjectFiles), путь записи этим полем не пользуется.
+   */
+  uploadedByName?: string | null
   createdAt: Date
 }
 

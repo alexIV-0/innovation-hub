@@ -95,11 +95,29 @@ function normalizeExts(raw: unknown): string[] {
     .filter(Boolean)
 }
 
+/**
+ * Типы файлов из узла mainSearch.
+ *
+ * Из узла всегда выходит массив, даже когда элемент в нём один:
+ * `searchType: ["video"]`. Раньше здесь стояла проверка `typeof === "string"`,
+ * и по ней отсекался любой граф из редактора — `no-search-type`, файл залит,
+ * событие в журнале есть, а задача не создаётся никогда. Одиночную строку
+ * принимаем на всякий случай, но нормальная форма — массив.
+ */
+function normalizeSearchTypes(raw: unknown): string[] {
+  const values = Array.isArray(raw) ? raw : [raw]
+  return values
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean)
+}
+
 export type SearchExtsOutcome =
   | {
       ok: true
       searchExts: string[]
-      searchType: string | null
+      /** Список типов из узла; null — типа в графе нет. */
+      searchType: string[] | null
       /** Словарь, которым разворачивался тип: он же уезжает в description. */
       fileTypes: FileTypeDictionary
     }
@@ -174,22 +192,24 @@ export function readSearchExts(
 
   const props = nodeProps(mainSearchNode)
 
+  // В description уезжает список — в той же форме, в какой значение выходит из
+  // узла. Пустой список это null: «типа нет», а не «выбран пустой».
+  const searchTypes = normalizeSearchTypes(props.searchType)
+  const searchType = searchTypes.length > 0 ? searchTypes : null
+
   const explicit = normalizeExts(props.searchExts)
   if (explicit.length > 0) {
-    const searchType =
-      typeof props.searchType === "string" ? props.searchType : null
     return { ok: true, searchExts: explicit, searchType, fileTypes }
   }
 
-  const searchType =
-    typeof props.searchType === "string" && props.searchType.trim()
-      ? props.searchType.trim()
-      : null
-  if (!searchType) {
+  if (searchTypes.length === 0) {
     return { ok: false, reason: "no-search-type" }
   }
 
-  const searchExts = normalizeExts(fileTypes[searchType])
+  // Несколько типов — объединение расширений: граф ищет любой из выбранных.
+  const searchExts = [
+    ...new Set(searchTypes.flatMap((type) => normalizeExts(fileTypes[type]))),
+  ]
   if (searchExts.length === 0) {
     // Тип есть, а расширений к нему нет ни в снимке, ни в общем словаре:
     // либо тип переименовали, либо из него убрали все расширения.
@@ -209,11 +229,16 @@ export function readSearchExts(
  *
  * Узел description необязателен: без него обработка возможна, просто в контексте
  * не будет ни контакта, ни комментария автора.
+ *
+ * Значение `contact` из графа кладётся сюда как `projectContact`, а не как
+ * `contact`: онлайн его перекрывает заливщик (см. buildTaskPayload). Терять его
+ * при этом нельзя — граф мог заполнить владелец осознанно, и это единственное,
+ * что останется, если атрибуции по элементу нет.
  */
 function buildDescription(nodes: FlowNode[]): Record<string, unknown> {
   const descriptionNode = nodes.find((n) => n.id.toLowerCase() === "description")
 
-  const contact = descriptionNode?.data?.properties?.find(
+  const projectContact = descriptionNode?.data?.properties?.find(
     (p) => p.id.toLowerCase() === "contact",
   )?.controlProps?.value
 
@@ -230,10 +255,25 @@ function buildDescription(nodes: FlowNode[]): Record<string, unknown> {
   ]
 
   return {
-    contact,
+    projectContact,
     automationType,
     discription: descriptionNode?.data?.comment,
   }
+}
+
+/** Кто отвечает за виток — имя уедет в contact, email остаётся идентичностью. */
+export type TaskContact = {
+  name: string
+  email: string
+}
+
+/** Откуда взялось значение contact — иначе имя владельца не отличить от находки. */
+export type ContactSource = "uploader" | "graph" | "owner" | "none"
+
+function normalizeContactName(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 export function buildTaskPayload(input: {
@@ -247,6 +287,15 @@ export function buildTaskPayload(input: {
   fileTypes?: FileTypeDictionary
   /** ISO-время сборки: на десктопе это findTime, метка прогона. */
   collectedAt: string
+  /**
+   * Кто принёс элемент. Для файла — заливщик, для папки — тот, кто снял `-` и
+   * запустил виток (lib/pipeline/scan.ts). null — атрибуции по элементу нет.
+   */
+  contact?: TaskContact | null
+  /** Владелец проекта — последнее звено отката. */
+  ownerContact?: TaskContact | null
+  /** Все заливщики папки, если их было больше одного. */
+  uploaders?: { name: string; email: string; files: number }[]
   onWarn?: (message: string) => void
 }): BuildTaskOutcome {
   const root = input.optionsJson
@@ -270,10 +319,44 @@ export function buildTaskPayload(input: {
   const isFolder = isFolderSource(source)
 
   const description = buildDescription(nodes)
+
+  // Приоритет: заливщик → вписанное в графе → владелец. Заливщик перекрывает
+  // граф безусловно: локально там указывают не конкретного пользователя сайта, а
+  // заглушку, и оставить её означало бы подписать чужой работой автора графа.
+  const graphContact = normalizeContactName(description.projectContact)
+  const resolved: { name: string; email: string | null; source: ContactSource } =
+    input.contact
+      ? { name: input.contact.name, email: input.contact.email, source: "uploader" }
+      : graphContact
+        ? { name: graphContact, email: null, source: "graph" }
+        : input.ownerContact
+          ? {
+              name: input.ownerContact.name,
+              email: input.ownerContact.email,
+              source: "owner",
+            }
+          : { name: "", email: null, source: "none" }
+
+  // contact остаётся простой строкой: его в этом виде читает десктоп и пишет в
+  // processing_stats. Машинная идентичность живёт отдельным полем.
+  description.contact = resolved.source === "none" ? undefined : resolved.name
+  description.contactEmail = resolved.email ?? undefined
+  description.contactSource = resolved.source
+  if (input.uploaders && input.uploaders.length > 0) {
+    description.uploaders = input.uploaders
+  }
+
   description.projectId = input.projectId
   description.projectName = input.projectName
   description.ownerEmail = input.ownerEmail
+  // Два поля на одно значение, и это не дубль по недосмотру. `findTime` на
+  // десктопе — не таймстемп, а КОМПОНЕНТ ИМЕНИ: маска `$findTime` подставляет
+  // `DD.MM-HH.mm`, и сырая ISO-строка приезжала в имя результата вместе с
+  // двоеточиями, на которых потом падала заливка в OUT. Имя оставляем, потому что
+  // по нему уже работают машины, а рядом кладём `collectedAt` — то же время, но с
+  // именем, которое читается однозначно (docs/STORAGE_CLIENT_REQUESTS.md §14.2).
   description.findTime = input.collectedAt
+  description.collectedAt = input.collectedAt
   description.infoText = `${input.ownerEmail}/${input.projectName}`
   description.curItem = source.name
   description.isFolder = isFolder

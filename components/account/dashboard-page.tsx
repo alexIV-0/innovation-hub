@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   ArrowRight,
+  BarChart3,
   Folder,
   Loader2,
   Film,
@@ -186,6 +187,13 @@ export function DashboardPageClient({ fullName, createdAt }: Props) {
               <div>
                 <h3 className="text-[19px] font-bold">{t.statsTitle}</h3>
                 <p className="mt-1 text-[13px] text-[#7c8290]">{t.statsSub}</p>
+                <Link
+                  href="/account/statistics"
+                  className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-[#6aa5e8] hover:text-[#8fb8ea]"
+                >
+                  {t.statsAdvOpen}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
               </div>
               <div className="flex gap-0.5 rounded-[9px] border border-white/10 bg-[#10151f] p-[3px]">
                 {(
@@ -258,7 +266,24 @@ export function DashboardPageClient({ fullName, createdAt }: Props) {
           </div>
 
           {/* Shortcuts */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Link
+              href="/account/statistics"
+              className="flex items-center gap-4 rounded-[14px] border border-white/10 bg-[#0d121c] p-5 text-left hover:border-white/[0.18]"
+            >
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] bg-white/5">
+                <BarChart3 className="h-[22px] w-[22px] text-[#8fb8ea]" />
+              </div>
+              <div className="flex-1">
+                <div className="text-[15px] font-semibold text-[#eef1f6]">
+                  {t.statsAdvanced}
+                </div>
+                <div className="mt-0.5 text-[13px] text-[#7c8290]">
+                  {t.shortcutStatsSub}
+                </div>
+              </div>
+              <ArrowRight className="h-5 w-5 text-[#626875]" />
+            </Link>
             <Link
               href="/account/projects"
               className="flex items-center gap-4 rounded-[14px] border border-white/10 bg-[#0d121c] p-5 text-left hover:border-white/[0.18]"

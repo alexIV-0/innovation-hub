@@ -1,18 +1,23 @@
 import {
   GetObjectCommand,
   HeadObjectCommand,
-  ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3"
 import type { ProjectFileRecord } from "@/lib/domain-types"
 import { listAllProjectFiles } from "@/lib/repositories/project-files"
-import {
-  buildProjectObjectKey,
-  getS3Bucket,
-  projectObjectPrefix,
-  userMetaObjectKey,
-} from "@/lib/s3-config"
+import { buildProjectObjectKey, getS3Bucket, userMetaObjectKey } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
+import {
+  DESCRIPTION_FILE_NAME,
+  FOLDER_STATE_FILE_NAME,
+  isServiceCatalogRow,
+  OPTIONS_FILE_NAME,
+  OPTIONS_FOLDER_NAME,
+} from "@/lib/storage/keys"
+import { applyExposedOptionChanges, type ExposedOptionChange } from "@/lib/options/apply"
+import { ProjectStorageError } from "@/lib/options/errors"
+import { extractExposedOptions } from "@/lib/options/extract"
+import type { ExposedOption } from "@/lib/options/types"
 
 /**
  * R2/S3 layout for a project (replaces the Google Drive tree):
@@ -22,30 +27,50 @@ import { getS3Client, isS3Configured } from "@/lib/s3-client"
  *   projects/{userId}/{projectId}/options/options.json
  *   projects/{userId}/{projectId}/{folderPath}/{uuid}-{name}   — user files
  *
- * Folder structure for the cabinet lives in Postgres `project_files`.
- * The `options` service folder is never listed in the UI.
+ * Структура папок для кабинета живёт в Postgres `project_files` — вместе со
+ * служебной папкой `options`: она такая же папка каталога, как любая другая, и
+ * показывается в дереве наравне с ними. Строки сайдкарам создаёт
+ * `writeSidecarSync` (lib/storage/write-path.ts), потому что сами объекты
+ * пишутся по фиксированному ключу, минуя presign/notify.
  */
 
-export const OPTIONS_FOLDER_NAME = "options"
-export const FOLDER_STATE_FILE_NAME = "folderState.json"
-export const OPTIONS_FILE_NAME = "options.json"
-export const PROJECT_META_FILE_NAME = "project-meta.json"
 /**
- * Развёрнутое описание проекта в markdown: картинки, схемы, таблицы.
+ * Имена служебных файлов и папки лежат в lib/storage/keys.ts: их читает путь
+ * записи, а импорт оттуда в эту сторону замкнул бы цикл. Здесь только
+ * реэкспорт — чтобы существующие импорты из `@/lib/project-storage` работали.
  *
- * Отдельный файл, а не поле в options.json: options.json принадлежит редактору
- * нод, его формат задаёт десктопное приложение. Короткая подпись остаётся в
- * projects.description — она нужна на карточке в списке, а ходить за ней в
- * объектное хранилище на каждый рендер списка нельзя.
+ * `description.md` — развёрнутое описание проекта в markdown: картинки, схемы,
+ * таблицы. Отдельный файл, а не поле в options.json: options.json принадлежит
+ * редактору нод, его формат задаёт десктопное приложение. Короткая подпись
+ * остаётся в projects.description — она нужна на карточке в списке, а ходить за
+ * ней в объектное хранилище на каждый рендер списка нельзя.
  */
-export const DESCRIPTION_FILE_NAME = "description.md"
-
-export class ProjectStorageError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = "ProjectStorageError"
-  }
+export {
+  DESCRIPTION_FILE_NAME,
+  FOLDER_STATE_FILE_NAME,
+  OPTIONS_FILE_NAME,
+  OPTIONS_FOLDER_NAME,
 }
+
+export const PROJECT_META_FILE_NAME = "project-meta.json"
+
+/**
+ * Разбор `options.json` живёт в `lib/options/`: его читает и вкладка настроек в
+ * браузере, и запись на сервере, а тянуть ради типов весь этот модуль (а с ним
+ * и клиент S3) в клиентский компонент нельзя. Здесь реэкспорт — чтобы прежние
+ * импорты из `@/lib/project-storage` продолжали работать.
+ */
+export {
+  applyExposedOptionChanges,
+  extractExposedOptions,
+  ProjectStorageError,
+}
+export type { ExposedOptionChange } from "@/lib/options/apply"
+export type {
+  ExposedOption,
+  ExposedOptionControl,
+  ExposedOptionValue,
+} from "@/lib/options/types"
 
 export type ProjectStorageFile = {
   id: string
@@ -57,6 +82,8 @@ export type ProjectStorageFile = {
   createdAt: string | null
   s3Key: string | null
   folderPath: string
+  /** Кто принёс файл; null — атрибуции нет (загрузка до её появления). */
+  uploadedByName?: string | null
   children?: ProjectStorageFile[]
 }
 
@@ -70,34 +97,17 @@ export type ProjectFolderState = {
   updatedBy: string | null
 }
 
-export type ExposedOptionValue = string | number | boolean
-
-export type ExposedOption = {
-  path: string[]
-  key: string
-  label: string
-  description: string | null
-  type: "boolean" | "number" | "string"
-  value: ExposedOptionValue
-  /** Тип контрола из графа (`slider`, `checkbox`, `ddm`, …) — им UI выбирает, чем рисовать. */
-  controlType: string | null
-  /**
-   * Границы для числовых контролов, как их задал автор графа.
-   * Лежат в `controlProps` рядом со значением, поэтому достаются бесплатно —
-   * отдельного канала для ограничений не нужно.
-   */
-  minValue: number | null
-  maxValue: number | null
-  step: number | null
-  /** Варианты для `ddm` / `autocomplete`. */
-  options: string[] | null
-}
-
 export type ProjectStorageState = {
   files: ProjectStorageFile[]
   folderState: ProjectFolderState | null
   options: ExposedOption[]
   optionsFileExists: boolean
+  /**
+   * Версия options.json в хранилище. Приоритет у правки клиента — условной
+   * записи с сайта нет, — но программе нужен признак «в облаке версия новее
+   * моей», иначе Ctrl+S затрёт правку молча (docs/PROJECT_OPTIONS_PANEL.md §4).
+   */
+  optionsEtag: string | null
   available: boolean
 }
 
@@ -198,104 +208,23 @@ function parseFolderState(data: unknown): ProjectFolderState | null {
   }
 }
 
-function optionalString(raw: unknown): string | null {
-  return typeof raw === "string" && raw.trim() ? raw : null
-}
-
-function optionalNumber(raw: unknown): number | null {
-  return typeof raw === "number" && Number.isFinite(raw) ? raw : null
-}
-
-function optionalStringList(raw: unknown): string[] | null {
-  if (!Array.isArray(raw)) return null
-  const items = raw.filter((item): item is string => typeof item === "string")
-  return items.length > 0 ? items : null
+export type ObjectTextWithMeta = {
+  body: string
+  etag: string | null
+  sizeBytes: number
+  lastModified: string | null
 }
 
 /**
- * Ищет в графе свойства, помеченные `exposedToSite`.
+ * Читает текст объекта вместе с его версией.
  *
- * Форма свойства задана в программе (`PropertyBase` в
- * fs.manager.tauri/src/NODE_WIN/definitions/types.ts): флаг стоит на самом
- * свойстве, а значение и его ограничения — уровнем ниже, в `controlProps`.
- *
- *     { id, controlType: "slider", exposedToSite: true,
- *       controlProps: { label, value: 30, minValue: 5, maxValue: 120, step: 1 } }
- *
- * Раньше здесь читалось `obj.value` — на том же объекте, где флаг. Такого поля
- * у свойства нет, поэтому список выходил всегда пустым, а вкладка настроек
- * выглядела «просто ещё не заполненной». Плоский `value` всё же оставлен как
- * запасной путь: им пользуются свойства попроще и старые файлы.
+ * Версия нужна на чтении сайдкара: клиент сравнивает облачную копию с локальной,
+ * а `etag` возвращает обратно в `ifMatch` при записи — иначе перезапись затрёт
+ * правку, случившуюся между чтением и записью, и узнать об этом будет нечем.
  */
-function collectExposedOptions(
-  node: unknown,
-  path: string[],
-  out: ExposedOption[],
-): void {
-  if (!node || typeof node !== "object") return
-
-  if (Array.isArray(node)) {
-    node.forEach((child, index) =>
-      collectExposedOptions(child, [...path, String(index)], out),
-    )
-    return
-  }
-
-  const obj = node as Record<string, unknown>
-  if (obj.exposedToSite === true) {
-    const controlProps =
-      obj.controlProps && typeof obj.controlProps === "object" && !Array.isArray(obj.controlProps)
-        ? (obj.controlProps as Record<string, unknown>)
-        : null
-
-    // Путь ведёт туда, где реально лежит value: запись потом идёт по нему же,
-    // иначе рядом с controlProps появилось бы второе поле value, которого
-    // программа не читает.
-    const valueHost = controlProps && "value" in controlProps ? controlProps : obj
-    const valuePath = valueHost === obj ? path : [...path, "controlProps"]
-
-    const value = valueHost.value
-    const type = typeof value
-    if (type === "boolean" || type === "number" || type === "string") {
-      const key = typeof obj.id === "string" && obj.id.trim()
-        ? obj.id
-        : (path[path.length - 1] ?? "option")
-      out.push({
-        path: valuePath,
-        key,
-        label:
-          optionalString(valueHost.label) ??
-          optionalString(obj.label) ??
-          optionalString(obj.title) ??
-          key,
-        description:
-          optionalString(valueHost.tooltip) ??
-          optionalString(obj.description) ??
-          optionalString(valueHost.description),
-        type,
-        value: value as ExposedOptionValue,
-        controlType: optionalString(obj.controlType),
-        minValue: optionalNumber(valueHost.minValue),
-        maxValue: optionalNumber(valueHost.maxValue),
-        step: optionalNumber(valueHost.step),
-        options: optionalStringList(valueHost.options),
-      })
-    }
-    return
-  }
-
-  for (const [key, child] of Object.entries(obj)) {
-    collectExposedOptions(child, [...path, key], out)
-  }
-}
-
-export function extractExposedOptions(root: unknown): ExposedOption[] {
-  const out: ExposedOption[] = []
-  collectExposedOptions(root, [], out)
-  return out
-}
-
-export async function getObjectText(key: string): Promise<string | null> {
+export async function getObjectTextWithMeta(
+  key: string,
+): Promise<ObjectTextWithMeta | null> {
   if (!isS3Configured()) return null
   try {
     const response = await getS3Client().send(
@@ -303,7 +232,12 @@ export async function getObjectText(key: string): Promise<string | null> {
     )
     const body = response.Body
     if (!body) return null
-    return await body.transformToString()
+    return {
+      body: await body.transformToString(),
+      etag: response.ETag?.replace(/"/g, "") ?? null,
+      sizeBytes: Number(response.ContentLength ?? 0),
+      lastModified: response.LastModified?.toISOString() ?? null,
+    }
   } catch (error) {
     const status =
       error &&
@@ -324,15 +258,21 @@ export async function getObjectText(key: string): Promise<string | null> {
   }
 }
 
+export async function getObjectText(key: string): Promise<string | null> {
+  const object = await getObjectTextWithMeta(key)
+  return object?.body ?? null
+}
+
+/** Пишет объект и отдаёт его новую версию — её сайт возвращает клиенту. */
 async function putObjectText(
   key: string,
   content: string,
   contentType = "application/json",
-): Promise<void> {
+): Promise<string | null> {
   if (!isS3Configured()) {
     throw new ProjectStorageError("Object storage is not configured.")
   }
-  await getS3Client().send(
+  const response = await getS3Client().send(
     new PutObjectCommand({
       Bucket: getS3Bucket(),
       Key: key,
@@ -340,6 +280,7 @@ async function putObjectText(
       ContentType: contentType,
     }),
   )
+  return response.ETag?.replace(/"/g, "") ?? null
 }
 
 export async function objectExists(key: string): Promise<boolean> {
@@ -411,9 +352,29 @@ export async function syncUserMeta(input: {
   }
 }
 
+/**
+ * Манифест проекта скрыт всегда: его пишет сайт, редактировать его человеку
+ * нечем, и в списке файлов он выглядел бы мусором.
+ *
+ * Служебная папка `options` скрывается не здесь, а по представлению —
+ * `isServiceCatalogRow` плюс флаг `includeServiceFiles`.
+ */
 function isHiddenName(name: string): boolean {
-  const n = name.toLowerCase()
-  return n === OPTIONS_FOLDER_NAME || n === PROJECT_META_FILE_NAME
+  return name.toLowerCase() === PROJECT_META_FILE_NAME
+}
+
+/**
+ * Отсекает служебную папку и её содержимое из плоского списка строк каталога.
+ *
+ * Нужна везде, где строки уходят пользователю списком, а не деревом: с
+ * появлением строк у сайдкаров (`writeSidecarSync`) `options/options.json` и
+ * `options/__stat/*.jsonl` иначе попадают в материалы проекта наравне с его
+ * файлами. Админский «Конвейер» этой функцией не пользуется — он показывает всё.
+ */
+export function withoutServiceRows<
+  T extends { folderPath: string; name: string; isFolder: boolean },
+>(rows: T[]): T[] {
+  return rows.filter((row) => !isServiceCatalogRow(row))
 }
 
 function toStorageFile(row: ProjectFileRecord): ProjectStorageFile {
@@ -429,11 +390,19 @@ function toStorageFile(row: ProjectFileRecord): ProjectStorageFile {
     createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
     s3Key: row.s3Key,
     folderPath: row.folderPath,
+    uploadedByName: row.uploadedByName ?? null,
   }
 }
 
-function buildTree(rows: ProjectFileRecord[]): ProjectStorageFile[] {
-  const visible = rows.filter((r) => !isHiddenName(r.name))
+function buildTree(
+  rows: ProjectFileRecord[],
+  view: { includeServiceFiles: boolean },
+): ProjectStorageFile[] {
+  const visible = rows.filter(
+    (row) =>
+      !isHiddenName(row.name) &&
+      (view.includeServiceFiles || !isServiceCatalogRow(row)),
+  )
   const byParent = new Map<string, ProjectFileRecord[]>()
 
   for (const row of visible) {
@@ -464,87 +433,17 @@ function buildTree(rows: ProjectFileRecord[]): ProjectStorageFile[] {
 }
 
 /**
- * Содержимое служебной папки options как узел дерева.
- *
- * Строится листингом R2, а не выборкой из project_files: сайдкаров там нет и не
- * будет. Их пишут напрямую в объектное хранилище, а reindex пропускает этот
- * префикс намеренно (см. lib/storage/write-path.ts), чтобы служебные файлы не
- * появлялись в кабинете пользователя как обычные.
- *
- * Листинг, а не HEAD по известным именам: кроме folderState.json, options.json и
- * description.md десктопное приложение кладёт туда и другие сайдкары
- * (postSources.json, tgSearch.json), и админ должен видеть всё, что есть.
- */
-export async function listProjectServiceFiles(
-  userId: string,
-  projectId: string,
-): Promise<ProjectStorageFile | null> {
-  if (!isS3Configured()) return null
-
-  const prefix = `${projectObjectPrefix(userId, projectId)}${OPTIONS_FOLDER_NAME}/`
-  const children: ProjectStorageFile[] = []
-
-  let token: string | undefined
-  do {
-    const page = await getS3Client().send(
-      new ListObjectsV2Command({
-        Bucket: getS3Bucket(),
-        Prefix: prefix,
-        ContinuationToken: token,
-      }),
-    )
-    for (const obj of page.Contents ?? []) {
-      if (!obj.Key || obj.Key.endsWith("/")) continue
-      const name = obj.Key.slice(obj.Key.lastIndexOf("/") + 1)
-      if (!name) continue
-      const modified = obj.LastModified?.toISOString() ?? null
-      children.push({
-        // Идентичности в БД у этих файлов нет, поэтому id — сам ключ.
-        // Он стабилен и уникален, а больше от него в дереве ничего не требуется.
-        id: obj.Key,
-        name,
-        mimeType: name.endsWith(".json")
-          ? "application/json"
-          : name.endsWith(".md")
-            ? "text/markdown"
-            : "application/octet-stream",
-        isFolder: false,
-        sizeBytes: Number(obj.Size ?? 0),
-        modifiedAt: modified,
-        createdAt: modified,
-        s3Key: obj.Key,
-        folderPath: OPTIONS_FOLDER_NAME,
-      })
-    }
-    token = page.IsTruncated ? page.NextContinuationToken : undefined
-  } while (token)
-
-  if (children.length === 0) return null
-
-  children.sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-  )
-
-  return {
-    id: `${prefix}`,
-    name: OPTIONS_FOLDER_NAME,
-    mimeType: "application/vnd.folder",
-    isFolder: true,
-    sizeBytes: null,
-    modifiedAt: null,
-    createdAt: null,
-    s3Key: null,
-    folderPath: "",
-    children,
-  }
-}
-
-/**
  * Cabinet view: nested file tree from Postgres + automation JSON from R2.
  *
- * `includeServiceFiles` включает в дерево служебную папку options — так админский
- * «Конвейер» видит проект целиком, тогда как в кабинете пользователя эта папка
- * скрыта (buildTree отсекает её через isHiddenName).
+ * `includeServiceFiles` включает в дерево служебную папку `options`. По
+ * умолчанию она скрыта: в кабинете пользователь работает с материалами проекта,
+ * а настройки автоматизации у него на отдельной вкладке. Включает флаг только
+ * админский «Конвейер» — он работает именно со служебными файлами.
+ *
+ * Сама папка при этом приезжает из того же `project_files`, что и всё остальное:
+ * отдельного листинга бакета для неё больше нет. Раньше он был нужен, потому что
+ * сайдкарам не создавали строк, и из-за него в «Конвейере» показывались
+ * физические имена (`{uuid}-folderState.json`) и мусор от прошлых заливок.
  */
 export async function loadProjectStorageState(
   userId: string,
@@ -553,7 +452,9 @@ export async function loadProjectStorageState(
 ): Promise<ProjectStorageState> {
   const available = isS3Configured()
   const rows = await listAllProjectFiles(projectId)
-  const files = buildTree(rows)
+  const files = buildTree(rows, {
+    includeServiceFiles: view?.includeServiceFiles === true,
+  })
 
   if (!available) {
     return {
@@ -561,27 +462,22 @@ export async function loadProjectStorageState(
       folderState: null,
       options: [],
       optionsFileExists: false,
+      optionsEtag: null,
       available: false,
     }
   }
 
-  const [stateRaw, optionsRaw, serviceFolder] = await Promise.all([
+  const [stateRaw, optionsObject] = await Promise.all([
     getObjectText(projectFolderStateKey(userId, projectId)),
-    getObjectText(projectOptionsKey(userId, projectId)),
-    view?.includeServiceFiles
-      ? listProjectServiceFiles(userId, projectId)
-      : Promise.resolve<ProjectStorageFile | null>(null),
+    getObjectTextWithMeta(projectOptionsKey(userId, projectId)),
   ])
-
-  // Служебная папка идёт первой: она про настройку проекта, а не про его данные.
-  if (serviceFolder) files.unshift(serviceFolder)
 
   const folderState = stateRaw
     ? parseFolderState(parseJson(stateRaw))
     : null
-  const optionsFileExists = optionsRaw != null
-  const options = optionsFileExists
-    ? extractExposedOptions(parseJson(optionsRaw ?? "null"))
+  const optionsFileExists = optionsObject != null
+  const options = optionsObject
+    ? extractExposedOptions(parseJson(optionsObject.body))
     : []
 
   return {
@@ -589,6 +485,7 @@ export async function loadProjectStorageState(
     folderState,
     options,
     optionsFileExists,
+    optionsEtag: optionsObject?.etag ?? null,
     available: true,
   }
 }
@@ -637,106 +534,24 @@ export async function setProjectAutomationEnabled(input: {
   return state
 }
 
-/** Спускается по пути внутрь разобранного JSON. `null`, если путь никуда не ведёт. */
-function resolvePath(root: unknown, path: string[]): unknown {
-  let node: unknown = root
-  for (const segment of path) {
-    if (!node || typeof node !== "object") return null
-    node = Array.isArray(node)
-      ? node[Number.parseInt(segment, 10)]
-      : (node as Record<string, unknown>)[segment]
-  }
-  return node && typeof node === "object" && !Array.isArray(node) ? node : null
-}
-
 /**
- * Зажимает число в границы `minValue`/`maxValue` и по возможности выравнивает по
- * `step`. Отсутствующая граница ничего не ограничивает.
+ * Правка клиента поверх свежей версии графа.
  *
- * Зажимаем, а не отклоняем: значение вне диапазона — это почти всегда устаревшая
- * страница, а не злой умысел, и отказ здесь выглядел бы поломкой ползунка.
- */
-function clampToBounds(value: number, host: Record<string, unknown>): number {
-  const min = typeof host.minValue === "number" ? host.minValue : null
-  const max = typeof host.maxValue === "number" ? host.maxValue : null
-  const step = typeof host.step === "number" && host.step > 0 ? host.step : null
-
-  let next = value
-  if (min != null && next < min) next = min
-  if (max != null && next > max) next = max
-  if (step != null && min != null) {
-    next = min + Math.round((next - min) / step) * step
-    // Выравнивание по шагу может вытолкнуть за верхнюю границу — возвращаем.
-    if (max != null && next > max) next = max
-  }
-  // Шаг вроде 0.1 даёт хвост в двоичной дроби; округляем до разумной точности.
-  return Number.isInteger(next) ? next : Number(next.toFixed(6))
-}
-
-/**
- * Применяет правки к разобранному графу — на месте, без обращений к хранилищу.
+ * Читаем файл прямо здесь, а не берём снимок, с которым открылась страница:
+ * клиент присылает только путь и значение, поэтому структурные изменения
+ * автора (новые ноды, переименованные свойства) правка не затирает — она
+ * ложится на то, что лежит в хранилище сейчас.
  *
- * Отдельно от `updateProjectExposedOptions`, потому что вся содержательная часть
- * (разрешение, тип, границы) здесь, а без R2 её иначе не проверить.
+ * Обратная сторона гонки — Ctrl+S в программе поверх этой правки — здесь не
+ * лечится намеренно: приоритет у клиента, а программа сравнивает `etag` своей
+ * копии с облачной и решает сама (docs/PROJECT_OPTIONS_PANEL.md §4). Поэтому
+ * новую версию возвращаем наружу.
  */
-export function applyExposedOptionChanges(
-  root: unknown,
-  changes: { path: string[]; value: ExposedOptionValue }[],
-): void {
-  for (const change of changes) {
-    let node: unknown = root
-    for (const segment of change.path) {
-      if (!node || typeof node !== "object") {
-        node = undefined
-        break
-      }
-      node = Array.isArray(node)
-        ? node[Number.parseInt(segment, 10)]
-        : (node as Record<string, unknown>)[segment]
-    }
-
-    if (!node || typeof node !== "object" || Array.isArray(node)) {
-      throw new ProjectStorageError(
-        `Parameter "${change.path.join(".")}" was not found in options.json.`,
-      )
-    }
-    const target = node as Record<string, unknown>
-
-    // Путь из extractExposedOptions ведёт туда, где лежит value — обычно это
-    // controlProps. Флаг же стоит на самом свойстве, то есть на родителе,
-    // поэтому разрешение проверяем там.
-    const isControlProps =
-      change.path[change.path.length - 1] === "controlProps"
-    const owner = isControlProps
-      ? (resolvePath(root, change.path.slice(0, -1)) as Record<string, unknown> | null)
-      : target
-
-    if (!owner || owner.exposedToSite !== true) {
-      throw new ProjectStorageError(
-        `Parameter "${change.path.join(".")}" is not editable from the site.`,
-      )
-    }
-    if (typeof target.value !== typeof change.value) {
-      throw new ProjectStorageError(
-        `Parameter "${change.path.join(".")}" has a different value type.`,
-      )
-    }
-
-    // Границы задал автор графа и они лежат здесь же, рядом со значением.
-    // Проверяем их и на сервере: контрол в браузере зажимает ввод, но границы
-    // могли поменяться в программе уже после того, как страница загрузилась.
-    target.value =
-      typeof change.value === "number"
-        ? clampToBounds(change.value, target)
-        : change.value
-  }
-}
-
 export async function updateProjectExposedOptions(input: {
   userId: string
   projectId: string
-  changes: { path: string[]; value: ExposedOptionValue }[]
-}): Promise<ExposedOption[]> {
+  changes: ExposedOptionChange[]
+}): Promise<{ options: ExposedOption[]; etag: string | null }> {
   const key = projectOptionsKey(input.userId, input.projectId)
   const raw = await getObjectText(key)
   if (raw == null) {
@@ -754,10 +569,6 @@ export async function updateProjectExposedOptions(input: {
 
   applyExposedOptionChanges(root, input.changes)
 
-  // ⬜ Запись безусловная: между чтением и записью программа могла сохранить
-  // граф целиком по Ctrl+S, и тогда эта правка затрёт её изменения (или её
-  // сохранение — эту правку). Нужна условная запись по ETag — см.
-  // docs/PROJECT_OPTIONS_PANEL.md §4.
-  await putObjectText(key, JSON.stringify(root, null, 2))
-  return extractExposedOptions(root)
+  const etag = await putObjectText(key, JSON.stringify(root, null, 2))
+  return { options: extractExposedOptions(root), etag }
 }

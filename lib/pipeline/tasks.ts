@@ -67,7 +67,27 @@ type TaskRow = Omit<
   stepMeta: Record<string, { pluginId?: string; nodeType?: string }> | null
 }
 
-export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
+/** Живые задачи: те, по которым работа ещё идёт или вот-вот начнётся. */
+export const LIVE_TASK_STATUSES: TaskStatus[] = ["queued", "claimed", "running"]
+/** Завершённые: дальше с ними ничего не произойдёт, это уже история. */
+export const FINISHED_TASK_STATUSES: TaskStatus[] = ["done", "failed"]
+
+/**
+ * Список задач с фильтром по состояниям.
+ *
+ * Фильтр обязателен по смыслу окна: живое и завершённое показываются отдельными
+ * зонами, и смешивать их в одной выборке незачем — за неделю работы завершённых
+ * накапливается столько, что живая задача тонет в них даже при правильной
+ * сортировке.
+ */
+export async function listPipelineTasks(
+  options: { statuses?: TaskStatus[]; limit?: number } = {},
+): Promise<PipelineTask[]> {
+  const statuses = options.statuses ?? [
+    ...LIVE_TASK_STATUSES,
+    ...FINISHED_TASK_STATUSES,
+  ]
+  const limit = options.limit ?? 200
   const result = await query<TaskRow>(
     `SELECT t.id,
             t.status,
@@ -114,6 +134,7 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
        JOIN projects p ON p.id = t.project_id
        JOIN users u ON u.id = p.user_id
        LEFT JOIN remote_computers c ON c.id = t.claimed_by
+      WHERE t.status = ANY($1)
       ORDER BY
         -- Живые задачи выше завершённых: в работе интересует то, что происходит.
         CASE t.status
@@ -124,8 +145,8 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
           ELSE 4
         END,
         t.created_at DESC
-      LIMIT $1`,
-    [limit],
+      LIMIT $2`,
+    [statuses, limit],
   )
 
   // Прогресс — одним запросом на всю выборку, а не по задаче: строк там столько
@@ -199,6 +220,79 @@ export async function listPipelineTasks(limit = 200): Promise<PipelineTask[]> {
       createdAt: row.createdAt.toISOString(),
     }
   })
+}
+
+/** Сколько завершённых задач показываем. Зона «Завершено» — справка, а не
+ *  рабочий список: всю историю за месяцы туда тянуть незачем. */
+const FINISHED_ZONE_LIMIT = 50
+
+export type TaskZones = {
+  /** `queued` + `claimed` + `running` — то, ради чего окно открывают. */
+  live: PipelineTask[]
+  /** `done` + `failed`, последние FINISHED_ZONE_LIMIT по дате создания. */
+  finished: PipelineTask[]
+}
+
+/**
+ * Обе зоны окна очереди одним вызовом.
+ *
+ * Два запроса, а не один с разбором на клиенте: у зон разные лимиты, и живая
+ * задача не должна вытесняться из выборки сотней завершённых.
+ */
+export async function listPipelineTaskZones(): Promise<TaskZones> {
+  const [live, finished] = await Promise.all([
+    listPipelineTasks({ statuses: LIVE_TASK_STATUSES }),
+    listPipelineTasks({
+      statuses: FINISHED_TASK_STATUSES,
+      limit: FINISHED_ZONE_LIMIT,
+    }),
+  ])
+  return { live, finished }
+}
+
+/**
+ * Снимает задачу руками из окна очереди.
+ *
+ * Помечает `failed`, а НЕ удаляет строку — и это не мелочь. Страховочный обход
+ * (lib/pipeline/sweep.ts) берёт элементы IN, по которым задачи нет вообще: удали
+ * строку, и он через свой интервал завёл бы задачу заново по тому же файлу.
+ * Помеченная `failed` задача из очереди уходит, обходом не переоткрывается, а
+ * история остаётся видимой.
+ *
+ * Аренду снимаем: если задачу держала машина, её `taskDone` теперь получит 409 —
+ * это честнее, чем принять отчёт по снятой работе.
+ */
+export async function cancelPipelineTask(input: {
+  taskId: string
+  reason: string
+}): Promise<boolean> {
+  const result = await query(
+    `UPDATE tasks
+        SET status = 'failed',
+            error = $2,
+            claimed_by = NULL,
+            lease_expires_at = NULL,
+            updated_at = NOW()
+      WHERE id = $1
+        AND status IN ('queued', 'claimed', 'running')`,
+    [input.taskId, input.reason],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+/**
+ * Удаляет строку задачи насовсем.
+ *
+ * Нужна, когда задача не «снята», а не должна была существовать: мусор от
+ * экспериментов, дубль, задача по проекту, который уже не ведут. Отдельно от
+ * снятия именно потому, что у удаления есть последствие: элемент, который всё ещё
+ * лежит в IN, снова становится «незнакомым» для обхода, и задача по нему появится
+ * снова. Для живого файла это правильное поведение — «забудь и найди заново», — но
+ * выбирать его должен человек, а не кнопка с подписью «снять».
+ */
+export async function deletePipelineTask(taskId: string): Promise<boolean> {
+  const result = await query(`DELETE FROM tasks WHERE id = $1`, [taskId])
+  return (result.rowCount ?? 0) > 0
 }
 
 export type TaskCounts = Record<TaskStatus, number> & { total: number }

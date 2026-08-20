@@ -1,5 +1,6 @@
 import {
   Activity,
+  BarChart3,
   LayoutDashboard,
   LayoutGrid,
   Monitor,
@@ -16,6 +17,7 @@ export type AdminNavItem = {
   exact?: boolean
 }
 
+/** Разделы внутри свёртки «Админка». */
 export const adminNavItems: AdminNavItem[] = [
   {
     labelKey: "adminOverview",
@@ -39,15 +41,34 @@ export const adminNavItems: AdminNavItem[] = [
     icon: Activity,
   },
   {
-    labelKey: "adminPipeline",
-    href: "/admin/pipeline",
-    icon: Workflow,
+    labelKey: "adminStatistics",
+    href: "/admin/statistics",
+    icon: BarChart3,
   },
   {
     labelKey: "adminRemoteAccess",
     href: "/admin/remote-access",
     icon: Monitor,
   },
+]
+
+/**
+ * Разделы админки, поднятые в боковом меню на один уровень с «Админкой».
+ * «Конвейер» — рабочий инструмент на каждый день, а не страница-документ,
+ * поэтому до него не должно быть двух клика через свёртку.
+ */
+export const adminStandaloneItems: AdminNavItem[] = [
+  {
+    labelKey: "adminPipeline",
+    href: "/admin/pipeline",
+    icon: Workflow,
+  },
+]
+
+/** Все админские разделы — для поиска текущего по адресу (заголовки, крошки). */
+export const adminAllNavItems: AdminNavItem[] = [
+  ...adminNavItems,
+  ...adminStandaloneItems,
 ]
 
 export function isItemActive(item: AdminNavItem, pathname: string) {

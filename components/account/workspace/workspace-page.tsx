@@ -2,6 +2,7 @@
 
 import { ClipboardPanel } from "./clipboard-panel"
 import { WorkspaceContextMenu } from "./context-menu"
+import { PreviewDialog } from "./file-preview"
 import { FullMode } from "./full-mode"
 import { MobileWorkspace } from "./mobile-view"
 import { MoveDialog } from "./move-dialog"
@@ -41,6 +42,7 @@ function WorkspaceLayout() {
       <ClipboardPanel />
       <WorkspaceContextMenu />
       <MoveDialog />
+      <PreviewDialog />
       <ShareDialog />
       <WorkspaceDialogs />
     </div>

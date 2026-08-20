@@ -6,6 +6,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  Image as ImageIcon,
   MessageCircle,
   Plus,
   Settings2,
@@ -16,14 +17,20 @@ import {
 import { cn } from "@/lib/utils"
 import { ChatTab, DescriptionTab, SettingsTab } from "./bottom-panel"
 import { Breadcrumbs, FileBrowser } from "./file-browser"
+import { PreviewTab } from "./file-preview"
 import { AllProjectsPage } from "./simple-mode"
 import type { BottomTab, DriveFile } from "./types"
 import { useWorkspace } from "./workspace-context"
 
 type MobileTab = "files" | BottomTab
 
-const TABS: { id: MobileTab; icon: LucideIcon; labelKey: "tabFiles" | "tabDesc" | "tabSettings" | "tabChat" }[] = [
+const TABS: {
+  id: MobileTab
+  icon: LucideIcon
+  labelKey: "tabFiles" | "tabPreview" | "tabDesc" | "tabSettings" | "tabChat"
+}[] = [
   { id: "files", icon: FolderOpen, labelKey: "tabFiles" },
+  { id: "preview", icon: ImageIcon, labelKey: "tabPreview" },
   { id: "desc", icon: FileText, labelKey: "tabDesc" },
   { id: "settings", icon: Settings2, labelKey: "tabSettings" },
   { id: "chat", icon: MessageCircle, labelKey: "tabChat" },
@@ -150,7 +157,9 @@ export function MobileWorkspace() {
         </>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          {tab === "desc" ? (
+          {tab === "preview" ? (
+            <PreviewTab />
+          ) : tab === "desc" ? (
             <DescriptionTab />
           ) : tab === "settings" ? (
             <SettingsTab />
@@ -160,7 +169,7 @@ export function MobileWorkspace() {
         </div>
       )}
 
-      <nav className="grid shrink-0 grid-cols-4 border-t border-white/[0.08] bg-sidebar px-1 pb-2.5 pt-1.5">
+      <nav className="grid shrink-0 grid-cols-5 border-t border-white/[0.08] bg-sidebar px-1 pb-2.5 pt-1.5">
         {TABS.map((item) => (
           <button
             key={item.id}
@@ -170,7 +179,7 @@ export function MobileWorkspace() {
               if (item.id === "chat" && selected) openChat(selected.id)
             }}
             className={cn(
-              "flex flex-col items-center gap-0.5 py-2 text-[11px]",
+              "flex flex-col items-center gap-0.5 py-2 text-[10.5px]",
               tab === item.id ? "text-primary" : "text-ws-3",
             )}
           >

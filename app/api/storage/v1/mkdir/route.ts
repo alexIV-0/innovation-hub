@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
+  actorFromAuth,
   requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
-import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
 import { StorageWriteError, writeEnsureFolderPath, writeFolderCreate } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
         projectId: access.projectId,
         folderPath: full,
         eventId: data.eventId,
+        actor: actorFromAuth(auth),
       })
       return NextResponse.json(
         { folderPath: result.folderPath, fileIds: result.folderIds },
@@ -65,19 +66,13 @@ export async function POST(request: NextRequest) {
     if (data.name.includes("/") || data.name.includes("\\")) {
       return NextResponse.json({ message: "Invalid folder name." }, { status: 400 })
     }
-    if (data.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-      return NextResponse.json(
-        { message: "This folder name is reserved." },
-        { status: 403 },
-      )
-    }
-
     const file = await writeFolderCreate({
       userId: access.ownerId,
       projectId: access.projectId,
       folderPath: data.folderPath,
       name: data.name,
       eventId: data.eventId,
+      actor: actorFromAuth(auth),
     })
     return NextResponse.json({ file, fileIds: [file.id] }, { status: 201 })
   } catch (error) {

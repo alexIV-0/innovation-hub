@@ -1,7 +1,6 @@
 import { GetObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
-import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
 import { findFileById } from "@/lib/repositories/project-files"
 import { findProjectForUser } from "@/lib/repositories/projects"
 import { getS3Bucket } from "@/lib/s3-config"
@@ -20,14 +19,6 @@ async function requireOwnedFile(projectId: string, userId: string, fileId: strin
   const file = await findFileById(fileId)
   if (!file || file.projectId !== projectId) {
     return { error: NextResponse.json({ message: "File not found." }, { status: 404 }) }
-  }
-  if (file.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    return {
-      error: NextResponse.json(
-        { message: "This item is managed by automation." },
-        { status: 403 },
-      ),
-    }
   }
   return { project, file }
 }
@@ -101,13 +92,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (name !== undefined && (!name || name.includes("/") || name.includes("\\"))) {
     return NextResponse.json({ message: "Invalid name." }, { status: 400 })
   }
-  if (name?.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    return NextResponse.json(
-      { message: "This folder name is reserved." },
-      { status: 403 },
-    )
-  }
-
   try {
     const file = await writeRename({
       userId: owned.project.ownerId,
@@ -115,6 +99,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       projectId: id,
       name,
       folderPath,
+      // Кабинет переименовывает через этот роут: снятие `-` с папки — событие
+      // готовности витка, его актор становится contact задачи.
+      actor: { userId: auth.userId },
     })
     if (!file) {
       return NextResponse.json({ message: "File not found." }, { status: 404 })
@@ -144,12 +131,22 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   const owned = await requireOwnedFile(id, auth.userId, fileId)
   if ("error" in owned && owned.error) return owned.error
 
-  await writeFileDelete({
-    userId: owned.project.ownerId,
-    projectId: id,
-    fileId,
-    deletedBy: auth.userId,
-  })
+  try {
+    await writeFileDelete({
+      userId: owned.project.ownerId,
+      projectId: id,
+      fileId,
+      deletedBy: auth.userId,
+      actor: { userId: auth.userId },
+    })
+  } catch (error) {
+    // Канонический сайдкар и сама папка options защищены от удаления: сайт
+    // читает их по фиксированному ключу.
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+    throw error
+  }
 
   return NextResponse.json({ ok: true })
 }

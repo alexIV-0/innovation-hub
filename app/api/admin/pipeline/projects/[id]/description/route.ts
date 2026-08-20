@@ -1,14 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { DESCRIPTION_SIZE_MAX } from "@/lib/markdown/description-format"
 import {
+  DESCRIPTION_FILE_NAME,
   projectDescriptionKey,
   readProjectDescriptionMd,
   writeProjectDescriptionMd,
 } from "@/lib/project-storage"
 import { findProjectById } from "@/lib/repositories/projects"
 import { isS3Configured } from "@/lib/s3-client"
-import { journalStorageEvent } from "@/lib/storage/write-path"
+import { writeSidecarSync } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -38,7 +40,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 }
 
 const putSchema = z.object({
-  body: z.string().max(200_000),
+  // Предел взят из контракта, а не с потолка: одна картинка 1600 px в base64
+  // (контракт §4) — это ~200 КБ, и прежние 200 000 символов отбивали бы 400 на
+  // описании с парой картинок.
+  body: z.string().max(DESCRIPTION_SIZE_MAX),
 })
 
 export async function PUT(request: NextRequest, context: RouteContext) {
@@ -73,13 +78,14 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       body: parsed.data.body,
     })
 
-    // Журналируем, чтобы десктоп увидел изменение через delta: без этой записи
-    // файл на R2 поменялся бы незаметно для машин.
-    await journalStorageEvent({
+    // Строка в каталоге плюс событие в журнале: без них файл на R2 поменялся бы
+    // незаметно для машин, а сам сайдкар не появился бы в дереве проекта.
+    await writeSidecarSync({
+      userId: project.ownerId,
       projectId: project.id,
       key: projectDescriptionKey(project.ownerId, project.id),
-      op: "put",
-      payload: { name: "description.md", folderPath: "options" },
+      name: DESCRIPTION_FILE_NAME,
+      actor: { userId: auth.userId },
     })
 
     return NextResponse.json({ ok: true })

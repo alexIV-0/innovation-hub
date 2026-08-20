@@ -6,7 +6,7 @@ import { useI18n } from "@/components/account/i18n"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminSidebarLink } from "./admin-sidebar-link"
 import { AdminSidebarUser } from "./admin-sidebar-user"
-import { adminNavItems } from "./nav-config"
+import { adminAllNavItems } from "./nav-config"
 
 type Props = {
   email: string
@@ -46,7 +46,7 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
         <p className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
           {t.workspaceSection}
         </p>
-        {adminNavItems.map((item) => (
+        {adminAllNavItems.map((item) => (
           <AdminSidebarLink
             key={item.href}
             item={item}

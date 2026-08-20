@@ -14,6 +14,8 @@ import {
   validateLogicalName,
 } from "@/lib/storage/file-names"
 import { logicalKeyForFile } from "@/lib/storage/keys"
+import { writeEnsureFolderPath } from "@/lib/storage/write-path"
+import type { StorageActor } from "@/lib/storage/write-path"
 
 const FILE_FIELDS = `
   id,
@@ -101,6 +103,7 @@ async function insertCopiedRow(
     contentHash: string | null
     originMtime: number | null
     eventId?: string | null
+    actor?: StorageActor | null
   },
 ): Promise<ProjectFileRecord> {
   const name = validateLogicalName(input.name)
@@ -113,9 +116,9 @@ async function insertCopiedRow(
   const result = await client.query<ProjectFileRecord>(
     `INSERT INTO project_files (
         id, project_id, folder_path, name, is_folder, s3_key,
-        size_bytes, content_type, etag, content_hash, origin_mtime
+        size_bytes, content_type, etag, content_hash, origin_mtime, uploaded_by
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${FILE_FIELDS}`,
     [
       id,
@@ -129,6 +132,9 @@ async function insertCopiedRow(
       input.etag,
       input.contentHash,
       input.originMtime,
+      // Копирование — такое же появление файла в проекте, как загрузка: заливщик
+      // тот, кто запустил копирование.
+      input.actor?.isUploader === false ? null : (input.actor?.userId ?? null),
     ],
   )
   const file = result.rows[0]!
@@ -149,6 +155,7 @@ async function insertCopiedRow(
     contentHash: input.contentHash,
     eventTime: nowUnixSec(),
     eventId: input.eventId ?? null,
+    actorUserId: input.actor?.userId ?? null,
     payload: {
       fileId: file.id,
       name: file.name,
@@ -218,6 +225,7 @@ export async function copySingleFile(input: {
   destFolderPath: string
   source: SourceRow
   eventId?: string | null
+  actor?: StorageActor | null
 }): Promise<ProjectFileRecord> {
   if (input.source.isFolder) {
     throw new StorageWriteError("Use job path for folder copy.", 400)
@@ -227,6 +235,17 @@ export async function copySingleFile(input: {
   }
 
   const destFolder = input.destFolderPath.replace(/^\/+|\/+$/g, "")
+  // Папка назначения должна существовать строкой, иначе копия попадёт в каталог
+  // и пропадёт из дерева: оно строится спуском по строкам-папкам. Та же причина,
+  // по которой заливка заводит папки по пути (writeNotifyUpload).
+  if (destFolder) {
+    await writeEnsureFolderPath({
+      userId: input.destOwnerId,
+      projectId: input.destProjectId,
+      folderPath: destFolder,
+      actor: input.actor,
+    })
+  }
   const destKey = projectUploadObjectKey(
     input.destOwnerId,
     input.destProjectId,
@@ -249,6 +268,7 @@ export async function copySingleFile(input: {
       contentHash: input.source.contentHash,
       originMtime: input.source.originMtime,
       eventId: input.eventId ?? null,
+      actor: input.actor,
     }),
   )
 }
@@ -265,6 +285,7 @@ export async function copyPlanItem(input: {
   /** Maps source-relative folder path → actual dest folder path (after unique names). */
   folderPathMap: Map<string, string>
   eventId?: string | null
+  actor?: StorageActor | null
 }): Promise<ProjectFileRecord> {
   const baseDest = input.destFolderPath.replace(/^\/+|\/+$/g, "")
   const relative = input.item.relativeFolder.replace(/^\/+|\/+$/g, "")
@@ -294,6 +315,7 @@ export async function copyPlanItem(input: {
         contentHash: null,
         originMtime: null,
         eventId: input.eventId ?? null,
+        actor: input.actor,
       }),
     )
     const sourceRelKey = relative
@@ -332,6 +354,7 @@ export async function copyPlanItem(input: {
       contentHash: input.item.source.contentHash,
       originMtime: input.item.source.originMtime,
       eventId: input.eventId ?? null,
+      actor: input.actor,
     }),
   )
 }

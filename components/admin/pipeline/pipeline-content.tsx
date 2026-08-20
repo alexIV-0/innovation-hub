@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { useAdminI18n } from "@/components/admin/admin-dict"
 import { ClipboardPanel } from "@/components/account/workspace/clipboard-panel"
 import { WorkspaceContextMenu } from "@/components/account/workspace/context-menu"
+import { PreviewDialog } from "@/components/account/workspace/file-preview"
 import { FullMode } from "@/components/account/workspace/full-mode"
 import { ProjectsColumn } from "@/components/account/workspace/projects-column"
 import { ShareDialog } from "@/components/account/workspace/share-dialog"
@@ -69,6 +70,7 @@ function PipelineLayout({
 
       <ClipboardPanel />
       <WorkspaceContextMenu />
+      <PreviewDialog />
       <ShareDialog />
       <WorkspaceDialogs />
     </div>

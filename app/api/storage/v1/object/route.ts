@@ -1,12 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import {
+  actorFromAuth,
   requireEditableProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
-import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
 import { findFileById } from "@/lib/repositories/project-files"
-import { writeFileDelete } from "@/lib/storage/write-path"
+import { StorageWriteError, writeFileDelete } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -44,19 +44,23 @@ export async function DELETE(request: NextRequest) {
   if (!file || file.projectId !== access.projectId) {
     return NextResponse.json({ message: "File not found." }, { status: 404 })
   }
-  if (file.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    return NextResponse.json(
-      { message: "This item is managed by automation." },
-      { status: 403 },
-    )
+  try {
+    const result = await writeFileDelete({
+      userId: access.ownerId,
+      projectId: access.projectId,
+      fileId: data.fileId,
+      deletedBy: auth.userId,
+      eventId: data.eventId,
+      actor: actorFromAuth(auth),
+    })
+    return NextResponse.json({ ok: true, ...result })
+  } catch (error) {
+    // 403 — попытка снести канонический сайдкар или саму папку options: сайт
+    // читает их по фиксированному ключу. Остальное содержимое options удаляется
+    // как любой файл, в корзину.
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+    throw error
   }
-
-  const result = await writeFileDelete({
-    userId: access.ownerId,
-    projectId: access.projectId,
-    fileId: data.fileId,
-    deletedBy: auth.userId,
-    eventId: data.eventId,
-  })
-  return NextResponse.json({ ok: true, ...result })
 }

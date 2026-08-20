@@ -6,17 +6,15 @@ import {
   deleteFileSchema,
   renameFileSchema,
 } from "@/lib/project-schemas"
-import {
-  findFileById,
-  listFilesInFolder,
-} from "@/lib/repositories/project-files"
+import { withoutServiceRows } from "@/lib/project-storage"
+import { listFilesInFolder } from "@/lib/repositories/project-files"
 import { findOwnedProject } from "@/lib/repositories/projects"
 import {
+  StorageWriteError,
   writeFileDelete,
   writeFolderCreate,
   writeRename,
 } from "@/lib/storage/write-path"
-import { OPTIONS_FOLDER_NAME } from "@/lib/project-storage"
 
 export const runtime = "nodejs"
 
@@ -33,7 +31,9 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 
   const folderPath = request.nextUrl.searchParams.get("folderPath") ?? ""
-  const files = await listFilesInFolder(id, folderPath)
+  // Отсекаем и саму папку options в корне, и попытку зайти внутрь неё по
+  // folderPath: это роут кабинета, служебные файлы показывает только «Конвейер».
+  const files = withoutServiceRows(await listFilesInFolder(id, folderPath))
   return NextResponse.json({ files, folderPath })
 }
 
@@ -62,19 +62,13 @@ export async function POST(request: NextRequest, { params }: Params) {
     )
   }
 
-  if (parsed.data.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    return NextResponse.json(
-      { message: "This folder name is reserved." },
-      { status: 403 },
-    )
-  }
-
   try {
     const file = await writeFolderCreate({
       userId: project.ownerId,
       projectId: id,
       folderPath: parsed.data.folderPath,
       name: parsed.data.name,
+      actor: { userId: auth.userId },
     })
     return NextResponse.json({ file }, { status: 201 })
   } catch (e) {
@@ -121,6 +115,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       projectId: id,
       name: parsed.data.name,
       folderPath: parsed.data.folderPath,
+      actor: { userId: auth.userId },
     })
     if (!file) {
       return NextResponse.json({ message: "File not found." }, { status: 404 })
@@ -163,19 +158,22 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     )
   }
 
-  const existing = await findFileById(parsed.data.id)
-  if (existing?.name.toLowerCase() === OPTIONS_FOLDER_NAME) {
-    return NextResponse.json(
-      { message: "This item is managed by automation." },
-      { status: 403 },
-    )
+  try {
+    await writeFileDelete({
+      userId: project.ownerId,
+      projectId: id,
+      fileId: parsed.data.id,
+      deletedBy: auth.userId,
+      actor: { userId: auth.userId },
+    })
+  } catch (error) {
+    // Канонический сайдкар и саму папку options удалять нечем — сайт читает их
+    // по фиксированному ключу. Остальное в options удаляется как обычный файл.
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+    throw error
   }
-
-  await writeFileDelete({
-    userId: project.ownerId,
-    projectId: id,
-    fileId: parsed.data.id,
-  })
 
   return NextResponse.json({ ok: true })
 }

@@ -355,9 +355,15 @@ export const adminDict = {
     // pipeline · очередь задач
     pipelineQueueTitle: "Очередь задач",
     pipelineQueueCounts:
-      "всего {total} · в очереди {queued} · в работе {inFlight} · готово {done} · ошибок {failed}",
+      "в очереди {queued} · в работе {inFlight} · готово {done} · ошибок {failed}",
     pipelineQueueEmpty:
       "Задач пока нет. Включите слежение — задачи появятся, когда в папке IN отслеживаемого проекта окажется подходящий файл.",
+    pipelineZoneLive: "В работе",
+    pipelineZoneFinished: "Завершено",
+    pipelineZoneLiveEmpty: "Сейчас ничего не обрабатывается.",
+    pipelineZoneFinishedEmpty: "Завершённых задач пока нет.",
+    pipelineZoneShownLast: "показаны последние {shown}",
+    pipelineQueueBadgeTitle: "В работе {live}, с ошибками {failed}",
     pipelineQueueFootnote:
       "Строку задачи можно раскрыть — видны шаги цепочки и последний отчёт по каждому. Логи шагов на сайт не приходят, только состояния.",
     pipelineColFile: "Файл",
@@ -368,6 +374,16 @@ export const adminDict = {
     pipelineColCreated: "Создана",
     pipelineAttempts: "попыток {count}",
     pipelineFolderSource: "Папка — обрабатывается целиком, в один результат",
+    pipelineTaskCancel: "Снять",
+    pipelineTaskCancelTitle:
+      "Снять задачу: помечается ошибкой и уходит из очереди. Обход её не переоткроет.",
+    pipelineTaskDeleteTitle:
+      "Удалить строку задачи. Если элемент ещё лежит в папке IN, обход заведёт задачу заново.",
+    pipelineTaskDeleteConfirm:
+      "Удалить строку задачи? Если элемент ещё лежит в папке IN, обход заведёт её заново — это и есть смысл удаления. Чтобы просто убрать задачу из очереди, снимите её.",
+    pipelineTaskCancelled: "Задача снята.",
+    pipelineTaskDeleted: "Задача удалена.",
+    pipelineTaskActionError: "Не удалось изменить задачу.",
 
     // токены доступа и машины под ними
     tokenScoped: "привязан к проекту",
@@ -422,6 +438,30 @@ export const adminDict = {
       "Пользовательские алиасы, доступные в путях как $имя. Сегменты могут сами содержать маски — например $localFolder.",
     settingsPathLabelExtensions: "Расширения",
     settingsPathLabelSegments: "Сегменты",
+
+    // pipeline · страховочный обход папок IN
+    settingsDomainSweep: "Обход IN",
+    settingsDomainSweepHint:
+      "Задачи создаются по событиям заливки — это основная линия, и она мгновенная. Обход — страховка на случай, когда события не хватило: конвейер был выключен во время обновления, проект стоял на паузе, options.json был битый. Он идёт по каталогу, сравнивает содержимое папок IN с уже созданными задачами и добирает разницу. Обход подчинён тумблеру слежения: пока стоит «Стоп», задачи не появляются ни по событию, ни обходом.",
+    settingsSweepInterval: "Обходить каждые",
+    settingsSweepIntervalUnit: "минут",
+    settingsSweepIntervalHint:
+      "0 — обход по таймеру не ходит, остаётся только кнопка. Максимум — сутки (1440).",
+    settingsSweepOn: "расписание работает",
+    settingsSweepOff: "по таймеру не ходит",
+    settingsSweepOnce: "Элемент, по которому задача уже создавалась, обход не берёт — ни в очереди, ни готовый, ни упавший. Прогнать файл заново — это отдельное действие: перезалейте его, и событие создаст новую задачу.",
+    settingsSweepLast: "последний обход {time}, добрано {created}",
+    settingsSweepNever: "обхода ещё не было",
+    settingsSweepRunNow: "Обойти сейчас",
+    settingsSweepDone:
+      "Обход завершён: добрано {created}, осмотрено {scanned}, уже в очереди {known}.",
+    settingsSweepTruncated: " Часть элементов осталась на следующий обход.",
+    settingsSweepError: "Не удалось выполнить обход.",
+    settingsSweepStopped:
+      "Конвейер остановлен — сначала включите слежение на странице.",
+    settingsSweepSaved: "Настройки обхода сохранены.",
+    settingsSweepSaveError: "Не удалось сохранить настройки обхода.",
+    settingsSweepStateUnavailable: "Состояние обхода недоступно ({status})",
   },
   en: {
     all: "All",
@@ -762,9 +802,15 @@ export const adminDict = {
     // pipeline · task queue
     pipelineQueueTitle: "Task queue",
     pipelineQueueCounts:
-      "total {total} · queued {queued} · in progress {inFlight} · done {done} · failed {failed}",
+      "queued {queued} · in progress {inFlight} · done {done} · failed {failed}",
     pipelineQueueEmpty:
       "No tasks yet. Turn watching on — tasks appear once a matching file lands in the IN folder of a watched project.",
+    pipelineZoneLive: "In progress",
+    pipelineZoneFinished: "Finished",
+    pipelineZoneLiveEmpty: "Nothing is being processed right now.",
+    pipelineZoneFinishedEmpty: "No finished tasks yet.",
+    pipelineZoneShownLast: "last {shown} shown",
+    pipelineQueueBadgeTitle: "{live} in progress, {failed} failed",
     pipelineQueueFootnote:
       "A task row expands — it shows the chain of steps and the latest report for each. Step logs never reach the site, only states.",
     pipelineColFile: "File",
@@ -775,6 +821,16 @@ export const adminDict = {
     pipelineColCreated: "Created",
     pipelineAttempts: "attempts {count}",
     pipelineFolderSource: "Folder — processed as a whole, into one result",
+    pipelineTaskCancel: "Cancel",
+    pipelineTaskCancelTitle:
+      "Cancel the task: it is marked failed and leaves the queue. The sweep will not reopen it.",
+    pipelineTaskDeleteTitle:
+      "Delete the task row. If the element still sits in the IN folder, the sweep will create the task again.",
+    pipelineTaskDeleteConfirm:
+      "Delete the task row? If the element still sits in the IN folder, the sweep will create it again — that is what deleting is for. To simply take the task out of the queue, cancel it instead.",
+    pipelineTaskCancelled: "Task cancelled.",
+    pipelineTaskDeleted: "Task deleted.",
+    pipelineTaskActionError: "Could not change the task.",
 
     // access tokens and their machines
     tokenScoped: "scoped to a project",
@@ -829,6 +885,30 @@ export const adminDict = {
       "User aliases available in paths as $name. Segments may themselves contain masks — $localFolder, for instance.",
     settingsPathLabelExtensions: "Extensions",
     settingsPathLabelSegments: "Segments",
+
+    // pipeline · IN folder safety sweep
+    settingsDomainSweep: "IN sweep",
+    settingsDomainSweepHint:
+      "Tasks are created from upload events — that is the primary line and it is instant. The sweep is the safety net for when an event was not enough: the pipeline was off during an update, the project was paused, options.json was broken. It walks the catalog, compares the contents of IN folders against existing tasks and picks up the difference. The sweep obeys the watch toggle: while it says Stop, no tasks appear at all — neither from events nor from sweeps.",
+    settingsSweepInterval: "Sweep every",
+    settingsSweepIntervalUnit: "minutes",
+    settingsSweepIntervalHint:
+      "0 — no scheduled sweep, only the button stays. Maximum is a day (1440).",
+    settingsSweepOn: "schedule is on",
+    settingsSweepOff: "no scheduled sweep",
+    settingsSweepOnce:
+      "An element that already had a task is never picked up again — queued, done or failed alike. Running a file through again is a separate action: re-upload it and the event will create a new task.",
+    settingsSweepLast: "last sweep {time}, picked up {created}",
+    settingsSweepNever: "no sweep yet",
+    settingsSweepRunNow: "Sweep now",
+    settingsSweepDone:
+      "Sweep finished: picked up {created}, examined {scanned}, already queued {known}.",
+    settingsSweepTruncated: " Some elements are left for the next sweep.",
+    settingsSweepError: "Could not run the sweep.",
+    settingsSweepStopped: "The pipeline is stopped — start watching first.",
+    settingsSweepSaved: "Sweep settings saved.",
+    settingsSweepSaveError: "Could not save the sweep settings.",
+    settingsSweepStateUnavailable: "Sweep state unavailable ({status})",
   },
 } as const
 

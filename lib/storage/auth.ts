@@ -11,7 +11,7 @@ import {
   findProjectById,
 } from "@/lib/repositories/projects"
 import { findProjectMembership } from "@/lib/repositories/project-members"
-import { hashMachineToken } from "@/lib/storage/write-path"
+import { hashMachineToken, type StorageActor } from "@/lib/storage/write-path"
 import type { UserRole } from "@/lib/domain-types"
 
 export type StorageApiAuth = {
@@ -21,6 +21,18 @@ export type StorageApiAuth = {
   machineTokenId: string | null
   computerId: string | null
   scopedProjectId: string | null
+}
+
+/**
+ * Актор записи из авторизации запроса.
+ *
+ * Машина парка (`rc_`) заливщиком не считается: она возвращает результаты в
+ * проект, а `uploaded_by` отвечает на вопрос «кто принёс исходник». Её `userId` —
+ * это `remote_computers.created_by`, то есть админ, регистрировавший компьютер, и
+ * переносить на него contact задачи было бы прямым искажением.
+ */
+export function actorFromAuth(auth: StorageApiAuth): StorageActor {
+  return { userId: auth.userId, isUploader: auth.computerId == null }
 }
 
 export type ProjectAccessRole = "owner" | "editor" | "viewer"

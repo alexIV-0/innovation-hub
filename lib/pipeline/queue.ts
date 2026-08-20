@@ -357,6 +357,55 @@ export async function reapExpiredLeases(): Promise<number> {
   return result.rowCount ?? 0
 }
 
+/**
+ * Гасит задачи, у которых больше нет источника.
+ *
+ * Появилось из живого случая: программа обработала файл своим прежним путём и
+ * удалила его (`deleteAfter` в графе), а задача по нему уже стояла в очереди.
+ * Байтов нет, presign на удалённый ключ отдаст 404 — задача невыполнима. Но сама
+ * она из очереди не уйдёт: машина берёт её, возвращает через `releaseTask`, а тот
+ * ещё и уменьшает `attempts` обратно, поэтому до `max_attempts` дело не доходит
+ * никогда. Получается вечный цикл и очередь, которая показывает работу, которой
+ * нет.
+ *
+ * Трогаем только `queued`. Задачу, которую держит машина, не отменяем: она могла
+ * уже скачать байты и работать по своей копии — там источник в каталоге больше
+ * ничего не решает.
+ *
+ * Источник ищем тремя способами, потому что ключ файла может измениться, а связь
+ * остаться: по `source_file_id` (его же ставит сборка), по физическому ключу и по
+ * имени папки в IN. Достаточно любого совпадения — гасим, только если не нашлось
+ * ни одного.
+ */
+export async function reapOrphanedTasks(): Promise<number> {
+  const result = await query(
+    `UPDATE tasks t
+        SET status = 'failed',
+            error = COALESCE(t.error, $1),
+            claimed_by = NULL,
+            lease_expires_at = NULL,
+            updated_at = NOW()
+      WHERE t.status = 'queued'
+        AND NOT EXISTS (
+          SELECT 1
+            FROM project_files f
+           WHERE f.project_id = t.project_id
+             AND f.deleted_at IS NULL
+             AND (
+                   f.id = t.source_file_id
+                OR f.s3_key = t.source_key
+                OR (
+                     f.is_folder
+                 AND f.folder_path = 'IN'
+                 AND f.name = regexp_replace(t.source_key, '^.*/', '')
+                   )
+             )
+        )`,
+    ["Источник задачи удалён из проекта — обрабатывать нечего."],
+  )
+  return result.rowCount ?? 0
+}
+
 /** Шаги задачи для окна очереди. */
 export async function listTaskProgress(taskId: string): Promise<
   { stepId: string; status: string; message: string | null; updatedAt: string }[]

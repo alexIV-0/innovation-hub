@@ -59,12 +59,14 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     try {
       const file = await writeNotifyUpload({
+        userId: project.ownerId,
         projectId,
         folderPath: parsed.data.folderPath,
         fileName: safeBaseFileName(parsed.data.fileName),
         s3Key: parsed.data.s3Key,
         sizeBytes: parsed.data.sizeBytes,
         contentType: parsed.data.contentType,
+        actor: { userId: auth.userId },
       })
       return NextResponse.json(
         {

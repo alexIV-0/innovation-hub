@@ -15,6 +15,15 @@ export const updateProfileSchema = z.object({
     .trim()
     .min(2, "Full name must be at least 2 characters.")
     .max(120, "Full name must be at most 120 characters."),
+  /**
+   * Имя, которым подписаны задачи обработки (description.contact). Пустая строка
+   * — осознанный сброс на fullName, поэтому min(0) и опционально.
+   */
+  contactName: z
+    .string()
+    .trim()
+    .max(120, "Contact name must be at most 120 characters.")
+    .optional(),
   email: z
     .string()
     .trim()

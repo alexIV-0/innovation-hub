@@ -274,6 +274,21 @@ export async function setProjectYougileChatId(
 }
 
 /**
+ * Drops a YouGile chat id that the API no longer recognizes (deleted chat
+ * or task). The background poller would otherwise keep hitting 404 every
+ * tick; the next site message recreates a chat via ensureProjectYouGileChat.
+ */
+export async function clearProjectYougileChatId(id: string): Promise<void> {
+  await query(
+    `UPDATE projects
+        SET yougile_chat_id = NULL,
+            updated_at = NOW()
+      WHERE id = $1`,
+    [id],
+  )
+}
+
+/**
  * Пауза проекта пишется ТОЛЬКО через lib/project-automation.ts#setProjectPaused:
  * тумблер слежения живёт в двух хранилищах (is_paused в Postgres и
  * options/folderState.json на R2), и разъезжаются они мгновенно, если писать

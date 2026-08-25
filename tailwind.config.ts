@@ -80,6 +80,7 @@ const config: Config = {
           'action-hover': 'hsl(var(--ws-action-hover))',
           select: 'hsl(var(--ws-select))',
           out: 'hsl(var(--ws-out))',
+          playhead: 'hsl(var(--ws-playhead))',
         },
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',

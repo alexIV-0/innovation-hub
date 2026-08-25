@@ -29,6 +29,7 @@ import {
   resolvePath,
   siblingFiles,
 } from "./format"
+import { projectCapabilities } from "./access"
 import { CABINET_SOURCE } from "./source"
 import type {
   BottomTab,
@@ -42,6 +43,7 @@ import type {
   Project,
   UploadTarget,
   ViewMode,
+  WorkspaceCapabilities,
   WorkspaceSource,
 } from "./types"
 
@@ -117,6 +119,14 @@ type WorkspaceValue = {
   setQuery: (v: string) => void
   selectedId: string | null
   selected: Project | null
+  /**
+   * Права на выбранный проект: потолок зоны, срезанный ролью в расшаренном
+   * проекте. Компоненты берут их отсюда, а не из `source.can`, иначе читателю
+   * достанутся кнопки владельца.
+   */
+  can: WorkspaceCapabilities
+  /** То же для произвольного проекта — контекстное меню строится по строке списка. */
+  capabilitiesFor: (project: Project | null) => WorkspaceCapabilities
   selectProject: (id: string) => void
   clearSelection: () => void
   creating: boolean
@@ -432,6 +442,15 @@ export function WorkspaceProvider({
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
 
   const selected = projects.find((p) => p.id === selectedId) ?? null
+
+  const capabilitiesFor = useCallback(
+    (project: Project | null) => projectCapabilities(source.can, project),
+    [source.can],
+  )
+  const can = useMemo(
+    () => capabilitiesFor(selected),
+    [capabilitiesFor, selected],
+  )
 
   /**
    * Соседи по папке для перелистывания в окне превью. Считаем от id, а не от
@@ -1361,6 +1380,8 @@ export function WorkspaceProvider({
     setQuery,
     selectedId,
     selected,
+    can,
+    capabilitiesFor,
     selectProject,
     clearSelection,
     creating,

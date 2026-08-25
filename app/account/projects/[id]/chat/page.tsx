@@ -6,7 +6,7 @@ import { ProjectChatPanel } from "@/components/account/sections/project-chat-pan
 import { Button } from "@/components/ui/button"
 import { getCurrentUser } from "@/lib/admin-auth"
 import { listProjectChatMessages } from "@/lib/repositories/project-chat"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import { resolveProjectAccess } from "@/lib/project-access"
 import { syncProjectChatFromYouGile } from "@/lib/project-chat-sync"
 
 export const dynamic = "force-dynamic"
@@ -22,10 +22,11 @@ export default async function AccountProjectChatPage({ params }: PageProps) {
   }
 
   const { id } = await params
-  const project = await findProjectForUser(id, user.id)
-  if (!project) {
+  const access = await resolveProjectAccess(id, user.id)
+  if (!access) {
     notFound()
   }
+  const project = access.project
 
   // Fire-and-forget: the chat panel polls every ~6s and will pick up
   // whatever this sync pulls in — no reason to block first paint on YouGile.
@@ -46,6 +47,7 @@ export default async function AccountProjectChatPage({ params }: PageProps) {
 
       <ProjectChatPanel
         projectId={project.id}
+        canWrite={access.permissions.writeChat}
         initialMessages={messages.map((m) => ({
           id: m.id,
           senderType: m.senderType,

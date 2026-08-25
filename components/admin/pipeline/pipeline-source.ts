@@ -61,11 +61,19 @@ export function createPipelineSource(userId: string | null): WorkspaceSource {
       deleteProject: false,
       renameProject: false,
       archiveProject: false,
+      // Расшаривание — дело владельца проекта, а не администратора: он и в
+      // «Конвейере» смотрит чужой проект, а не распоряжается доступом к нему.
+      shareProject: false,
       upload: false,
       createFolder: false,
       renameItem: false,
       deleteItem: false,
       move: false,
+      // Пауза — общий с пользователем тумблер, её «Конвейер» ставит; параметры
+      // обработки он не открывает (у источника нет exposedOptionsUrl).
+      writeSettings: true,
+      // Чат в «Конвейере» — та же переписка с другой стороны: команда пишет.
+      writeChat: true,
       // Единственная запись в чужой проект, кроме паузы: описание — это как раз
       // то, что команда пишет клиенту.
       editDescription: true,

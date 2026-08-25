@@ -6,10 +6,8 @@ import {
   loadProjectStorageState,
   withoutServiceRows,
 } from "@/lib/project-storage"
-import {
-  findProjectForUser,
-  listProjectMedia,
-} from "@/lib/repositories/projects"
+import { listProjectMedia } from "@/lib/repositories/projects"
+import { resolveProjectAccess } from "@/lib/project-access"
 import {
   countUnreadForProjects,
   listProjectChatMessages,
@@ -30,10 +28,11 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
   }
 
   const { id } = await params
-  let project = await findProjectForUser(id, user.id)
-  if (!project) {
+  const access = await resolveProjectAccess(id, user.id)
+  if (!access) {
     notFound()
   }
+  let project = access.project
 
   void syncProjectChatFromYouGile(project)
 
@@ -106,6 +105,10 @@ export default async function AccountProjectDetailPage({ params }: PageProps) {
           : null
       }
       automationStarted={automationStarted}
+      permissions={{
+        writeFiles: access.permissions.writeFiles,
+        writeChat: access.permissions.writeChat,
+      }}
       unreadChatCount={unreadCounts[project.id] ?? 0}
       chatMessages={chatMessages.map((m) => ({
         id: m.id,

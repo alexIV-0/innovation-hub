@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { markProjectChatRead } from "@/lib/repositories/project-chat"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import { requireProjectAccess } from "@/lib/project-access"
 
 export const runtime = "nodejs"
 
@@ -13,10 +13,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId)
+  if (access instanceof NextResponse) return access
+  const project = access.project
 
   await markProjectChatRead(project.id)
   return NextResponse.json({ ok: true })

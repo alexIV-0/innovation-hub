@@ -1,6 +1,9 @@
 import { query } from "@/lib/db"
 
-export type ProjectMemberRole = "viewer" | "editor"
+// Роли и вся матрица прав живут в lib/project-access.ts: там же, где проверки
+// роутов, чтобы «что значит editor» не разъезжалось между слоями.
+export type { ProjectMemberRole } from "@/lib/project-access"
+import type { ProjectMemberRole } from "@/lib/project-access"
 
 export type ProjectMemberRecord = {
   projectId: string
@@ -10,6 +13,9 @@ export type ProjectMemberRecord = {
   createdAt: Date
   email?: string
   fullName?: string
+  /** Кто позвал: показывается владельцу, когда звал не он. */
+  invitedByName?: string | null
+  invitedByEmail?: string | null
 }
 
 export async function listProjectMembers(
@@ -22,9 +28,12 @@ export async function listProjectMembers(
             pm.invited_by AS "invitedBy",
             pm.created_at AS "createdAt",
             u.email,
-            u.full_name AS "fullName"
+            u.full_name AS "fullName",
+            inv.full_name AS "invitedByName",
+            inv.email AS "invitedByEmail"
        FROM project_members pm
        JOIN users u ON u.id = pm.user_id
+       LEFT JOIN users inv ON inv.id = pm.invited_by
       WHERE pm.project_id = $1
       ORDER BY pm.created_at ASC`,
     [projectId],

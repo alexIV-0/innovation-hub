@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { findFileById } from "@/lib/repositories/project-files"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import { requireProjectAccess } from "@/lib/project-access"
 import { writeFileDelete } from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
@@ -15,10 +15,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id, mediaId } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId, "editor")
+  if (access instanceof NextResponse) return access
+  const project = access.project
 
   const file = await findFileById(mediaId)
   if (!file || file.projectId !== project.id || file.isFolder) {

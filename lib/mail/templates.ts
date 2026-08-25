@@ -11,9 +11,15 @@ export { escapeHtml }
 const FONT =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 
-export type ShareRole = "viewer" | "editor"
+export type ShareRole = "viewer" | "editor" | "full"
 
 function roleCopy(role: ShareRole): { label: string; hint: string } {
+  if (role === "full") {
+    return {
+      label: "Full access",
+      hint: "You can open and change this project, share it with other people, and move it to the archive.",
+    }
+  }
   if (role === "editor") {
     return {
       label: "Editor",
@@ -25,6 +31,9 @@ function roleCopy(role: ShareRole): { label: string; hint: string } {
     hint: "You can open this project and view its files.",
   }
 }
+
+/** Экспортируется для писем: label и hint там нужны и в тексте, и в бейдже. */
+export { roleCopy as shareRoleCopy }
 
 function wrapEmail(inner: string): string {
   return `<!DOCTYPE html>
@@ -76,8 +85,8 @@ function ctaButton(href: string, label: string): string {
 
 function roleBadge(role: ShareRole): string {
   const { label, hint } = roleCopy(role)
-  const bg = role === "editor" ? "#ecfdf3" : "#eef4ff"
-  const fg = role === "editor" ? "#137333" : "#1a56db"
+  const bg = role === "full" ? "#fef4e6" : role === "editor" ? "#ecfdf3" : "#eef4ff"
+  const fg = role === "full" ? "#9a5b00" : role === "editor" ? "#137333" : "#1a56db"
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 4px;background:${bg};border-radius:12px;">
     <tr>
       <td style="padding:14px 16px;">

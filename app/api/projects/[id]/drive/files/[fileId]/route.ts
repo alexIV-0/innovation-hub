@@ -2,7 +2,10 @@ import { GetObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { findFileById } from "@/lib/repositories/project-files"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import {
+  requireProjectAccess,
+  type ProjectAccessRole,
+} from "@/lib/project-access"
 import { getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
 import { writeFileDelete, writeRename, StorageWriteError } from "@/lib/storage/write-path"
@@ -13,14 +16,27 @@ type RouteContext = {
   params: Promise<{ id: string; fileId: string }>
 }
 
-async function requireOwnedFile(projectId: string, userId: string, fileId: string) {
-  const project = await findProjectForUser(projectId, userId)
-  if (!project) return { error: NextResponse.json({ message: "Project not found." }, { status: 404 }) }
+/**
+ * Файл проекта плюс проверка доступа.
+ *
+ * `minimum` разный у методов не случайно: скачать может и читатель — он для
+ * этого и приглашён, работать с готовым результатом; переименовать и удалить —
+ * только с правом правки. До появления ролей все три метода пускали любого
+ * участника, то есть читатель мог удалить файл из чужого проекта.
+ */
+async function requireProjectFile(
+  projectId: string,
+  userId: string,
+  fileId: string,
+  minimum: ProjectAccessRole,
+) {
+  const access = await requireProjectAccess(projectId, userId, minimum)
+  if (access instanceof NextResponse) return { error: access }
   const file = await findFileById(fileId)
   if (!file || file.projectId !== projectId) {
     return { error: NextResponse.json({ message: "File not found." }, { status: 404 }) }
   }
-  return { project, file }
+  return { project: access.project, file }
 }
 
 /** Download a project file from R2. */
@@ -29,7 +45,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id, fileId } = await context.params
-  const owned = await requireOwnedFile(id, auth.userId, fileId)
+  const owned = await requireProjectFile(id, auth.userId, fileId, "viewer")
   if ("error" in owned && owned.error) return owned.error
   const { file } = owned as { file: NonNullable<Awaited<ReturnType<typeof findFileById>>> }
 
@@ -78,7 +94,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id, fileId } = await context.params
-  const owned = await requireOwnedFile(id, auth.userId, fileId)
+  const owned = await requireProjectFile(id, auth.userId, fileId, "editor")
   if ("error" in owned && owned.error) return owned.error
 
   const body = await request.json().catch(() => null)
@@ -128,7 +144,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id, fileId } = await context.params
-  const owned = await requireOwnedFile(id, auth.userId, fileId)
+  const owned = await requireProjectFile(id, auth.userId, fileId, "editor")
   if ("error" in owned && owned.error) return owned.error
 
   try {

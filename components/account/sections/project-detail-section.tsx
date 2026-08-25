@@ -73,6 +73,12 @@ type Props = {
   automationStarted: boolean
   chatMessages: ProjectChatMessageDto[]
   unreadChatCount: number
+  /**
+   * Что можно делать в проекте: расшаренный проект может быть отдан только на
+   * чтение. Сервер это и так проверяет (lib/project-access.ts), но кнопка,
+   * которая всегда отвечает 403, — это не защита, а обман.
+   */
+  permissions?: { writeFiles: boolean; writeChat: boolean }
 }
 
 const ACCEPT =
@@ -181,7 +187,10 @@ export function ProjectDetailSection({
   automationStarted,
   chatMessages,
   unreadChatCount,
+  permissions,
 }: Props) {
+  const canWriteFiles = permissions?.writeFiles ?? true
+  const canWriteChat = permissions?.writeChat ?? true
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const driveMode = drive !== null
@@ -398,7 +407,11 @@ export function ProjectDetailSection({
             }
           />
         </div>
-        <ProjectChatPanel projectId={project.id} initialMessages={chatMessages} />
+        <ProjectChatPanel
+          projectId={project.id}
+          initialMessages={chatMessages}
+          canWrite={canWriteChat}
+        />
       </div>
     )
   }
@@ -443,7 +456,7 @@ export function ProjectDetailSection({
         className="relative space-y-8"
         onDragEnter={(e) => {
           e.preventDefault()
-          if (isFileDrag(e)) setDragDepth((d) => d + 1)
+          if (canWriteFiles && isFileDrag(e)) setDragDepth((d) => d + 1)
         }}
         onDragOver={(e) => {
           e.preventDefault()
@@ -455,7 +468,7 @@ export function ProjectDetailSection({
         onDrop={(e) => {
           e.preventDefault()
           setDragDepth(0)
-          if (uploading) return
+          if (uploading || !canWriteFiles) return
           if (e.dataTransfer.files?.length) {
             void onFiles(e.dataTransfer.files)
           }
@@ -541,19 +554,21 @@ export function ProjectDetailSection({
                   </ViewToggleButton>
                 </div>
               ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={uploading}
-                onClick={() => inputRef.current?.click()}
-              >
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <UploadCloud className="h-4 w-4" />
-                )}
-                Upload
-              </Button>
+              {canWriteFiles ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={uploading}
+                  onClick={() => inputRef.current?.click()}
+                >
+                  {uploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-4 w-4" />
+                  )}
+                  Upload
+                </Button>
+              ) : null}
               {driveMode ? (
                 <Button
                   variant="ghost"
@@ -602,7 +617,7 @@ export function ProjectDetailSection({
                 path={path}
                 onNavigate={setPath}
                 deletingId={deletingId}
-                onDelete={onDeleteDriveFile}
+                onDelete={canWriteFiles ? onDeleteDriveFile : undefined}
               />
             ) : (
               <ul className="divide-y divide-border/60 border-y border-border/60">
@@ -612,7 +627,7 @@ export function ProjectDetailSection({
                     file={file}
                     depth={0}
                     deletingId={deletingId}
-                    onDelete={onDeleteDriveFile}
+                    onDelete={canWriteFiles ? onDeleteDriveFile : undefined}
                   />
                 ))}
               </ul>
@@ -638,20 +653,22 @@ export function ProjectDetailSection({
                       {formatDate(item.createdAt)}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-muted-foreground hover:text-destructive"
-                    disabled={deletingId === item.id}
-                    onClick={() => void onDeleteMedia(item)}
-                    aria-label={`Delete ${item.fileName}`}
-                  >
-                    {deletingId === item.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" />
-                    )}
-                  </Button>
+                  {canWriteFiles ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive"
+                      disabled={deletingId === item.id}
+                      onClick={() => void onDeleteMedia(item)}
+                      aria-label={`Delete ${item.fileName}`}
+                    >
+                      {deletingId === item.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -826,7 +843,7 @@ function DriveColumnsView({
   path: ProjectDriveFileDto[]
   onNavigate: (path: ProjectDriveFileDto[]) => void
   deletingId: string | null
-  onDelete: (file: ProjectDriveFileDto) => void
+  onDelete?: (file: ProjectDriveFileDto) => void
 }) {
   const columns = buildColumns(root, path)
   const lastSelected = path[path.length - 1] ?? null
@@ -907,7 +924,7 @@ function DriveFilePreview({
   file: ProjectDriveFileDto
   deletable: boolean
   deletingId: string | null
-  onDelete: (file: ProjectDriveFileDto) => void
+  onDelete?: (file: ProjectDriveFileDto) => void
 }) {
   return (
     <div className="flex w-64 shrink-0 flex-col items-center gap-4 p-6 text-center">
@@ -920,7 +937,7 @@ function DriveFilePreview({
           {formatBytes(file.sizeBytes)} · {formatDate(file.modifiedAt)}
         </p>
       </div>
-      {deletable ? (
+      {deletable && onDelete ? (
         <Button
           variant="outline"
           size="sm"
@@ -962,7 +979,7 @@ function DriveFileTreeNode({
   file: ProjectDriveFileDto
   depth: number
   deletingId: string | null
-  onDelete: (file: ProjectDriveFileDto) => void
+  onDelete?: (file: ProjectDriveFileDto) => void
 }) {
   const [open, setOpen] = useState(true)
   const indent = { paddingLeft: depth * TREE_INDENT_PX }
@@ -979,7 +996,7 @@ function DriveFileTreeNode({
             {formatBytes(file.sizeBytes)} · {formatDate(file.modifiedAt)}
           </p>
         </div>
-        {depth === 0 ? (
+        {depth === 0 && onDelete ? (
           <Button
             variant="ghost"
             size="icon"

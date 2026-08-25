@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { readProjectDescriptionMd } from "@/lib/project-storage"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import { requireProjectAccess } from "@/lib/project-access"
 
 export const runtime = "nodejs"
 
@@ -19,19 +19,18 @@ type RouteContext = { params: Promise<{ id: string }> }
  * на карточке в списке, и ходить за ней в объектное хранилище на каждый рендер
  * списка нельзя.
  *
- * Доступ — как у соседних роутов проекта: владелец или участник
- * (`findProjectForUser`). Ключ считается от `ownerId`, потому что папка проекта
- * лежит в префиксе владельца, а не того, кто смотрит.
+ * Доступ — как у соседних роутов проекта: владелец или любой участник, включая
+ * читателя (`requireProjectAccess`, порог `viewer`). Ключ считается от
+ * `ownerId`: папка проекта лежит в префиксе владельца, а не того, кто смотрит.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId)
+  if (access instanceof NextResponse) return access
+  const project = access.project
 
   const body = await readProjectDescriptionMd(project.ownerId, project.id)
   // null, а не 404: отсутствие описания — обычное состояние проекта, а не ошибка.

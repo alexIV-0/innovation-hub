@@ -10,7 +10,11 @@ import {
   findOwnedProject,
   findProjectById,
 } from "@/lib/repositories/projects"
-import { findProjectMembership } from "@/lib/repositories/project-members"
+import {
+  resolveProjectAccess as resolveSiteProjectAccess,
+  roleAtLeast,
+  type ProjectAccessRole,
+} from "@/lib/project-access"
 import { hashMachineToken, type StorageActor } from "@/lib/storage/write-path"
 import type { UserRole } from "@/lib/domain-types"
 
@@ -35,7 +39,7 @@ export function actorFromAuth(auth: StorageApiAuth): StorageActor {
   return { userId: auth.userId, isUploader: auth.computerId == null }
 }
 
-export type ProjectAccessRole = "owner" | "editor" | "viewer"
+export type { ProjectAccessRole } from "@/lib/project-access"
 
 export type StorageProjectAccess = {
   projectId: string
@@ -47,27 +51,20 @@ function unauthorized(message = "Unauthorized.") {
   return NextResponse.json({ message }, { status: 401 })
 }
 
-/** Resolve site-user access: owner, shared member, or null. Machine tokens never use this. */
+/**
+ * Доступ пользователя сайта: владелец, участник или ничего. Машинные токены
+ * сюда не ходят — расшаривание на них не распространяется.
+ *
+ * Лестница ролей и матрица прав — в lib/project-access.ts. Здесь только
+ * переходник к прежней форме ответа, на которую смотрит машинный протокол.
+ */
 export async function resolveProjectAccess(
   projectId: string,
   userId: string,
 ): Promise<{ role: ProjectAccessRole; ownerId: string } | null> {
-  const project = await findProjectById(projectId)
-  if (!project || project.deletedAt) return null
-  if (project.userId === userId) {
-    return { role: "owner", ownerId: project.userId }
-  }
-  const membership = await findProjectMembership(projectId, userId)
-  if (!membership) return null
-  return { role: membership.role, ownerId: project.userId }
-}
-
-function roleAtLeast(
-  role: ProjectAccessRole,
-  minimum: ProjectAccessRole,
-): boolean {
-  const rank = { viewer: 1, editor: 2, owner: 3 }
-  return rank[role] >= rank[minimum]
+  const access = await resolveSiteProjectAccess(projectId, userId)
+  if (!access) return null
+  return { role: access.role, ownerId: access.project.userId }
 }
 
 async function authFromRemoteComputerToken(
@@ -180,6 +177,14 @@ export async function authenticateComputerToken(
   return computer
 }
 
+/**
+ * Проверка доступа для машинного протокола: сессия, `mch_…` или `rc_…`.
+ *
+ * Одноимённая функция есть и в lib/project-access.ts — та для роутов кабинета,
+ * принимает `userId` и про машинные токены не знает. Отличие по существу:
+ * здесь недостаточная роль тоже отвечает 404, а не 403, — контракт
+ * `/api/storage/v1/*` менять нельзя.
+ */
 export async function requireProjectAccess(
   auth: StorageApiAuth,
   projectId: string,

@@ -36,8 +36,8 @@ function targetFor(
  * Каждая зона независима: в колоночном виде своя у каждой колонки.
  */
 function useDropZone(target: UploadTarget) {
-  const { source, uploadFiles } = useWorkspace()
-  const canUpload = source.can.upload
+  const { can, uploadFiles } = useWorkspace()
+  const canUpload = can.upload
   const [active, setActive] = useState(false)
   const depth = useRef(0)
 

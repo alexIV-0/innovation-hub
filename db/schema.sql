@@ -370,17 +370,48 @@ CREATE INDEX IF NOT EXISTS storage_jobs_state_idx
 CREATE INDEX IF NOT EXISTS storage_jobs_user_idx
   ON storage_jobs (user_id, created_at DESC);
 
+-- Инструменты пользователя: экземпляры из каталога (lib/tools/registry.ts).
+-- Каталог живёт в коде, здесь только то, что человек добавил себе, и его настройки.
+CREATE TABLE IF NOT EXISTS user_tools (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tool_key       TEXT NOT NULL,
+  title          TEXT NOT NULL DEFAULT '',
+  settings       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  source         JSONB NOT NULL DEFAULT '{}'::jsonb,
+  sort_order     INTEGER NOT NULL DEFAULT 0,
+  last_opened_at TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS user_tools_owner_idx
+  ON user_tools (user_id, sort_order, created_at)
+  WHERE deleted_at IS NULL;
+
+-- Расшаривание проекта. Роли: viewer читает, editor правит файлы и настройки,
+-- full вдобавок расшаривает проект дальше и отправляет в архив. Владельца здесь
+-- нет: он живёт в projects.user_id, и строка на него сделала бы два источника
+-- правды о том, кто хозяин папки. Матрица прав — lib/project-access.ts.
 CREATE TABLE IF NOT EXISTS project_members (
   project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role        TEXT NOT NULL CHECK (role IN ('viewer','editor')),
+  role        TEXT NOT NULL,
   invited_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (project_id, user_id)
+  PRIMARY KEY (project_id, user_id),
+  CONSTRAINT project_members_role_check CHECK (role IN ('viewer', 'editor', 'full'))
 );
 
 CREATE INDEX IF NOT EXISTS project_members_user_idx
   ON project_members (user_id);
+
+-- Кто кого позвал: с делегированием владелец должен видеть в диалоге
+-- «Поделиться», откуда взялся человек, которого он сам не приглашал.
+CREATE INDEX IF NOT EXISTS project_members_invited_by_idx
+  ON project_members (invited_by)
+  WHERE invited_by IS NOT NULL;
 
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;

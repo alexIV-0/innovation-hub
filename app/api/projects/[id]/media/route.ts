@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { withoutServiceRows } from "@/lib/project-storage"
 import { listAllProjectFiles } from "@/lib/repositories/project-files"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import { requireProjectAccess } from "@/lib/project-access"
 
 export const runtime = "nodejs"
 
@@ -17,10 +17,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return jsonError("Project not found.", 404)
-  }
+  const access = await requireProjectAccess(id, auth.userId)
+  if (access instanceof NextResponse) return access
+  const project = access.project
 
   // Служебные файлы из options — не материалы проекта: у сайдкаров появились
   // строки в каталоге, и без фильтра options.json и статистика обработки

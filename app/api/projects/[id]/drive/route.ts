@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { loadProjectStorageState } from "@/lib/project-storage"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import { requireProjectAccess } from "@/lib/project-access"
 import { isS3Configured } from "@/lib/s3-client"
 import { writeFolderCreate } from "@/lib/storage/write-path"
 
@@ -21,10 +21,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { id } = await context.params
 
   try {
-    const project = await findProjectForUser(id, auth.userId)
-    if (!project) {
-      return NextResponse.json({ message: "Project not found." }, { status: 404 })
-    }
+    const access = await requireProjectAccess(id, auth.userId)
+    if (access instanceof NextResponse) return access
+    const project = access.project
     const state = await loadProjectStorageState(project.ownerId, project.id)
     return NextResponse.json({
       ...state,
@@ -50,10 +49,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId, "editor")
+  if (access instanceof NextResponse) return access
+  const project = access.project
   if (!isS3Configured()) {
     return NextResponse.json(
       { message: "Object storage is not available for this project." },

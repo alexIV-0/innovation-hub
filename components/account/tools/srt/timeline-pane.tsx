@@ -1,0 +1,863 @@
+"use client"
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import {
+  ArrowUpDown,
+  AudioLines,
+  ChevronsRightLeft,
+  EyeOff,
+  ListPlus,
+  Minus,
+  MousePointer2,
+  Plus,
+  Scissors,
+  Search,
+  SquarePlus,
+} from "lucide-react"
+
+import { useWorkspace } from "@/components/account/workspace/workspace-context"
+import { tf } from "@/components/account/i18n"
+import {
+  canMergeCues,
+  mergeSurvivorId,
+  translationOf,
+  type Cue,
+  type Track,
+} from "@/lib/tools/srt/dialog-doc"
+import {
+  MAX_PPS,
+  MIN_PPS,
+  msToX,
+  ppsToSlider,
+  sliderToPps,
+  snapEdges,
+  snapMs,
+  xToMs,
+  zoomStep,
+} from "@/lib/tools/srt/timeline"
+import { cn } from "@/lib/utils"
+import { keyLabel, type TimelineTool } from "./editor-state"
+import { useSrt } from "./srt-context"
+import { TimelineRuler } from "./timeline-ruler"
+import { TrackColorPicker } from "./track-color-picker"
+import { useViewportSource, type ViewportSource } from "./viewport"
+import { WaveCanvas } from "./wave-canvas"
+
+/** Хвост после конца материала, чтобы последний титр не липнул к краю. */
+const TAIL_MS = 3000
+/** Высота линейки времени — та же, что внутри `TimelineRuler`. */
+const RULER_H = 40
+/** Порог, отделяющий клик от перетаскивания (§17.5). */
+const DRAG_THRESHOLD_PX = 3
+/** Клип уже этого — ручек нет вовсе, иначе за него не взяться (§17.4). */
+const MIN_HANDLE_WIDTH_PX = 18
+/** Минимальная длительность реплики при растягивании. */
+const MIN_CUE_MS = 200
+/** Отступ, на который отводим выбранную реплику от края окна. */
+const REVEAL_PAD_PX = 96
+/** Какую долю высоты дорожки занимает волна у нижнего края. */
+const WAVE_SHARE = 0.5
+
+const RAZOR_CURSOR =
+  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='none' stroke='%23ff4d00' stroke-width='2'><circle cx='6' cy='18' r='3'/><circle cx='18' cy='18' r='3'/><path d='M8 16 L20 3 M16 16 L4 3'/></svg>\") 12 12, crosshair"
+
+function cursorFor(tool: TimelineTool, overClip: boolean): string {
+  if (tool === "razor") return RAZOR_CURSOR
+  if (tool === "create") return "crosshair"
+  // Перенос ходит только вверх-вниз, и курсор обязан это показывать до того,
+  // как человек потянет и обнаружит, что вбок реплика не идёт.
+  if (tool === "shift") return overClip ? "ns-resize" : "default"
+  if (tool === "merge") return "default"
+  return overClip ? "grab" : "default"
+}
+
+/** Зона 4: панель дорожек слева и полотно справа. */
+export function TimelinePane() {
+  const srt = useSrt()
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const lanesRef = useRef<HTMLDivElement | null>(null)
+  const viewport = useViewportSource(scrollerRef)
+  const laneWidth = msToX(srt.durationMs + TAIL_MS, srt.pps)
+
+  const srtRef = useRef(srt)
+  srtRef.current = srt
+
+  /** Секунда под курсором на момент зума — после смены масштаба вернём её на место. */
+  const zoomAnchor = useRef<{ ms: number; x: number } | null>(null)
+
+  // Зум колесом с Cmd / Ctrl / Alt. Слушаем сами, а не через `onWheel`: React
+  // ставит пассивный обработчик, а без `preventDefault` браузер на Cmd+колесо
+  // масштабирует всю страницу.
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const onWheel = (event: WheelEvent) => {
+      if (!(event.metaKey || event.ctrlKey || event.altKey)) return
+      event.preventDefault()
+      const api = srtRef.current
+      const x = event.clientX - el.getBoundingClientRect().left
+      zoomAnchor.current = { ms: xToMs(el.scrollLeft + x, api.pps), x }
+      // Плавно и по экспоненте: шаг зума пропорционален текущему масштабу,
+      // иначе на мелком масштабе колесо почти ничего не меняет.
+      const next = api.pps * Math.exp(-event.deltaY * 0.003)
+      api.setPps(Math.min(MAX_PPS, Math.max(MIN_PPS, next)))
+    }
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => el.removeEventListener("wheel", onWheel)
+  }, [])
+
+  // Возвращаем секунду под курсор до того, как кадр покажут: в обычном эффекте
+  // это дало бы видимый прыжок полотна.
+  useLayoutEffect(() => {
+    const el = scrollerRef.current
+    const anchor = zoomAnchor.current
+    if (!el || !anchor) return
+    zoomAnchor.current = null
+    el.scrollLeft = Math.max(0, msToX(anchor.ms, srt.pps) - anchor.x)
+  }, [srt.pps])
+
+  /**
+   * Показать выбранную реплику.
+   *
+   * Только на смену выбора, а не на каждую перерисовку: иначе прокрутка спорила
+   * бы с зумом (он тоже меняет `scrollLeft`) и с рукой человека.
+   */
+  const revealed = useRef<string | null>(null)
+  useEffect(() => {
+    const el = scrollerRef.current
+    const api = srtRef.current
+    if (!el || api.selectedCueId === revealed.current) return
+    revealed.current = api.selectedCueId
+    if (!api.selectedCueId) return
+    const cue = api.doc.cues.find((item) => item.id === api.selectedCueId)
+    if (!cue) return
+
+    const x = msToX(cue.startMs, api.pps)
+    if (x < el.scrollLeft + REVEAL_PAD_PX) {
+      el.scrollLeft = Math.max(0, x - REVEAL_PAD_PX)
+    } else if (x > el.scrollLeft + el.clientWidth - REVEAL_PAD_PX) {
+      el.scrollLeft = x - el.clientWidth + REVEAL_PAD_PX
+    }
+
+    const index = api.visibleTracks.findIndex((track) => track.id === cue.trackId)
+    if (index < 0) return
+    const top = RULER_H + index * api.prefs.trackH
+    if (top < el.scrollTop) el.scrollTop = top
+    else if (top + api.prefs.trackH > el.scrollTop + el.clientHeight) {
+      el.scrollTop = top + api.prefs.trackH - el.clientHeight
+    }
+  }, [srt.selectedCueId])
+
+  const scrub = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const rect = event.currentTarget.getBoundingClientRect()
+      const seek = (clientX: number) =>
+        srt.clock.seek(xToMs(clientX - rect.left, srt.pps))
+      seek(event.clientX)
+      const move = (e: PointerEvent) => seek(e.clientX)
+      const up = () => {
+        window.removeEventListener("pointermove", move)
+        window.removeEventListener("pointerup", up)
+      }
+      window.addEventListener("pointermove", move)
+      window.addEventListener("pointerup", up)
+    },
+    [srt.clock, srt.pps],
+  )
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-ws-panel">
+      <TimelineToolbar />
+      <div className="flex min-h-0 flex-1">
+        <TrackColumn viewport={viewport} scroller={scrollerRef} />
+        <div ref={scrollerRef} className="relative min-w-0 flex-1 overflow-auto">
+          <div className="relative" style={{ width: laneWidth, minWidth: "100%" }}>
+            <TimelineRuler
+              durationMs={srt.durationMs + TAIL_MS}
+              pps={srt.pps}
+              peaks={srt.mainPeaks}
+              showWave={srt.prefs.mainWave}
+              viewport={viewport}
+              onScrub={scrub}
+            />
+            <div ref={lanesRef}>
+              {srt.visibleTracks.map((track) => (
+                <Lane key={track.id} track={track} viewport={viewport} lanesRef={lanesRef} />
+              ))}
+            </div>
+            <Playhead pps={srt.pps} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Курсор воспроизведения. Двигается подпиской, вне рендера React (§15.1). */
+function Playhead({ pps }: { pps: number }) {
+  const { clock } = useSrt()
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    return clock.subscribe((ms) => {
+      const el = ref.current
+      if (el) el.style.transform = `translateX(${msToX(ms, pps)}px)`
+    })
+  }, [clock, pps])
+
+  return (
+    <div
+      ref={ref}
+      aria-hidden
+      className="pointer-events-none absolute bottom-0 top-0 z-[4] w-px bg-ws-playhead will-change-transform"
+    >
+      <div
+        className="absolute left-[-6px] top-0 h-[10px] w-[13px] bg-ws-playhead"
+        style={{ clipPath: "polygon(0 0, 100% 0, 50% 100%)" }}
+      />
+    </div>
+  )
+}
+
+function TimelineToolbar() {
+  const { t } = useWorkspace()
+  const srt = useSrt()
+
+  // Подпись на кнопке — из текущей раскладки, а не из литерала: клавиши
+  // переназначаются в настройках, и подсказка обязана это показывать.
+  const tools: { id: TimelineTool; icon: typeof MousePointer2; title: string }[] = [
+    { id: "select", icon: MousePointer2, title: t.srtToolSelect },
+    { id: "create", icon: SquarePlus, title: t.srtToolCreate },
+    { id: "razor", icon: Scissors, title: t.srtToolRazor },
+    { id: "shift", icon: ArrowUpDown, title: t.srtToolShift },
+    { id: "merge", icon: ChevronsRightLeft, title: t.srtToolMerge },
+  ]
+
+  return (
+    <div className="flex h-10 flex-none items-center gap-2.5 border-b border-white/[0.07] px-3">
+      <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.4px] text-ws-accent">
+        <span className="text-ws-action">—</span>
+        {t.srtTimeline}
+      </div>
+
+      <label className="flex h-7 w-[200px] items-center gap-2 rounded-full border border-white/[0.07] bg-ws-raised px-2.5">
+        <Search className="h-[15px] w-[15px] shrink-0 text-ws-4" />
+        <input
+          value={srt.trackQuery}
+          onChange={(e) => srt.setTrackQuery(e.target.value)}
+          placeholder={t.srtSearchTracks}
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-ws-1 outline-none placeholder:text-ws-5"
+        />
+      </label>
+
+      <button
+        type="button"
+        onClick={() => srt.setHideShy(!srt.hideShy)}
+        className={cn(
+          "flex h-7 items-center gap-1.5 rounded border border-white/[0.07] px-2.5 text-[12px]",
+          srt.hideShy ? "bg-[#8b6fd6] text-ws-well" : "text-ws-3 hover:bg-ws-hover",
+        )}
+      >
+        <EyeOff className="h-4 w-4" />
+        {t.srtShy}
+      </button>
+
+      <span className="h-5 w-px bg-white/[0.07]" />
+
+      <div className="flex items-center gap-[3px] rounded-md border border-white/[0.07] bg-ws-raised p-[3px]">
+        {tools.map((item) => {
+          const Icon = item.icon
+          const active = srt.tool === item.id
+          const shortcut = keyLabel(srt.prefs.keymap[item.id])
+          return (
+            <button
+              key={item.id}
+              type="button"
+              title={tf(item.title, { key: shortcut })}
+              onClick={() => srt.setTool(item.id)}
+              className={cn(
+                "relative flex h-6 w-[30px] items-center justify-center rounded",
+                active ? "bg-ws-action text-white" : "text-ws-3 hover:text-ws-1",
+              )}
+            >
+              <Icon className="h-[17px] w-[17px]" />
+              <span className="absolute bottom-0 right-[2px] font-mono text-[8px] opacity-70">
+                {shortcut}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <button
+        type="button"
+        title={tf(t.srtMainWave, { key: keyLabel(srt.prefs.keymap.mainWave) })}
+        onClick={() => srt.setPref("mainWave", !srt.prefs.mainWave)}
+        className={cn(
+          "flex h-7 w-7 items-center justify-center rounded border border-white/[0.07]",
+          srt.prefs.mainWave ? "bg-ws-action/25 text-ws-accent" : "text-ws-3 hover:bg-ws-hover",
+        )}
+      >
+        <AudioLines className="h-4 w-4" />
+      </button>
+
+      <div className="flex-1" />
+
+      <button
+        type="button"
+        onClick={srt.ops.addTrack}
+        className="flex h-7 items-center gap-1.5 rounded border border-white/[0.07] px-2.5 text-[12px] text-ws-2 hover:bg-ws-hover"
+      >
+        <ListPlus className="h-4 w-4" />
+        {t.srtAddTrack}
+      </button>
+
+      <div
+        title={t.srtZoomWheel}
+        className="flex h-7 items-center gap-2 rounded border border-white/[0.07] bg-ws-raised px-2.5"
+      >
+        <button
+          type="button"
+          title={t.srtZoomOut}
+          onClick={() => srt.setPps(zoomStep(srt.pps, -1))}
+          className="flex h-[18px] w-[18px] items-center justify-center rounded-sm text-ws-3 hover:text-ws-1"
+        >
+          <Minus className="h-4 w-4" />
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={ppsToSlider(srt.pps)}
+          onChange={(e) => srt.setPps(sliderToPps(Number(e.target.value)))}
+          aria-label={t.srtZoom}
+          className="h-1 w-[140px] cursor-ew-resize accent-ws-action"
+        />
+        <button
+          type="button"
+          title={t.srtZoomIn}
+          onClick={() => srt.setPps(zoomStep(srt.pps, 1))}
+          className="flex h-[18px] w-[18px] items-center justify-center rounded-sm text-ws-3 hover:text-ws-1"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+        <span className="w-[52px] text-right font-mono text-[11px] tabular-nums text-ws-3">
+          {tf(t.srtZoomLabel, { pps: Math.round(srt.pps) })}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Панель дорожек. Скроллится не сама: повторяет вертикальный сдвиг полотна,
+ * иначе имя дорожки уезжает от своей полосы.
+ */
+function TrackColumn({
+  viewport,
+  scroller,
+}: {
+  viewport: ViewportSource
+  scroller: React.RefObject<HTMLDivElement | null>
+}) {
+  const { t } = useWorkspace()
+  const srt = useSrt()
+  const innerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    return viewport.subscribe((view) => {
+      const el = innerRef.current
+      if (el) el.style.transform = `translateY(${-view.top}px)`
+    })
+  }, [viewport])
+
+  /**
+   * Колесо над панелью дорожек листает полотно.
+   *
+   * Панель не скроллится сама — она повторяет сдвиг полотна, — поэтому без этой
+   * передачи колесо над именем дорожки просто ничего не делало.
+   */
+  const onWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      const el = scroller.current
+      if (!el) return
+      el.scrollTop += event.deltaY
+      el.scrollLeft += event.deltaX
+    },
+    [scroller],
+  )
+
+  return (
+    <div
+      onWheel={onWheel}
+      className="flex w-[288px] flex-none flex-col border-r border-white/[0.07] bg-ws-well"
+    >
+      <div className="flex h-10 flex-none items-center border-b border-white/[0.07] px-3 text-[11px] font-semibold uppercase tracking-[0.32px] text-ws-4">
+        {t.srtTracks}
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div ref={innerRef} className="will-change-transform">
+          {srt.visibleTracks.map((track) => (
+            <TrackHeader key={track.id} track={track} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TrackHeader({ track }: { track: Track }) {
+  const { t } = useWorkspace()
+  const srt = useSrt()
+  const flags = srt.flags[track.id]
+  const selected = track.id === srt.selectedTrackId
+  const wave = srt.peaksFor(track.id)
+
+  return (
+    <div
+      onClick={() => srt.selectTrack(track.id)}
+      style={{ height: srt.prefs.trackH }}
+      className={cn(
+        "flex items-center gap-1.5 border-b border-white/[0.06] px-2.5",
+        selected && "bg-ws-select/[0.10]",
+      )}
+    >
+      <TrackColorPicker
+        color={track.color}
+        onPick={(color) => srt.ops.setTrackColor(track.id, color)}
+      />
+      <TrackName track={track} />
+      {!wave.own && wave.peaks ? (
+        <span
+          title={t.srtSharedWave}
+          className="flex-none rounded-full border border-white/[0.10] px-1.5 text-[10px] text-ws-5"
+        >
+          {t.srtSharedWaveShort}
+        </span>
+      ) : null}
+      <TrackFlagButton
+        title={wave.peaks ? t.srtTrackWave : t.srtTrackNoWave}
+        active={Boolean(wave.peaks) && (flags?.wave ?? false)}
+        disabled={!wave.peaks}
+        onClick={() => srt.toggleFlag(track.id, "wave")}
+        activeClass="text-ws-accent"
+      >
+        <AudioLines className="h-[14px] w-[14px]" />
+      </TrackFlagButton>
+      <TrackFlagButton
+        title={t.srtSolo}
+        active={flags?.solo ?? false}
+        onClick={() => srt.toggleFlag(track.id, "solo")}
+        activeClass="bg-ws-out text-ws-well"
+      >
+        <span className="text-[11px] font-bold">S</span>
+      </TrackFlagButton>
+      <TrackFlagButton
+        title={t.srtMute}
+        active={flags?.mute ?? false}
+        onClick={() => srt.toggleFlag(track.id, "mute")}
+        activeClass="bg-[#e0a33a] text-ws-well"
+      >
+        <span className="text-[11px] font-bold">M</span>
+      </TrackFlagButton>
+      <TrackFlagButton
+        title={t.srtShy}
+        active={flags?.shy ?? false}
+        onClick={() => srt.toggleFlag(track.id, "shy")}
+        activeClass="bg-[#8b6fd6] text-ws-well"
+      >
+        <EyeOff className="h-[14px] w-[14px]" />
+      </TrackFlagButton>
+    </div>
+  )
+}
+
+/**
+ * Имя дорожки: смотрится как текст, правится по двойному клику.
+ *
+ * Было поле ввода, всегда готовое к правке, — и оно перехватывало всё, что
+ * происходит над именем: колесо, выделение, случайный клик посреди
+ * перетаскивания. Переименование — редкая операция, ей достаточно двойного
+ * клика; всё остальное время это подпись.
+ */
+function TrackName({ track }: { track: Track }) {
+  const { t } = useWorkspace()
+  const srt = useSrt()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(track.name)
+
+  if (!editing) {
+    return (
+      <span
+        title={t.srtRenameTrackHint}
+        onDoubleClick={() => {
+          setDraft(track.name)
+          setEditing(true)
+        }}
+        className="min-w-0 flex-1 cursor-default select-none truncate px-1.5 text-[13px] font-medium text-ws-1"
+      >
+        {track.name}
+      </span>
+    )
+  }
+
+  const commit = () => {
+    setEditing(false)
+    const next = draft.trim()
+    if (next && next !== track.name) srt.ops.renameTrack(track.id, next)
+  }
+
+  return (
+    <input
+      value={draft}
+      autoFocus
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit()
+        if (e.key === "Escape") setEditing(false)
+      }}
+      className="h-7 min-w-0 flex-1 rounded border border-ws-action bg-ws-well px-1.5 text-[13px] font-medium text-ws-1 outline-none"
+    />
+  )
+}
+
+function TrackFlagButton({
+  title,
+  active,
+  activeClass,
+  disabled,
+  onClick,
+  children,
+}: {
+  title: string
+  active: boolean
+  activeClass: string
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={cn(
+        "flex h-6 w-6 flex-none items-center justify-center rounded border border-white/[0.07]",
+        active ? activeClass : "text-ws-3 hover:bg-ws-hover",
+        disabled && "cursor-default text-ws-5 opacity-50 hover:bg-transparent",
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Полоса одной дорожки: волна, серая зона за концом материала, клипы. */
+function Lane({
+  track,
+  viewport,
+  lanesRef,
+}: {
+  track: Track
+  viewport: ViewportSource
+  lanesRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const srt = useSrt()
+  const flags = srt.flags[track.id]
+  const soloed = Object.values(srt.flags).some((f) => f.solo)
+  const dimmed = (soloed && !flags?.solo) || Boolean(flags?.mute)
+  const selected = track.id === srt.selectedTrackId
+  const wave = srt.peaksFor(track.id)
+  const height = srt.prefs.trackH
+  const waveH = Math.max(14, Math.round(height * WAVE_SHARE))
+
+  const startDrag = useClipDrag(lanesRef)
+
+  const onLaneDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (srt.tool !== "create" || event.target !== event.currentTarget) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      const startMs = Math.max(0, xToMs(event.clientX - rect.left, srt.pps))
+      const id = srt.ops.addCue(track.id, startMs, startMs + 2000)
+      srt.selectTrack(track.id)
+      startDrag(event, { id, trackId: track.id, startMs, endMs: startMs + 2000 }, "right")
+    },
+    [srt, startDrag, track.id],
+  )
+
+  return (
+    <div
+      onPointerDown={onLaneDown}
+      style={{ height, cursor: cursorFor(srt.tool, false) }}
+      className={cn(
+        "relative border-b border-white/[0.06]",
+        selected && "bg-ws-select/[0.05]",
+      )}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-0 right-0 top-0 border-l border-white/[0.10] bg-ws-well/60"
+        style={{ left: msToX(srt.mediaEndMs, srt.pps) }}
+      />
+      {srt.doc.cues
+        .filter((cue) => cue.trackId === track.id)
+        .map((cue) => (
+          <Clip
+            key={cue.id}
+            cue={cue}
+            height={height}
+            dimmed={dimmed}
+            onDrag={startDrag}
+          />
+        ))}
+      {/*
+        Волна — последней, то есть поверх клипов, но полосой у нижнего края.
+        Под клипами она пропадала именно там, где нужна: по ней ищут настоящее
+        начало речи. Текст титра при этом прижат к верху клипа, так что они не
+        спорят. Кликам волна не мешает — `pointer-events: none`.
+      */}
+      {flags?.wave === false ? null : (
+        <WaveCanvas
+          peaks={wave.peaks}
+          pps={srt.pps}
+          height={waveH}
+          color={wave.own ? track.color : null}
+          opacity={wave.own ? (flags?.solo ? 0.85 : 0.6) : 0.24}
+          viewport={viewport}
+        />
+      )}
+    </div>
+  )
+}
+
+function Clip({
+  cue,
+  height,
+  dimmed,
+  onDrag,
+}: {
+  cue: Cue
+  height: number
+  dimmed: boolean
+  onDrag: ReturnType<typeof useClipDrag>
+}) {
+  const srt = useSrt()
+  const selected = cue.id === srt.selectedCueId
+  const left = msToX(cue.startMs, srt.pps)
+  const width = Math.max(3, msToX(cue.endMs - cue.startMs, srt.pps))
+  const handles = width >= MIN_HANDLE_WIDTH_PX && srt.tool !== "merge"
+
+  // На клипе — текст выбранного языка. Перевода ещё нет — показываем оригинал
+  // приглушённо: так на глаз видно, что именно осталось перевести, и полотно не
+  // превращается в ряд пустых прямоугольников.
+  const translated = srt.lang ? translationOf(cue, srt.lang) : ""
+  const untranslated = Boolean(srt.lang) && !translated
+  const label = translated || cue.text
+
+  /**
+   * Объединение: выбранная реплика — точка отсчёта, кликают по соседней.
+   *
+   * Кандидаты подсвечиваются заранее, остальные получают курсор «нельзя»: иначе
+   * правило «только соседние и только на одной дорожке» приходилось бы
+   * выяснивать методом проб.
+   */
+  const mergeMode = srt.tool === "merge"
+  const anchorId = srt.selectedCueId
+  const isAnchor = mergeMode && cue.id === anchorId
+  const mergeable =
+    mergeMode && anchorId != null && canMergeCues(srt.doc, anchorId, cue.id)
+
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (srt.tool === "razor") {
+        event.preventDefault()
+        event.stopPropagation()
+        const rect = event.currentTarget.getBoundingClientRect()
+        srt.selectCue(cue.id)
+        srt.ops.splitCue(cue.id, cue.startMs + xToMs(event.clientX - rect.left, srt.pps))
+        return
+      }
+      if (srt.tool === "merge") {
+        event.preventDefault()
+        event.stopPropagation()
+        // Клик по неподходящей реплике не ошибка, а смена точки отсчёта: так
+        // выбирают следующую пару, не переключая инструмент.
+        if (!mergeable || anchorId == null) {
+          srt.selectCue(cue.id)
+          return
+        }
+        const survivor = mergeSurvivorId(srt.doc, anchorId, cue.id)
+        srt.ops.mergeCues(anchorId, cue.id)
+        if (survivor) srt.selectCue(survivor, { seek: false })
+        return
+      }
+      onDrag(event, cue, "move")
+    },
+    [anchorId, cue, mergeable, onDrag, srt],
+  )
+
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      title={label}
+      style={{
+        left,
+        width,
+        height: Math.max(20, height - 18),
+        top: 6,
+        opacity: dimmed ? 0.35 : 1,
+        cursor: mergeMode
+          ? mergeable
+            ? "pointer"
+            : isAnchor
+              ? "default"
+              : "not-allowed"
+          : cursorFor(srt.tool, true),
+      }}
+      className={cn(
+        "absolute flex items-start overflow-hidden rounded border",
+        selected
+          ? "border-ws-action bg-ws-action/30"
+          : "border-ws-accent/40 bg-ws-accent/[0.14]",
+        cue.status === "approved" && !selected && "bg-ws-accent/25",
+        mergeable && "border-dashed border-ws-out bg-ws-out/20",
+      )}
+    >
+      {handles ? (
+        <div
+          onPointerDown={(e) => onDrag(e, cue, "left")}
+          className={cn(
+            "absolute bottom-0 left-0 top-0 w-[6px] cursor-ew-resize",
+            selected ? "bg-ws-action/90" : "bg-ws-accent/35",
+          )}
+        />
+      ) : null}
+      <span
+        className={cn(
+          "pointer-events-none truncate px-3 pt-[3px] text-[12px]",
+          untranslated ? "italic text-ws-3 opacity-70" : "text-ws-1",
+        )}
+      >
+        {label}
+      </span>
+      {handles ? (
+        <div
+          onPointerDown={(e) => onDrag(e, cue, "right")}
+          className={cn(
+            "absolute bottom-0 right-0 top-0 w-[6px] cursor-ew-resize",
+            selected ? "bg-ws-action/90" : "bg-ws-accent/35",
+          )}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+type DragMode = "move" | "left" | "right"
+type DragCue = { id: string; trackId: string; startMs: number; endMs: number }
+
+/**
+ * Перетаскивание клипа: сдвиг, растягивание за ручку и перенос на другую
+ * дорожку инструментом переноса.
+ *
+ * Порог в 3 px отделяет клик от перетаскивания — без него любой выбор реплики
+ * сдвигал бы её на пиксель (§17.5).
+ */
+function useClipDrag(lanesRef: React.RefObject<HTMLDivElement | null>) {
+  const srt = useSrt()
+  const srtRef = useRef(srt)
+  srtRef.current = srt
+
+  return useCallback(
+    (event: React.PointerEvent<HTMLElement>, cue: DragCue, mode: DragMode) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+
+      const api = srtRef.current
+      api.selectCue(cue.id, { seek: false })
+      api.selectTrack(cue.trackId)
+
+      const startX = event.clientX
+      const startY = event.clientY
+      const { startMs, endMs } = cue
+      const pps = api.pps
+      const visible = api.visibleTracks
+      const lanesRect = lanesRef.current?.getBoundingClientRect() ?? null
+      const trackH = api.prefs.trackH
+      const gesture = `${mode}:${cue.id}:${event.timeStamp}`
+      let moved = false
+
+      const move = (e: PointerEvent) => {
+        const dx = e.clientX - startX
+        const dy = e.clientY - startY
+        // Порог считаем по обеим осям: перенос между дорожками — жест
+        // вертикальный, и по одному dx его начало не поймать.
+        if (
+          !moved &&
+          mode === "move" &&
+          Math.max(Math.abs(dx), Math.abs(dy)) < DRAG_THRESHOLD_PX
+        ) {
+          return
+        }
+        moved = true
+
+        // Инструмент переноса двигает реплику только по дорожкам: тайминги
+        // остаются те же. Иначе одно движение мыши меняет сразу и персонажа, и
+        // время — а это две разные правки, и вторая тут случайная.
+        if (mode === "move" && srtRef.current.tool === "shift") {
+          if (!lanesRect) return
+          const index = Math.max(
+            0,
+            Math.min(visible.length - 1, Math.floor((e.clientY - lanesRect.top) / trackH)),
+          )
+          const nextTrack = visible[index]?.id
+          if (!nextTrack) return
+          srtRef.current.ops.setTiming(cue.id, startMs, endMs, nextTrack, gesture)
+          return
+        }
+
+        const delta = xToMs(dx, pps)
+        let nextStart = startMs
+        let nextEnd = endMs
+
+        if (mode === "move") {
+          nextStart = Math.max(0, startMs + delta)
+          nextEnd = nextStart + (endMs - startMs)
+        } else if (mode === "left") {
+          nextStart = Math.min(endMs - MIN_CUE_MS, Math.max(0, startMs + delta))
+        } else {
+          nextEnd = Math.max(startMs + MIN_CUE_MS, endMs + delta)
+        }
+
+        if (srtRef.current.prefs.snap) {
+          const edges = snapEdges(srtRef.current.doc.cues, cue.trackId, cue.id)
+          if (mode !== "right") {
+            const snapped = snapMs(nextStart, edges, pps)
+            if (mode === "move") nextEnd += snapped - nextStart
+            nextStart = snapped
+          }
+          if (mode !== "left") nextEnd = snapMs(nextEnd, edges, pps)
+        }
+
+        srtRef.current.ops.setTiming(cue.id, nextStart, nextEnd, undefined, gesture)
+      }
+
+      const up = () => {
+        window.removeEventListener("pointermove", move)
+        window.removeEventListener("pointerup", up)
+      }
+      window.addEventListener("pointermove", move)
+      window.addEventListener("pointerup", up)
+    },
+    [lanesRef],
+  )
+}

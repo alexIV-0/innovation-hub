@@ -64,9 +64,15 @@ function tidySeparators(entries: MenuEntry[]): MenuEntry[] {
 export function WorkspaceContextMenu() {
   const ws = useWorkspace()
   const { menu, t, source } = ws
-  const can = source.can
 
   if (!menu) return null
+
+  // Права считаются по проекту, к которому относится меню: для файлов это
+  // выбранный проект, для строки списка — она сама. Читателю расшаренного
+  // проекта пункты правки не показываются вовсе.
+  const can = ws.capabilitiesFor(
+    menu.kind === "project" ? (menu.project ?? null) : ws.selected,
+  )
 
   let entries: MenuEntry[] = []
 
@@ -199,15 +205,15 @@ export function WorkspaceContextMenu() {
               onClick: () => ws.restoreProject(project),
             } as MenuEntry,
           ]
-        : project.sharedWithMe || !can.renameProject
-          ? []
-          : [
+        : can.shareProject
+          ? [
               {
                 icon: Share2,
                 label: t.mShare,
                 onClick: () => ws.shareProject(project),
               } as MenuEntry,
-            ]),
+            ]
+          : []),
       {
         icon: ExternalLink,
         label: t.mOpenWindow,
@@ -218,7 +224,7 @@ export function WorkspaceContextMenu() {
             "noopener",
           ),
       },
-      ...(project.deletedAt || project.sharedWithMe || !can.archiveProject
+      ...(project.deletedAt || !can.archiveProject
         ? []
         : [
             {

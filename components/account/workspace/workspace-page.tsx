@@ -1,5 +1,6 @@
 "use client"
 
+import { ToolsWorkspace } from "@/components/account/tools/tools-workspace"
 import { ClipboardPanel } from "./clipboard-panel"
 import { WorkspaceContextMenu } from "./context-menu"
 import { PreviewDialog } from "./file-preview"
@@ -14,7 +15,13 @@ import { WorkspaceDialogs } from "./workspace-dialogs"
 import { WorkspaceTopbar } from "./workspace-topbar"
 
 function WorkspaceLayout() {
-  const { density, selected } = useWorkspace()
+  const { density, selected, projectTab } = useWorkspace()
+
+  /**
+   * Раздел «Инструменты» — своё дерево компонентов, но внутри того же провайдера:
+   * ему нужны и режим области, и список проектов (из них выбирается папка).
+   */
+  if (projectTab === "tools") return <ToolsWorkspace />
 
   return (
     <div className="flex h-full min-w-0 overflow-hidden">

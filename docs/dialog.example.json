@@ -1,0 +1,116 @@
+{
+  "format": "dialogDoc",
+  "version": 1,
+  "id": "dd_9f2c7a1e",
+  "revision": 7,
+  "updatedAt": "2026-08-24T10:00:00.000Z",
+  "updatedBy": "aleksey.ivanov@id.thesoul.io",
+  "producer": "innovation-hub/srt-editor 0.1",
+  "media": {
+    "video": "source.mp4",
+    "mix": null,
+    "durationMs": 40000,
+    "fps": 25
+  },
+  "languages": {
+    "original": "en",
+    "targets": ["es", "fr"]
+  },
+  "rules": {
+    "maxCps": 17,
+    "minDurationMs": 400,
+    "minGapMs": 80,
+    "overlapWithinTrack": "forbid"
+  },
+  "tracks": [
+    {
+      "id": "t01",
+      "no": 1,
+      "name": "Anna",
+      "color": "#5B8DEF",
+      "audio": "01/audio.wav",
+      "peaks": "01/audio.peaks.json",
+      "voice": { "provider": null, "voiceId": null, "params": {} }
+    },
+    {
+      "id": "t02",
+      "no": 2,
+      "name": "Bob",
+      "color": "#E0A458",
+      "audio": "02/audio.wav",
+      "peaks": "02/audio.peaks.json",
+      "voice": { "provider": null, "voiceId": null, "params": {} }
+    }
+  ],
+  "cues": [
+    {
+      "id": "c_7f3a2b91",
+      "trackId": "t01",
+      "startMs": 26270,
+      "endMs": 29190,
+      "text": "So these guys just disappeared.",
+      "tr": {
+        "es": { "text": "Así que estos tipos simplemente desaparecieron.", "status": "draft" },
+        "fr": { "text": "Donc ces gars ont tout simplement disparu.", "status": "draft" }
+      },
+      "status": "auto",
+      "rev": 1,
+      "origin": { "kind": "auto", "file": "01/orig.srt", "index": 1 },
+      "note": "",
+      "voice": { "takes": [] }
+    },
+    {
+      "id": "c_1c88de40",
+      "trackId": "t02",
+      "startMs": 31000,
+      "endMs": 34070,
+      "text": "Yeah, on that stretch of road right above El Matador.",
+      "tr": {
+        "es": { "text": "Sí, en ese tramo de carretera justo encima de El Matador.", "status": "approved" },
+        "fr": { "text": "Oui, sur ce tronçon de route juste au-dessus d'El Matador.", "status": "draft" }
+      },
+      "status": "edited",
+      "rev": 4,
+      "origin": { "kind": "auto", "file": "02/orig.srt", "index": 1 },
+      "note": "имя собственное оставили как есть",
+      "voice": { "takes": [] },
+      "loudnessLufs": -18.4
+    },
+    {
+      "id": "c_44b0a7c3",
+      "trackId": "t01",
+      "startMs": 34290,
+      "endMs": 36000,
+      "text": "You know it?",
+      "tr": {
+        "es": { "text": "¿Lo sabes?", "status": "draft" },
+        "fr": { "text": "Tu le sais ?", "status": "draft" }
+      },
+      "status": "edited",
+      "rev": 2,
+      "origin": { "kind": "auto", "file": "02/orig.srt", "index": 2 },
+      "movedFrom": "t02",
+      "note": "автоматика приписала Бобу, на слух — Анна",
+      "voice": { "takes": [] }
+    },
+    {
+      "id": "c_9ae51f77",
+      "trackId": "t02",
+      "startMs": 36020,
+      "endMs": 37800,
+      "text": "With the big rock?",
+      "tr": {
+        "es": { "text": "¿Con la gran roca?", "status": "draft" },
+        "fr": { "text": "Avec le gros rocher ?", "status": "draft" }
+      },
+      "status": "approved",
+      "rev": 3,
+      "origin": { "kind": "manual" },
+      "note": "",
+      "voice": { "takes": [] }
+    }
+  ],
+  "removed": [
+    { "id": "c_2b91ff02", "at": "2026-08-24T09:41:12.000Z" }
+  ]
+}

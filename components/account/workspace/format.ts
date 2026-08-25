@@ -142,7 +142,9 @@ export function mapProject(raw: Record<string, unknown>): Project {
           : new Date(String(raw.deletedAt)).toISOString(),
     sharedWithMe: Boolean(raw.sharedWithMe),
     memberRole:
-      raw.memberRole === "viewer" || raw.memberRole === "editor"
+      raw.memberRole === "viewer" ||
+      raw.memberRole === "editor" ||
+      raw.memberRole === "full"
         ? raw.memberRole
         : null,
     driveFolderId: (raw.driveFolderId as string | null) ?? null,

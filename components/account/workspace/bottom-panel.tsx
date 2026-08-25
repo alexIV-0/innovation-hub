@@ -47,7 +47,7 @@ export function DescriptionTab() {
 export function SettingsTab() {
   const {
     t,
-    source,
+    can,
     selected,
     patchProject,
     setArchived,
@@ -56,7 +56,9 @@ export function SettingsTab() {
     saveExposedOptions,
   } = useWorkspace()
   if (!selected) return null
-  const can = source.can
+  // Настройки — это правка: читателю расшаренного проекта тумблер и параметры
+  // обработки показываются выключенными, а не активными «до первого 403».
+  const canEditSettings = can.writeSettings
   return (
     <div className="max-w-[640px]">
       <div className="flex items-center justify-between gap-4 py-3.5">
@@ -69,11 +71,12 @@ export function SettingsTab() {
           role="switch"
           aria-checked={selected.isPaused}
           aria-label={t.settingPauseTitle}
+          disabled={!canEditSettings}
           onClick={() =>
             void patchProject(selected.id, { isPaused: !selected.isPaused })
           }
           className={cn(
-            "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+            "relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50",
             selected.isPaused ? "bg-ws-action" : "bg-white/10",
           )}
         >
@@ -89,9 +92,12 @@ export function SettingsTab() {
           Ниже — действия над самим проектом, они к обработке не относятся. */}
       <ExposedOptionsList
         options={exposedOptions}
-        onSave={saveExposedOptions}
+        onSave={canEditSettings ? saveExposedOptions : null}
         className="mt-4 border-t border-white/[0.07] pt-4"
       />
+      {canEditSettings ? null : (
+        <p className="mt-3 text-[12px] text-ws-4">{t.shareReadOnlyNote}</p>
+      )}
 
       {can.archiveProject || can.deleteProject ? (
         <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-white/[0.07] pt-4">
@@ -126,7 +132,8 @@ export function SettingsTab() {
 }
 
 export function ChatTab() {
-  const { t, source, messages, draft, setDraft, sendMessage } = useWorkspace()
+  const { t, can, source, messages, draft, setDraft, sendMessage } =
+    useWorkspace()
   return (
     <div className="flex h-full min-h-[160px] flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
@@ -170,28 +177,34 @@ export function ChatTab() {
           })
         )}
       </div>
-      <div className="mt-3 flex shrink-0 items-center gap-2.5">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault()
-              sendMessage()
-            }
-          }}
-          placeholder={t.chatPlaceholder}
-          className="h-[42px] flex-1 rounded-[9px] border border-white/10 bg-ws-control px-3.5 text-[14px] text-ws-1 outline-none focus:border-ws-select"
-        />
-        <button
-          type="button"
-          onClick={sendMessage}
-          aria-label={t.tabChat}
-          className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[9px] bg-ws-action text-white hover:bg-ws-action-hover"
-        >
-          <Send className="h-5 w-5" />
-        </button>
-      </div>
+      {can.writeChat ? (
+        <div className="mt-3 flex shrink-0 items-center gap-2.5">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                sendMessage()
+              }
+            }}
+            placeholder={t.chatPlaceholder}
+            className="h-[42px] flex-1 rounded-[9px] border border-white/10 bg-ws-control px-3.5 text-[14px] text-ws-1 outline-none focus:border-ws-select"
+          />
+          <button
+            type="button"
+            onClick={sendMessage}
+            aria-label={t.tabChat}
+            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[9px] bg-ws-action text-white hover:bg-ws-action-hover"
+          >
+            <Send className="h-5 w-5" />
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 shrink-0 text-[12px] text-ws-4">
+          {t.shareReadOnlyChat}
+        </p>
+      )}
     </div>
   )
 }

@@ -42,11 +42,14 @@ export const CABINET_SOURCE: WorkspaceSource = {
     deleteProject: true,
     renameProject: true,
     archiveProject: true,
+    shareProject: true,
     upload: true,
     createFolder: true,
     renameItem: true,
     deleteItem: true,
     move: true,
+    writeSettings: true,
+    writeChat: true,
     // Описание — бриф от команды: пользователь его читает, а пишут в программе
     // или в админском «Конвейере».
     editDescription: false,

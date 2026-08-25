@@ -3,6 +3,8 @@ import { getPublicSiteUrl } from "@/lib/public-site-url"
 import {
   projectAccessGrantedHtml,
   projectInviteWithPasswordHtml,
+  shareRoleCopy,
+  type ShareRole,
 } from "@/lib/mail/templates"
 
 function siteBase(): string {
@@ -62,20 +64,18 @@ export async function sendProjectAccessGrantedEmail(input: {
   inviteeName: string
   projectName: string
   projectId: string
-  role: "viewer" | "editor"
+  role: ShareRole
   inviterName: string
 }): Promise<MailResult> {
   const site = siteBase()
   const openUrl = `${site}/account/projects/${input.projectId}`
-  const roleLabel = input.role === "editor" ? "Editor" : "Viewer"
+  const role = shareRoleCopy(input.role)
   const subject = `${input.inviterName} shared “${input.projectName}” with you`
   const text = [
     `Hi ${input.inviteeName},`,
     ``,
-    `${input.inviterName} shared the project “${input.projectName}” with you as ${roleLabel}.`,
-    input.role === "editor"
-      ? "You can open this project, view files, and make changes."
-      : "You can open this project and view its files.",
+    `${input.inviterName} shared the project “${input.projectName}” with you as ${role.label}.`,
+    role.hint,
     ``,
     `Open the project: ${openUrl}`,
   ].join("\n")
@@ -93,18 +93,19 @@ export async function sendProjectInviteWithPasswordEmail(input: {
   to: string
   inviteeName: string
   projectName: string
-  role: "viewer" | "editor"
+  role: ShareRole
   inviterName: string
   temporaryPassword: string
 }): Promise<MailResult> {
   const site = siteBase()
   const loginUrl = `${site}/login`
-  const roleLabel = input.role === "editor" ? "Editor" : "Viewer"
+  const role = shareRoleCopy(input.role)
   const subject = `${input.inviterName} invited you to “${input.projectName}”`
   const text = [
     `Hi ${input.inviteeName},`,
     ``,
-    `${input.inviterName} invited you to FF Works and shared “${input.projectName}” as ${roleLabel}.`,
+    `${input.inviterName} invited you to FF Works and shared “${input.projectName}” as ${role.label}.`,
+    role.hint,
     ``,
     `Sign in: ${loginUrl}`,
     `Email: ${input.to}`,

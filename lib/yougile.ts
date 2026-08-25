@@ -65,21 +65,71 @@ export function isYouGileConfigured(): boolean {
  */
 const YOUGILE_REQUEST_TIMEOUT_MS = 10_000
 
+function describeFetchFailure(error: unknown): string {
+  const chain: unknown[] = [error]
+  if (error && typeof error === "object" && "cause" in error) {
+    chain.push((error as { cause: unknown }).cause)
+  }
+  for (const item of chain) {
+    if (!item || typeof item !== "object") continue
+    const code = "code" in item ? String((item as { code: unknown }).code) : ""
+    const hostname =
+      "hostname" in item ? String((item as { hostname: unknown }).hostname) : ""
+    if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+      return `DNS lookup failed for ${hostname || "yougile.com"}`
+    }
+    if (
+      code === "ECONNREFUSED" ||
+      code === "ECONNRESET" ||
+      code === "ETIMEDOUT" ||
+      code === "ENETUNREACH" ||
+      code === "EHOSTUNREACH"
+    ) {
+      return code
+    }
+    const name = "name" in item ? String((item as { name: unknown }).name) : ""
+    if (name === "TimeoutError" || name === "AbortError") return "request timed out"
+  }
+  return error instanceof Error ? error.message : "network error"
+}
+
+/** DNS / timeout / connection failures, plus upstream 429/5xx — retry later, don't dump a stack. */
+export function isYouGileTransientError(error: unknown): boolean {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = Number((error as { status: unknown }).status)
+    if (status === 0 || status === 429 || status >= 500) return true
+  }
+  if (error instanceof TypeError && /fetch failed/i.test(error.message)) return true
+  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+    return true
+  }
+  return false
+}
+
 async function yougileRequest<T>(
   path: string,
   init: RequestInit,
 ): Promise<T> {
   const { apiKey } = getYouGileConfig()
-  const response = await fetch(`${YOUGILE_API_BASE}${path}`, {
-    ...init,
-    signal: init.signal ?? AbortSignal.timeout(YOUGILE_REQUEST_TIMEOUT_MS),
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  })
+  let response: Response
+  try {
+    response = await fetch(`${YOUGILE_API_BASE}${path}`, {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(YOUGILE_REQUEST_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(init.headers ?? {}),
+      },
+    })
+  } catch (error) {
+    throw new YouGileError(
+      `YouGile unreachable: ${describeFetchFailure(error)}`,
+      0,
+      error,
+    )
+  }
 
   const payload = await response.json().catch(() => null)
 

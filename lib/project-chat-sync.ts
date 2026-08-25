@@ -9,12 +9,18 @@ import {
   getCompanyUserNameMap,
   getYouGileConfig,
   isYouGileConfigured,
+  isYouGileTransientError,
   listChatMessages,
   YouGileError,
 } from "@/lib/yougile"
 
 /** Chat ids YouGile already said are gone — skip further pulls this process. */
 const missingYouGileChatIds = new Set<string>()
+
+/** After DNS/timeout, don't hammer yougile.com for the rest of this poller tick. */
+let skipPullsUntil = 0
+let lastTransientWarnAt = 0
+const TRANSIENT_WARN_INTERVAL_MS = 60_000
 
 /**
  * Pulls team replies from a project's YouGile chat into the site's DB.
@@ -53,6 +59,7 @@ export async function syncProjectChatFromYouGile(project: {
   const chatId = project.yougileChatId
   if (!chatId || !isYouGileConfigured()) return
   if (missingYouGileChatIds.has(chatId)) return
+  if (Date.now() < skipPullsUntil) return
 
   try {
     const config = getYouGileConfig()
@@ -135,9 +142,19 @@ export async function syncProjectChatFromYouGile(project: {
       })
       return
     }
+    if (isYouGileTransientError(error)) {
+      skipPullsUntil = Date.now() + 30_000
+      const now = Date.now()
+      if (now - lastTransientWarnAt >= TRANSIENT_WARN_INTERVAL_MS) {
+        lastTransientWarnAt = now
+        const detail = error instanceof Error ? error.message : "network error"
+        console.warn(`[project-chat-sync] YouGile unreachable, retrying later (${detail})`)
+      }
+      return
+    }
     console.error("[project-chat-sync] pull from YouGile failed", {
       projectId: project.id,
-      error,
+      error: error instanceof Error ? error.message : error,
     })
   }
 }

@@ -11,6 +11,7 @@ import {
 import { isS3Configured } from "@/lib/s3-client"
 import {
   requireOwnedProjectAccess,
+  requireProjectAccess,
   type StorageApiAuth,
 } from "@/lib/storage/auth"
 import { syncProjectMeta } from "@/lib/storage/project-catalog"
@@ -101,11 +102,18 @@ export async function createOwnedProject(
   return { data: project }
 }
 
+/**
+ * Переименование: владелец или участник с полным доступом.
+ *
+ * Имя проекта видят все, кому он расшарен, поэтому право на него идёт вместе с
+ * правом звать людей, а не с правом править файлы: редактор работает внутри
+ * папки и переименовать её не может.
+ */
 export async function renameOwnedProject(
   auth: StorageApiAuth,
   input: { projectId: string; name: string },
 ): Promise<MutationResult<ProjectRecord> | NextResponse> {
-  const access = await requireOwnedProjectAccess(auth, input.projectId)
+  const access = await requireProjectAccess(auth, input.projectId, "full")
   if (access instanceof NextResponse) return access
 
   const project = await updateProject(access.projectId, access.ownerId, {
@@ -116,11 +124,22 @@ export async function renameOwnedProject(
   return { data: project }
 }
 
+/**
+ * Пауза и архив.
+ *
+ * Порог разный: пауза — обычная настройка обработки, её ставит редактор; архив
+ * убирает проект из работы у всех сразу, включая владельца, поэтому требует
+ * полного доступа. Когда в одном запросе пришло и то и другое, решает архив.
+ */
 export async function setOwnedProjectState(
   auth: StorageApiAuth,
   input: { projectId: string; paused?: boolean; archived?: boolean },
 ): Promise<MutationResult<ProjectRecord> | NextResponse> {
-  const access = await requireOwnedProjectAccess(auth, input.projectId)
+  const access = await requireProjectAccess(
+    auth,
+    input.projectId,
+    input.archived !== undefined ? "full" : "editor",
+  )
   if (access instanceof NextResponse) return access
 
   const project = await updateProject(access.projectId, access.ownerId, {

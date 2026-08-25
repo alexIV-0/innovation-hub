@@ -9,6 +9,10 @@ import {
   deleteProject,
   listProjectsByUserId,
 } from "@/lib/repositories/projects"
+import {
+  isProjectMemberRole,
+  type ProjectMemberRole,
+} from "@/lib/project-access"
 import { listSharedProjectsForUser } from "@/lib/repositories/project-members"
 import { listDeletedProjects } from "@/lib/storage/project-trash"
 import { isS3Configured } from "@/lib/s3-client"
@@ -78,7 +82,7 @@ function serializeProject(
     unreadCount: number
     memberCount: number
     sharedWithMe: boolean
-    memberRole: "viewer" | "editor" | null
+    memberRole: ProjectMemberRole | null
     deletedAt: string | null
   },
 ) {
@@ -198,10 +202,7 @@ export async function GET(request: NextRequest) {
           unreadCount: unread[p.id] ?? 0,
           memberCount: memberCounts[p.id] ?? 0,
           sharedWithMe: true,
-          memberRole:
-            p.memberRole === "viewer" || p.memberRole === "editor"
-              ? p.memberRole
-              : null,
+          memberRole: isProjectMemberRole(p.memberRole) ? p.memberRole : null,
           deletedAt: null,
         }),
       ),

@@ -26,7 +26,12 @@ export type Project = {
   deletedAt: string | null
   /** Shared with the current user (not owned). */
   sharedWithMe: boolean
-  memberRole?: "viewer" | "editor" | null
+  /**
+   * Роль в расшаренном проекте: читатель, редактор или полный доступ.
+   * null — проект свой, права владельца. Матрица — lib/project-access.ts,
+   * её клиентская половина — ./access.ts.
+   */
+  memberRole?: "viewer" | "editor" | "full" | null
   driveFolderId: string | null
   createdAt: string
   updatedAt: string
@@ -76,16 +81,30 @@ export type Clipboard = {
 }
 
 /** Что рабочей области разрешено делать с данными. */
+/**
+ * Что позволено в рабочей области.
+ *
+ * Два слоя. Источник задаёт потолок зоны: кабинет разрешает работу с файлами,
+ * админский «Конвейер» — почти ничего, кроме описания. Роль в расшаренном
+ * проекте срезает этот потолок до своего: см. projectCapabilities в ./access.ts,
+ * и брать `source.can` напрямую для действий над проектом больше нельзя.
+ */
 export type WorkspaceCapabilities = {
   createProject: boolean
   deleteProject: boolean
   renameProject: boolean
   archiveProject: boolean
+  /** Расшарить проект, сменить роль участника, снять доступ. */
+  shareProject: boolean
   upload: boolean
   createFolder: boolean
   renameItem: boolean
   deleteItem: boolean
   move: boolean
+  /** Параметры обработки и тумблер слежения. */
+  writeSettings: boolean
+  /** Писать в чат проекта. Читателю расшаренного проекта — нельзя. */
+  writeChat: boolean
   /**
    * Править развёрнутое описание проекта (options/description.md). В кабинете
    * его читают, а пишет команда: адрес `descriptionMdUrl` там отдаёт только GET.

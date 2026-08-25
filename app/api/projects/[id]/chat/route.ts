@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit"
 import { findUserById } from "@/lib/repositories/users"
-import { findProjectForUser } from "@/lib/repositories/projects"
+import { requireProjectAccess } from "@/lib/project-access"
 import {
   insertProjectChatMessage,
   listProjectChatMessages,
@@ -25,10 +25,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId)
+  if (access instanceof NextResponse) return access
+  const project = access.project
 
   // YouGile's webhook only fires for messages sent through its own REST
   // API, never for messages typed directly in the YouGile app — so team
@@ -54,10 +53,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   const { id } = await context.params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId, "editor")
+  if (access instanceof NextResponse) return access
+  const project = access.project
 
   const payload = await request.json().catch(() => null)
   const parsed = sendProjectChatMessageSchema.safeParse(payload)

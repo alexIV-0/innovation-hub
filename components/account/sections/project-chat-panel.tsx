@@ -21,6 +21,11 @@ type Props = {
   initialMessages: ProjectChatMessageDto[]
   /** Compact = embedded in the project detail page; false = the full chat page. */
   compact?: boolean
+  /**
+   * Может ли этот человек писать в чат. Читателю расшаренного проекта нельзя —
+   * он чат видит (это переписка по его проекту), но не участвует в ней.
+   */
+  canWrite?: boolean
 }
 
 const POLL_INTERVAL_MS = 6000
@@ -55,6 +60,7 @@ export function ProjectChatPanel({
   projectId,
   initialMessages,
   compact = false,
+  canWrite = true,
 }: Props) {
   const [messages, setMessages] = useState(initialMessages)
   const [text, setText] = useState("")
@@ -209,34 +215,40 @@ export function ProjectChatPanel({
         )}
       </div>
 
-      <div className="flex items-end gap-2 border-t border-border/60 px-4 py-3">
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault()
-              void onSend()
-            }
-          }}
-          placeholder="Write a message…"
-          rows={1}
-          className="min-h-[2.5rem] flex-1 resize-none"
-        />
-        <Button
-          type="button"
-          size="icon"
-          disabled={sending || !text.trim()}
-          onClick={() => void onSend()}
-          aria-label="Send message"
-        >
-          {sending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
+      {canWrite ? (
+        <div className="flex items-end gap-2 border-t border-border/60 px-4 py-3">
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                void onSend()
+              }
+            }}
+            placeholder="Write a message…"
+            rows={1}
+            className="min-h-[2.5rem] flex-1 resize-none"
+          />
+          <Button
+            type="button"
+            size="icon"
+            disabled={sending || !text.trim()}
+            onClick={() => void onSend()}
+            aria-label="Send message"
+          >
+            {sending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      ) : (
+        <p className="border-t border-border/60 px-4 py-3 text-xs text-muted-foreground">
+          You have read-only access to this project.
+        </p>
+      )}
     </section>
   )
 }

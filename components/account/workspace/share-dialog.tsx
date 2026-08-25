@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronDown, Loader2, X } from "lucide-react"
 import { toast } from "sonner"
 
-import { avatarInitials, type Dictionary } from "@/components/account/i18n"
+import { avatarInitials, tf, type Dictionary } from "@/components/account/i18n"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,13 +23,19 @@ import {
 import { cn } from "@/lib/utils"
 import { useWorkspace } from "./workspace-context"
 
-type MemberRole = "viewer" | "editor"
+type MemberRole = "viewer" | "editor" | "full"
+
+/** Роль смотрящего: владелец видит и меняет всё, полный доступ — не всё. */
+type ViewerRole = MemberRole | "owner"
 
 type Person = {
   userId: string
   email: string
   fullName: string
   role: MemberRole | "owner"
+  /** Кто позвал этого человека: при делегировании звал не всегда владелец. */
+  invitedBy?: string | null
+  invitedByName?: string | null
 }
 
 const AVATAR_COLORS = [
@@ -59,7 +65,30 @@ function tokenize(raw: string): string[] {
 }
 
 function roleLabel(role: MemberRole, t: Dictionary): string {
+  if (role === "full") return t.shareFull
   return role === "editor" ? t.shareEditor : t.shareViewer
+}
+
+function roleHint(role: MemberRole, t: Dictionary): string {
+  if (role === "full") return t.shareFullHint
+  return role === "editor" ? t.shareEditorHint : t.shareViewerHint
+}
+
+const ROLES: MemberRole[] = ["viewer", "editor", "full"]
+
+/**
+ * Может ли смотрящий распоряжаться доступом этого человека.
+ *
+ * Владелец — всеми. Полный доступ — читателями и редакторами, но не таким же
+ * полным доступом: иначе двое приглашённых могли бы вычеркнуть друг друга из
+ * проекта, который завёл не они. Те же правила стоят на сервере
+ * (canManageMember в lib/project-access.ts) — здесь только показ.
+ */
+function canManage(viewerRole: ViewerRole, person: Person): boolean {
+  if (person.role === "owner") return false
+  if (viewerRole === "owner") return true
+  if (viewerRole !== "full") return false
+  return person.role !== "full"
 }
 
 function PersonAvatar({ name, email }: { name: string; email: string }) {
@@ -83,6 +112,8 @@ export function ShareDialog() {
   const [inviteRole, setInviteRole] = useState<MemberRole>("viewer")
   const [owner, setOwner] = useState<Person | null>(null)
   const [members, setMembers] = useState<Person[]>([])
+  const [viewerUserId, setViewerUserId] = useState<string | null>(null)
+  const [viewerRole, setViewerRole] = useState<ViewerRole>("owner")
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
@@ -103,6 +134,8 @@ export function ShareDialog() {
     setInviteRole("viewer")
     setOwner(null)
     setMembers([])
+    setViewerUserId(null)
+    setViewerRole("owner")
     setHint(null)
     setBusyId(null)
     setSending(false)
@@ -124,6 +157,12 @@ export function ShareDialog() {
           toast.error(data.message ?? "Failed to load people")
           return
         }
+        setViewerUserId(
+          typeof data.viewerUserId === "string" ? data.viewerUserId : null,
+        )
+        setViewerRole(
+          data.viewerRole === "full" ? "full" : "owner",
+        )
         setOwner(
           data.owner
             ? {
@@ -142,11 +181,15 @@ export function ShareDialog() {
                   email: string
                   fullName: string
                   role: MemberRole
+                  invitedBy?: string | null
+                  invitedByName?: string | null
                 }) => ({
                   userId: m.userId,
                   email: m.email,
                   fullName: m.fullName,
                   role: m.role,
+                  invitedBy: m.invitedBy ?? null,
+                  invitedByName: m.invitedByName ?? null,
                 }),
               )
             : [],
@@ -425,9 +468,11 @@ export function ShareDialog() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[14px] font-medium text-ws-1">
                       {owner.fullName || owner.email}
-                      <span className="ml-1.5 text-[12px] font-normal text-ws-4">
-                        ({t.shareYou})
-                      </span>
+                      {owner.userId === viewerUserId ? (
+                        <span className="ml-1.5 text-[12px] font-normal text-ws-4">
+                          ({t.shareYou})
+                        </span>
+                      ) : null}
                     </p>
                     <p className="truncate text-[12px] text-ws-4">{owner.email}</p>
                   </div>
@@ -436,30 +481,63 @@ export function ShareDialog() {
                   </span>
                 </li>
               ) : null}
-              {members.map((person) => (
-                <li
-                  key={person.userId}
-                  className="flex items-center gap-3 rounded-xl px-1 py-2"
-                >
-                  <PersonAvatar name={person.fullName} email={person.email} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[14px] font-medium text-ws-1">
-                      {person.fullName || person.email}
-                    </p>
-                    <p className="truncate text-[12px] text-ws-4">{person.email}</p>
-                  </div>
-                  {busyId === person.userId ? (
-                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-ws-4" />
-                  ) : (
-                    <MemberRoleMenu
-                      t={t}
-                      value={person.role === "owner" ? "viewer" : person.role}
-                      onChange={(role) => void changeRole(person, role)}
-                      onRemove={() => void removePerson(person)}
-                    />
-                  )}
-                </li>
-              ))}
+              {members.map((person) => {
+                const role: MemberRole =
+                  person.role === "owner" ? "viewer" : person.role
+                // «Добавил X» — только про чужие приглашения: строка, которую
+                // смотрящий сам и создал, в подписи не нуждается.
+                const addedBy =
+                  person.invitedBy && person.invitedBy !== viewerUserId
+                    ? person.invitedByName
+                    : null
+                return (
+                  <li
+                    key={person.userId}
+                    className="flex items-center gap-3 rounded-xl px-1 py-2"
+                  >
+                    <PersonAvatar name={person.fullName} email={person.email} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[14px] font-medium text-ws-1">
+                        {person.fullName || person.email}
+                        {person.userId === viewerUserId ? (
+                          <span className="ml-1.5 text-[12px] font-normal text-ws-4">
+                            ({t.shareYou})
+                          </span>
+                        ) : null}
+                      </p>
+                      <p className="truncate text-[12px] text-ws-4">
+                        {person.email}
+                        {addedBy
+                          ? ` · ${tf(t.shareInvitedBy, { name: addedBy })}`
+                          : ""}
+                      </p>
+                    </div>
+                    {busyId === person.userId ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-ws-4" />
+                    ) : canManage(viewerRole, person) ? (
+                      <MemberRoleMenu
+                        t={t}
+                        value={role}
+                        onChange={(next) => void changeRole(person, next)}
+                        onRemove={() => void removePerson(person)}
+                      />
+                    ) : (
+                      // Роль показана, но не как кнопка: у смотрящего нет права
+                      // её менять, и подсказка объясняет, почему.
+                      <span
+                        className="shrink-0 px-2 text-[13px] text-ws-3"
+                        title={
+                          person.userId === viewerUserId
+                            ? t.shareManagedByOwner
+                            : t.shareOwnerOnlyRole
+                        }
+                      >
+                        {roleLabel(role, t)}
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
@@ -524,18 +602,15 @@ function RoleMenu({
         align="end"
         className="min-w-[220px] border-white/10 bg-ws-raised text-ws-1"
       >
-        <RoleItem
-          t={t}
-          role="viewer"
-          selected={value === "viewer"}
-          onSelect={onChange}
-        />
-        <RoleItem
-          t={t}
-          role="editor"
-          selected={value === "editor"}
-          onSelect={onChange}
-        />
+        {ROLES.map((role) => (
+          <RoleItem
+            key={role}
+            t={t}
+            role={role}
+            selected={value === role}
+            onSelect={onChange}
+          />
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -567,18 +642,15 @@ function MemberRoleMenu({
         align="end"
         className="min-w-[220px] border-white/10 bg-ws-raised text-ws-1"
       >
-        <RoleItem
-          t={t}
-          role="viewer"
-          selected={value === "viewer"}
-          onSelect={onChange}
-        />
-        <RoleItem
-          t={t}
-          role="editor"
-          selected={value === "editor"}
-          onSelect={onChange}
-        />
+        {ROLES.map((role) => (
+          <RoleItem
+            key={role}
+            t={t}
+            role={role}
+            selected={value === role}
+            onSelect={onChange}
+          />
+        ))}
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
           className="cursor-pointer text-destructive focus:bg-white/10 focus:text-destructive"
@@ -612,7 +684,7 @@ function RoleItem({
         {selected ? <Check className="h-3.5 w-3.5 text-ws-action" /> : null}
       </span>
       <span className="text-[12px] font-normal text-ws-4">
-        {role === "editor" ? t.shareEditorHint : t.shareViewerHint}
+        {roleHint(role, t)}
       </span>
     </DropdownMenuItem>
   )

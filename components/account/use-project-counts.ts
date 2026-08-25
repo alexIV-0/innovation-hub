@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 
+import { TOOLS_CHANGED_EVENT } from "@/components/account/tools/tools-context"
 import { PROJECTS_CHANGED_EVENT } from "@/components/account/workspace/workspace-context"
 import type { ProjectTab } from "@/components/account/workspace/workspace-context"
 
@@ -35,8 +36,19 @@ export function useProjectCounts() {
         if (p.deletedAt) acc.trash += 1
         else if (p.sharedWithMe) acc.shared += 1
         else if (p.isArchived) acc.archive += 1
-        else if (p.groupName === "tools") acc.tools += 1
         else acc.projects += 1
+      }
+      // Инструменты — не проекты: у них свой список (user_tools), поэтому
+      // считаем отдельным запросом. Прежнее значение group_name='tools'
+      // осталось в базе, но в меню больше не участвует.
+      try {
+        const toolsRes = await fetch("/api/account/tools")
+        if (toolsRes.ok) {
+          const toolsData = await toolsRes.json()
+          acc.tools = (toolsData.tools ?? []).length
+        }
+      } catch {
+        // счётчик не критичен
       }
       setCounts(acc)
     } catch {
@@ -48,7 +60,11 @@ export function useProjectCounts() {
     void load()
     const onChange = () => void load()
     window.addEventListener(PROJECTS_CHANGED_EVENT, onChange)
-    return () => window.removeEventListener(PROJECTS_CHANGED_EVENT, onChange)
+    window.addEventListener(TOOLS_CHANGED_EVENT, onChange)
+    return () => {
+      window.removeEventListener(PROJECTS_CHANGED_EVENT, onChange)
+      window.removeEventListener(TOOLS_CHANGED_EVENT, onChange)
+    }
   }, [load])
 
   return counts

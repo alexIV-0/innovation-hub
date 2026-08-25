@@ -7,13 +7,19 @@ import {
   sendProjectAccessGrantedEmail,
   sendProjectInviteWithPasswordEmail,
 } from "@/lib/mail/send"
-import { syncUserMeta } from "@/lib/project-storage"
-import { findOwnedProject } from "@/lib/repositories/projects"
 import {
+  canGrantRole,
+  canManageMember,
+  requireProjectAccess,
+  type ProjectAccessRole,
+  type ProjectMemberRole,
+} from "@/lib/project-access"
+import { syncUserMeta } from "@/lib/project-storage"
+import {
+  findProjectMembership,
   listProjectMembers,
   removeProjectMember,
   upsertProjectMember,
-  type ProjectMemberRole,
 } from "@/lib/repositories/project-members"
 import {
   createUser,
@@ -26,11 +32,13 @@ export const runtime = "nodejs"
 
 type Params = { params: Promise<{ id: string }> }
 
+const roleSchema = z.enum(["viewer", "editor", "full"])
+
 const inviteSchema = z
   .object({
     email: z.string().email().optional(),
     emails: z.array(z.string().email()).max(20).optional(),
-    role: z.enum(["viewer", "editor"]).default("viewer"),
+    role: roleSchema.default("viewer"),
     fullName: z.string().trim().min(1).max(120).optional(),
   })
   .superRefine((data, ctx) => {
@@ -46,7 +54,7 @@ const inviteSchema = z
 
 const patchSchema = z.object({
   userId: z.string().min(1),
-  role: z.enum(["viewer", "editor"]),
+  role: roleSchema,
 })
 
 function tempPassword(): string {
@@ -95,20 +103,12 @@ async function inviteOne(input: {
   projectName: string
   projectOwnerId: string
   actorUserId: string
-  actorEmail: string
+  actorRole: ProjectAccessRole
   inviterName: string
   email: string
   role: ProjectMemberRole
   fullName?: string
 }): Promise<InviteOk | InviteFail> {
-  if (input.email === input.actorEmail.toLowerCase()) {
-    return {
-      email: input.email,
-      ok: false,
-      message: "You already own this project.",
-    }
-  }
-
   let user = await findUserByEmail(input.email)
   let created = false
   let temporaryPassword: string | null = null
@@ -148,7 +148,37 @@ async function inviteOne(input: {
     return {
       email: input.email,
       ok: false,
-      message: "Owner cannot be added as a member.",
+      message: "The project owner already has full access.",
+    }
+  }
+
+  if (user.id === input.actorUserId) {
+    return {
+      email: input.email,
+      ok: false,
+      message: "You already have access to this project.",
+    }
+  }
+
+  // Приглашение того, кто уже в проекте, — это смена его роли, и правило здесь
+  // то же, что у PATCH: полный доступ не переписывает роль такому же полному.
+  // Без этой проверки диалог «Поделиться» стал бы обходным путём: ввёл адрес
+  // коллеги с полным доступом, выбрал «Читатель» — и понизил его.
+  const existing = await findProjectMembership(input.projectId, user.id)
+  if (existing) {
+    if (existing.role === input.role) {
+      return {
+        email: input.email,
+        ok: false,
+        message: "This person already has that access.",
+      }
+    }
+    if (!canManageMember(input.actorRole, existing.role)) {
+      return {
+        email: input.email,
+        ok: false,
+        message: "Only the project owner can change this person's access.",
+      }
     }
   }
 
@@ -156,7 +186,9 @@ async function inviteOne(input: {
     projectId: input.projectId,
     userId: user.id,
     role: input.role,
-    invitedBy: input.actorUserId,
+    // Кто позвал — история приглашения, и переписывать её сменой роли нельзя:
+    // владелец должен видеть, откуда человек взялся в проекте.
+    invitedBy: existing?.invitedBy ?? input.actorUserId,
   })
 
   let mailOk = true
@@ -202,47 +234,54 @@ async function inviteOne(input: {
   }
 }
 
-/** GET /api/projects/:id/members — owner only. */
+/**
+ * GET /api/projects/:id/members — владелец или участник с полным доступом.
+ *
+ * Список плоский: кто бы кого ни позвал, владелец видит в диалоге всех сразу и
+ * там же снимает доступ или меняет роль. `invitedBy` идёт рядом — при
+ * делегировании иначе не понять, откуда в проекте взялся человек.
+ */
 export async function GET(request: NextRequest, { params }: Params) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const project = await findOwnedProject(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId, "full")
+  if (access instanceof NextResponse) return access
 
   const [members, owner] = await Promise.all([
     listProjectMembers(id),
-    findUserById(project.userId),
+    findUserById(access.project.userId),
   ])
   return NextResponse.json({
+    viewerUserId: auth.userId,
+    viewerRole: access.role,
     owner: {
-      userId: project.userId,
-      email: owner?.email ?? auth.email,
-      fullName: owner?.fullName ?? auth.email,
+      userId: access.project.userId,
+      email: owner?.email ?? "",
+      fullName: owner?.fullName ?? owner?.email ?? "",
     },
     members: members.map((m) => ({
       userId: m.userId,
       email: m.email,
       fullName: m.fullName,
       role: m.role,
+      invitedBy: m.invitedBy,
+      invitedByName: m.invitedByName ?? null,
+      invitedByEmail: m.invitedByEmail ?? null,
       createdAt: m.createdAt.toISOString(),
     })),
   })
 }
 
-/** POST /api/projects/:id/members — invite by email (owner only). */
+/** POST /api/projects/:id/members — invite by email (owner or full access). */
 export async function POST(request: NextRequest, { params }: Params) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const project = await findOwnedProject(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId, "full")
+  if (access instanceof NextResponse) return access
 
   let body: unknown
   try {
@@ -258,6 +297,13 @@ export async function POST(request: NextRequest, { params }: Params) {
     )
   }
 
+  if (!canGrantRole(access.role, parsed.data.role)) {
+    return NextResponse.json(
+      { message: "You cannot grant access above your own." },
+      { status: 403 },
+    )
+  }
+
   const emails = uniqueEmails(parsed.data)
   const inviter = await findUserById(auth.userId)
   const inviterName = inviter?.fullName ?? auth.email
@@ -266,11 +312,11 @@ export async function POST(request: NextRequest, { params }: Params) {
   for (const email of emails) {
     results.push(
       await inviteOne({
-        projectId: project.id,
-        projectName: project.name,
-        projectOwnerId: project.userId,
+        projectId: access.project.id,
+        projectName: access.project.name,
+        projectOwnerId: access.project.userId,
         actorUserId: auth.userId,
-        actorEmail: auth.email,
+        actorRole: access.role,
         inviterName,
         email,
         role: parsed.data.role,
@@ -299,16 +345,14 @@ export async function POST(request: NextRequest, { params }: Params) {
   )
 }
 
-/** PATCH /api/projects/:id/members — change a member's role (owner only). */
+/** PATCH /api/projects/:id/members — change a member's role. */
 export async function PATCH(request: NextRequest, { params }: Params) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const project = await findOwnedProject(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId, "full")
+  if (access instanceof NextResponse) return access
 
   let body: unknown
   try {
@@ -324,9 +368,15 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     )
   }
 
-  if (parsed.data.userId === project.userId || parsed.data.userId === auth.userId) {
+  if (parsed.data.userId === access.project.userId) {
     return NextResponse.json(
       { message: "Owner role cannot be changed." },
+      { status: 400 },
+    )
+  }
+  if (parsed.data.userId === auth.userId) {
+    return NextResponse.json(
+      { message: "You cannot change your own access." },
       { status: 400 },
     )
   }
@@ -338,8 +388,21 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     return NextResponse.json({ message: "Member not found." }, { status: 404 })
   }
 
+  if (!canManageMember(access.role, existing.role)) {
+    return NextResponse.json(
+      { message: "Only the project owner can change this person's access." },
+      { status: 403 },
+    )
+  }
+  if (!canGrantRole(access.role, parsed.data.role)) {
+    return NextResponse.json(
+      { message: "You cannot grant access above your own." },
+      { status: 403 },
+    )
+  }
+
   const member = await upsertProjectMember({
-    projectId: project.id,
+    projectId: access.project.id,
     userId: parsed.data.userId,
     role: parsed.data.role,
     invitedBy: existing.invitedBy ?? auth.userId,
@@ -356,20 +419,45 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   })
 }
 
-/** DELETE /api/projects/:id/members?userId= */
+/**
+ * DELETE /api/projects/:id/members?userId= — снять доступ.
+ *
+ * Каскада нет: те, кого позвал снятый участник, остаются в проекте. Иначе один
+ * клик убирал бы из проекта группу людей, а вернуть их можно только заново
+ * пригласив каждого — цена ошибки несоизмерима с задачей «убрать одного».
+ */
 export async function DELETE(request: NextRequest, { params }: Params) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const project = await findOwnedProject(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
-  }
+  const access = await requireProjectAccess(id, auth.userId, "full")
+  if (access instanceof NextResponse) return access
 
   const userId = request.nextUrl.searchParams.get("userId")
   if (!userId) {
     return NextResponse.json({ message: "userId is required." }, { status: 400 })
+  }
+  if (userId === access.project.userId) {
+    return NextResponse.json(
+      { message: "The project owner cannot be removed." },
+      { status: 400 },
+    )
+  }
+
+  const existing = await findProjectMembership(id, userId)
+  if (!existing) {
+    return NextResponse.json({ message: "Member not found." }, { status: 404 })
+  }
+  // Исключение для себя: снять свой доступ — это выход из чужого проекта, а не
+  // отзыв. Без него участник с полным доступом уйти бы не смог: правило п. 2
+  // (docs/BACKEND_PLAN.md §8.2б) не даёт ему тронуть такой же полный доступ,
+  // включая свой собственный.
+  if (userId !== auth.userId && !canManageMember(access.role, existing.role)) {
+    return NextResponse.json(
+      { message: "Only the project owner can remove this person." },
+      { status: 403 },
+    )
   }
 
   const ok = await removeProjectMember(id, userId)

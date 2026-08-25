@@ -46,6 +46,7 @@ function folderIcon(name: string): LucideIcon {
 export function MobileWorkspace() {
   const {
     t,
+    can,
     selected,
     rootFiles,
     view,
@@ -135,25 +136,31 @@ export function MobileWorkspace() {
             />
           </div>
 
-          <div className="flex flex-none gap-2 px-3 pb-2">
-            <button
-              type="button"
-              onClick={() => triggerUpload(target)}
-              disabled={uploading}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-ws-action py-2.5 text-[14px] text-white disabled:opacity-60"
-            >
-              <Upload className="h-4 w-4" />
-              {uploading ? t.uploading : t.upload}
-            </button>
-            <button
-              type="button"
-              onClick={() => createFolder(target)}
-              aria-label={t.mNewFolder}
-              className="flex items-center justify-center rounded-xl border border-white/10 px-3.5 py-2.5 text-ws-2"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
+          {can.upload || can.createFolder ? (
+            <div className="flex flex-none gap-2 px-3 pb-2">
+              {can.upload ? (
+                <button
+                  type="button"
+                  onClick={() => triggerUpload(target)}
+                  disabled={uploading}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-ws-action py-2.5 text-[14px] text-white disabled:opacity-60"
+                >
+                  <Upload className="h-4 w-4" />
+                  {uploading ? t.uploading : t.upload}
+                </button>
+              ) : null}
+              {can.createFolder ? (
+                <button
+                  type="button"
+                  onClick={() => createFolder(target)}
+                  aria-label={t.mNewFolder}
+                  className="flex items-center justify-center rounded-xl border border-white/10 px-3.5 py-2.5 text-ws-2"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">

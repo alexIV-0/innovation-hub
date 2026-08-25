@@ -1,13 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
+import {
+  requireProjectAccess,
+  type ProjectAccessRole,
+} from "@/lib/project-access"
 import { setProjectPaused } from "@/lib/project-automation"
 import { ProjectStorageError, siteUpdatedBy } from "@/lib/project-storage"
 import { updateProjectSchema } from "@/lib/project-schemas"
-import {
-  findOwnedProject,
-  findProjectForUser,
-  updateProject,
-} from "@/lib/repositories/projects"
+import { updateProject } from "@/lib/repositories/projects"
 import { syncProjectMeta } from "@/lib/storage/project-catalog"
 import {
   isMutationError,
@@ -24,11 +24,32 @@ export async function GET(request: NextRequest, { params }: Params) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const project = await findProjectForUser(id, auth.userId)
-  if (!project) {
-    return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  const access = await requireProjectAccess(id, auth.userId)
+  if (access instanceof NextResponse) return access
+  return NextResponse.json({ project: access.project })
+}
+
+/**
+ * Какой доступ нужен для этих правок.
+ *
+ * Пауза — настройка обработки, её ставит редактор. Имя, короткое описание и
+ * архив видит вся команда проекта, включая владельца, поэтому это полный
+ * доступ. Группа (раздел бокового меню) — только владелец: она вообще не про
+ * работу в проекте, а про то, как владелец разложил свои папки у себя, и у
+ * приглашённого проект всё равно лежит в «Расшаренных».
+ */
+function requiredRoleFor(
+  patch: Omit<ReturnType<typeof updateProjectSchema.parse>, "isPaused">,
+): ProjectAccessRole {
+  if (patch.groupName !== undefined) return "owner"
+  if (
+    patch.name !== undefined ||
+    patch.description !== undefined ||
+    patch.isArchived !== undefined
+  ) {
+    return "full"
   }
-  return NextResponse.json({ project })
+  return "editor"
 }
 
 export async function PATCH(request: NextRequest, { params }: Params) {
@@ -54,21 +75,20 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   const { isPaused, ...rest } = parsed.data
 
+  const access = await requireProjectAccess(id, auth.userId, requiredRoleFor(rest))
+  if (access instanceof NextResponse) return access
+  // Папка проекта лежит в префиксе владельца, а не того, кто правит: и ключи в
+  // хранилище, и UPDATE по projects считаются от него.
+  const ownerId = access.project.userId
+
   // Пауза — не обычное поле: тумблер слежения живёт и в Postgres, и в
   // options/folderState.json на R2, иначе локальная машина не узнает, что
   // пользователь поставил проект на паузу. Записью владеет setProjectPaused.
   if (isPaused !== undefined) {
-    const existing = await findOwnedProject(id, auth.userId)
-    if (!existing) {
-      return NextResponse.json(
-        { message: "Project not found." },
-        { status: 404 },
-      )
-    }
     try {
       await setProjectPaused({
-        projectId: existing.id,
-        ownerId: existing.ownerId,
+        projectId: access.project.id,
+        ownerId,
         paused: isPaused,
         updatedBy: siteUpdatedBy(auth.email),
         actorUserId: auth.userId,
@@ -87,8 +107,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   const hasOtherChanges = Object.values(rest).some((v) => v !== undefined)
   const project = hasOtherChanges
-    ? await updateProject(id, auth.userId, rest)
-    : await findOwnedProject(id, auth.userId)
+    ? await updateProject(id, ownerId, rest)
+    : access.project
 
   if (!project) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })

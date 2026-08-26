@@ -60,6 +60,15 @@ export type Track = {
   /** Свои пики; пусто — рисуем общую волну приглушённо (§17.3). */
   peaks: string | null
   diar?: { engine?: string; speaker?: string; confidence?: number }
+  /**
+   * Откуда взялась дорожка и как её назвала автоматика.
+   *
+   * Единственное место, где хранится машинное имя: `name` человек переименует, и
+   * прежнее значение больше негде взять — в сырье папки имён дорожек нет вовсе.
+   * Без этого поля «восстановить имена» было бы обещанием, которое нечем
+   * выполнить.
+   */
+  origin?: { kind: "auto" | "manual"; name?: string }
   voice?: { provider: string | null; voiceId: string | null; params: Record<string, unknown> }
   extra?: Record<string, unknown>
 }
@@ -149,6 +158,7 @@ export const DOC_VERSION = 1
 export type DocError =
   | { kind: "notOurFile" }
   | { kind: "newerVersion"; version: number }
+  | { kind: "missingField"; field: string }
   | { kind: "badPath"; value: string }
   | { kind: "duplicateTrackId"; id: string }
   | { kind: "duplicateTrackNo"; no: number }
@@ -189,7 +199,17 @@ const RULES_KEYS = [
   "minGapMs",
   "overlapWithinTrack",
 ] as const
-const TRACK_KEYS = ["id", "no", "name", "color", "audio", "peaks", "diar", "voice"] as const
+const TRACK_KEYS = [
+  "id",
+  "no",
+  "name",
+  "color",
+  "audio",
+  "peaks",
+  "diar",
+  "origin",
+  "voice",
+] as const
 const CUE_KEYS = [
   "id",
   "trackId",
@@ -221,8 +241,18 @@ export function parseDialogDoc(input: unknown): ParseResult {
   const raw = input as Record<string, unknown>
   if (raw.format !== "dialogDoc") return { ok: false, error: { kind: "notOurFile" } }
 
-  const version = num(raw.version) ?? 1
+  const version = num(raw.version)
+  if (version == null) return { ok: false, error: { kind: "missingField", field: "version" } }
   if (version > DOC_VERSION) return { ok: false, error: { kind: "newerVersion", version } }
+
+  // `id` и `revision` — обязательные по §6 контракта. Без `revision` документ не
+  // может участвовать в определении «кто новее», и слияние теряет опору.
+  const docId = str(raw.id)
+  if (!docId) return { ok: false, error: { kind: "missingField", field: "id" } }
+  const revision = num(raw.revision)
+  if (revision == null || revision < 0) {
+    return { ok: false, error: { kind: "missingField", field: "revision" } }
+  }
 
   const media = obj(raw.media)
   const languages = obj(raw.languages)
@@ -257,6 +287,7 @@ export function parseDialogDoc(input: unknown): ParseResult {
       audio: str(t.audio) || null,
       peaks: str(t.peaks) || null,
       diar: (t.diar as Track["diar"]) ?? undefined,
+      origin: (t.origin as Track["origin"]) ?? undefined,
       voice: (t.voice as Track["voice"]) ?? undefined,
       extra: extrasOf(t, TRACK_KEYS),
     })
@@ -325,8 +356,8 @@ export function parseDialogDoc(input: unknown): ParseResult {
     doc: {
       format: "dialogDoc",
       version,
-      id: str(raw.id) || "dd_unknown",
-      revision: num(raw.revision) ?? 0,
+      id: docId,
+      revision,
       updatedAt: str(raw.updatedAt) || new Date(0).toISOString(),
       updatedBy: str(raw.updatedBy) ?? "",
       producer: str(raw.producer) ?? "",
@@ -654,8 +685,58 @@ export function addTrack(doc: DialogDoc, id: string, name: string): DialogDoc {
         color: TRACK_COLORS[doc.tracks.length % TRACK_COLORS.length],
         audio: null,
         peaks: null,
+        // Дорожку завёл человек: восстанавливать её имя не из чего и не нужно.
+        origin: { kind: "manual" },
       },
     ]),
+  }
+}
+
+/**
+ * Убрать дорожку вместе с её репликами.
+ *
+ * Реплики уходят в `removed`, а не просто исчезают: без этого повторный прогон
+ * обработки вернёт их обратно, и удаление придётся делать снова.
+ */
+export function removeTrack(doc: DialogDoc, trackId: string, at: string): DialogDoc {
+  if (!findTrack(doc, trackId)) return doc
+  const dropped = doc.cues.filter((cue) => cue.trackId === trackId)
+  return {
+    ...doc,
+    tracks: doc.tracks.filter((track) => track.id !== trackId),
+    cues: doc.cues.filter((cue) => cue.trackId !== trackId),
+    removed: doc.removed.concat(dropped.map((cue) => ({ id: cue.id, at }))),
+  }
+}
+
+/**
+ * Переставить дорожку на одну позицию.
+ *
+ * Порядок дорожек — это `no`, и он же имя папки сырья. Менять `no` нельзя:
+ * ссылки в `origin` перестанут сходиться. Поэтому меняются местами сами номера
+ * у двух дорожек, а папки остаются за своими репликами.
+ */
+export function moveTrack(doc: DialogDoc, trackId: string, direction: -1 | 1): DialogDoc {
+  const ordered = doc.tracks.slice().sort((a, b) => a.no - b.no)
+  const index = ordered.findIndex((track) => track.id === trackId)
+  const target = index + direction
+  if (index < 0 || target < 0 || target >= ordered.length) return doc
+  const a = ordered[index]
+  const b = ordered[target]
+  return {
+    ...doc,
+    // Меняются и номера, и порядок в массиве. Номер — это порядок для файла, а
+    // массив — то, в чём его видит интерфейс: поменять только номера значит
+    // ничего не поменять на экране до следующего перечитывания документа.
+    tracks: doc.tracks
+      .map((track) =>
+        track.id === a.id
+          ? { ...track, no: b.no }
+          : track.id === b.id
+            ? { ...track, no: a.no }
+            : track,
+      )
+      .sort((x, y) => x.no - y.no),
   }
 }
 

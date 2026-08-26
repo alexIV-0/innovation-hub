@@ -3,8 +3,15 @@
 import { createContext, useContext } from "react"
 
 import type { Cue, DialogDoc, Track } from "@/lib/tools/srt/dialog-doc"
+import type { SrtCue } from "@/lib/tools/srt/srt-parse"
 import type { Peaks } from "@/lib/tools/srt/peaks"
-import type { EditorClock, TimelineTool, TrackFlags, ViewPrefs } from "./editor-state"
+import type {
+  EditorClock,
+  TimelineTool,
+  TrackFlags,
+  TrackMode,
+  ViewPrefs,
+} from "./editor-state"
 
 /**
  * Всё состояние редактора одним объектом.
@@ -16,6 +23,8 @@ import type { EditorClock, TimelineTool, TrackFlags, ViewPrefs } from "./editor-
  */
 export type SrtApi = {
   doc: DialogDoc
+  /** Имя папки задачи — оно же основа имён выгружаемых файлов. */
+  taskName: string
   /** Полная длительность: медиа и реплики, что длиннее. */
   durationMs: number
   /** Конец самого медиафайла — дальше него на дорожке серая зона. */
@@ -48,6 +57,14 @@ export type SrtApi = {
 
   flags: Record<string, TrackFlags>
   toggleFlag: (trackId: string, key: keyof TrackFlags) => void
+
+  /**
+   * Режим работы с самими дорожками: обычно `none`, а перестановка и удаление
+   * включаются кнопками в шапке панели. Режимы, а не всегда видимые кнопки:
+   * удаление дорожки уносит её реплики, и такой кнопке не место рядом с mute.
+   */
+  trackMode: TrackMode
+  setTrackMode: (mode: TrackMode) => void
 
   clock: EditorClock
   videoUrl: string | null
@@ -88,6 +105,10 @@ export type SrtApi = {
     mergeCues: (aId: string, bId: string) => void
     renameTrack: (trackId: string, name: string) => void
     setTrackColor: (trackId: string, color: string) => void
+    removeTrack: (trackId: string) => void
+    moveTrack: (trackId: string, direction: -1 | 1) => void
+    /** Заменить документ целиком — восстановление проходит через историю отмены. */
+    replaceDoc: (next: DialogDoc) => void
     /** Завести язык перевода и сразу переключиться на него. */
     addLanguage: (code: string) => void
     removeLanguage: (code: string) => void
@@ -95,6 +116,9 @@ export type SrtApi = {
     undo: () => void
     redo: () => void
   }
+
+  /** Прочитать сырьё титров из папки: нужно восстановлению. */
+  loadSources: (paths: string[]) => Promise<Map<string, SrtCue[]>>
 
   openSettings: () => void
   openHelp: () => void

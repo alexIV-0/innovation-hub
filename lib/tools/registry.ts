@@ -50,8 +50,14 @@ export const TOOLS: ToolDefinition[] = [
     key: "voice-over",
     kinds: ["audio", "srt"],
     icon: "mic",
-    status: "soon",
-    defaults: {},
+    status: "ready",
+    defaults: {
+      /** Папка проекта, откуда берём задачи — та же, что у редактора титров. */
+      sourceRoot: "OUT",
+      hiddenProjectIds: [],
+      /** Сколько генераций держать в полёте: провайдер внешний и с лимитами. */
+      concurrency: 2,
+    },
   },
 ]
 

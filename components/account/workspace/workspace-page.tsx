@@ -1,6 +1,7 @@
 "use client"
 
 import { ToolsWorkspace } from "@/components/account/tools/tools-workspace"
+import { ArchiveDialog } from "./archive-dialog"
 import { ClipboardPanel } from "./clipboard-panel"
 import { WorkspaceContextMenu } from "./context-menu"
 import { PreviewDialog } from "./file-preview"
@@ -49,6 +50,7 @@ function WorkspaceLayout() {
       <ClipboardPanel />
       <WorkspaceContextMenu />
       <MoveDialog />
+      <ArchiveDialog />
       <PreviewDialog />
       <ShareDialog />
       <WorkspaceDialogs />

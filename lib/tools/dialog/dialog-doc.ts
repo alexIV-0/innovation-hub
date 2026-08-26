@@ -45,8 +45,61 @@ export type Cue = {
   }
   movedFrom?: string
   note?: string
-  voice?: { takes: unknown[] }
+  voice?: CueVoice
   /** Поля, которых не знает эта реализация. Записываются обратно как есть. */
+  extra?: Record<string, unknown>
+}
+
+/**
+ * Один синтезированный вариант реплики.
+ *
+ * `offsetMs`, `rate` и `gainDb` — **параметры, а не обработанный звук**: файл на
+ * диске не меняется, а превью и рендер применяют их на ходу. Иначе каждая
+ * подстройка громкости означала бы перезапись файла в хранилище.
+ */
+export type VoiceTake = {
+  id: string
+  /** Язык, который озвучили: у реплики свои тейки на каждый язык. */
+  lang: string
+  file: string
+  peaks: string | null
+  durationMs: number
+  provider: string | null
+  voiceId: string | null
+  createdAt: string
+  /** Выбранный тейк — один на язык. */
+  selected: boolean
+  /** Сдвиг от начала реплики. */
+  offsetMs: number
+  /** Скорость: 1 — как синтезировано. */
+  rate: number
+  /** Громкость в децибелах: 0 — как синтезировано. */
+  gainDb: number
+  /**
+   * Текст, который отдали синтезу.
+   *
+   * По нему видно, что тейк устарел: титр или разметку правили после генерации,
+   * и звучит теперь не то, что написано.
+   */
+  source: string
+  extra?: Record<string, unknown>
+}
+
+/** Чем озвучивать дорожку. */
+export type TrackVoice = {
+  provider: string | null
+  voiceId: string | null
+  params: Record<string, unknown>
+  /** Пример голоса; пусто — берётся `tracks[].audio`, стем из оригинала. */
+  sample: string | null
+  extra?: Record<string, unknown>
+}
+
+/** Что и чем озвучено в реплике. */
+export type CueVoice = {
+  /** Текст для синтеза по языку. Пусто — синтезируется сам титр. */
+  markup: Record<string, string>
+  takes: VoiceTake[]
   extra?: Record<string, unknown>
 }
 
@@ -69,7 +122,7 @@ export type Track = {
    * выполнить.
    */
   origin?: { kind: "auto" | "manual"; name?: string }
-  voice?: { provider: string | null; voiceId: string | null; params: Record<string, unknown> }
+  voice?: TrackVoice
   extra?: Record<string, unknown>
 }
 
@@ -210,6 +263,29 @@ const TRACK_KEYS = [
   "origin",
   "voice",
 ] as const
+const TRACK_VOICE_KEYS = ["provider", "voiceId", "params", "sample"] as const
+const CUE_VOICE_KEYS = ["markup", "takes"] as const
+const TAKE_KEYS = [
+  "id",
+  "lang",
+  "file",
+  "peaks",
+  "durationMs",
+  "provider",
+  "voiceId",
+  "createdAt",
+  "selected",
+  "offsetMs",
+  "rate",
+  "gainDb",
+  "source",
+] as const
+
+/** Границы подстройки тейка: за ними речь перестаёт быть речью. */
+export const TAKE_RATE_MIN = 0.5
+export const TAKE_RATE_MAX = 2
+export const TAKE_GAIN_MIN = -24
+export const TAKE_GAIN_MAX = 12
 const CUE_KEYS = [
   "id",
   "trackId",
@@ -262,7 +338,13 @@ export function parseDialogDoc(input: unknown): ParseResult {
   const rawTracks = Array.isArray(raw.tracks) ? raw.tracks : []
   for (const item of rawTracks) {
     const t = obj(item)
-    paths.push(str(t.audio), str(t.peaks))
+    paths.push(str(t.audio), str(t.peaks), str(obj(t.voice).sample))
+  }
+  // Файлы тейков — тоже пути в документе, и правило §2.7 к ним относится.
+  for (const item of Array.isArray(raw.cues) ? raw.cues : []) {
+    for (const take of Array.isArray(obj(obj(item).voice).takes) ? (obj(obj(item).voice).takes as unknown[]) : []) {
+      paths.push(str(obj(take).file), str(obj(take).peaks))
+    }
   }
   for (const value of paths) {
     if (value && BAD_PATH.test(value)) return { ok: false, error: { kind: "badPath", value } }
@@ -288,7 +370,7 @@ export function parseDialogDoc(input: unknown): ParseResult {
       peaks: str(t.peaks) || null,
       diar: (t.diar as Track["diar"]) ?? undefined,
       origin: (t.origin as Track["origin"]) ?? undefined,
-      voice: (t.voice as Track["voice"]) ?? undefined,
+      voice: t.voice ? parseTrackVoice(obj(t.voice)) : undefined,
       extra: extrasOf(t, TRACK_KEYS),
     })
   }
@@ -339,7 +421,7 @@ export function parseDialogDoc(input: unknown): ParseResult {
       origin: (c.origin as Cue["origin"]) ?? undefined,
       movedFrom: str(c.movedFrom) || undefined,
       note: str(c.note) ?? "",
-      voice: (c.voice as Cue["voice"]) ?? undefined,
+      voice: c.voice ? parseCueVoice(obj(c.voice)) : undefined,
       extra: extrasOf(c, CUE_KEYS),
     })
   }
@@ -392,6 +474,53 @@ export function parseDialogDoc(input: unknown): ParseResult {
       extra: extrasOf(raw, DOC_KEYS),
     },
   }
+}
+
+function parseTrackVoice(raw: Record<string, unknown>): TrackVoice {
+  return {
+    provider: str(raw.provider) || null,
+    voiceId: str(raw.voiceId) || null,
+    params: obj(raw.params),
+    sample: str(raw.sample) || null,
+    extra: extrasOf(raw, TRACK_VOICE_KEYS),
+  }
+}
+
+function parseCueVoice(raw: Record<string, unknown>): CueVoice {
+  const markup: Record<string, string> = {}
+  for (const [lang, value] of Object.entries(obj(raw.markup))) {
+    if (typeof value === "string") markup[lang] = value
+  }
+  const takes: VoiceTake[] = []
+  for (const item of Array.isArray(raw.takes) ? raw.takes : []) {
+    const t = obj(item)
+    const file = str(t.file)
+    const lang = str(t.lang)
+    // Тейк без файла или без языка ни к чему не привязан: показать его негде,
+    // проиграть нечего. Молча выбрасываем — это не повод не открывать задачу.
+    if (!file || !lang) continue
+    takes.push({
+      id: str(t.id) || `tk_${takes.length + 1}`,
+      lang,
+      file,
+      peaks: str(t.peaks) || null,
+      durationMs: Math.max(0, Math.round(num(t.durationMs) ?? 0)),
+      provider: str(t.provider) || null,
+      voiceId: str(t.voiceId) || null,
+      createdAt: str(t.createdAt) || new Date(0).toISOString(),
+      selected: t.selected === true,
+      offsetMs: Math.round(num(t.offsetMs) ?? 0),
+      rate: clamp(num(t.rate) ?? 1, TAKE_RATE_MIN, TAKE_RATE_MAX),
+      gainDb: clamp(num(t.gainDb) ?? 0, TAKE_GAIN_MIN, TAKE_GAIN_MAX),
+      source: str(t.source) ?? "",
+      extra: extrasOf(t, TAKE_KEYS),
+    })
+  }
+  return { markup, takes, extra: extrasOf(raw, CUE_VOICE_KEYS) }
+}
+
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
 function obj(value: unknown): Record<string, unknown> {

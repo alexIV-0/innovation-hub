@@ -4,15 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   Captions,
-  Check,
-  CloudOff,
   Download,
   HelpCircle,
   ChevronDown,
   Loader2,
   RotateCcw,
   Settings,
-  TriangleAlert,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -46,37 +43,42 @@ import {
   setCueText,
   setCueTranslation,
   splitCue as splitCueOp,
-} from "@/lib/tools/srt/dialog-doc"
-import { buildExport, type ExportResult } from "@/lib/tools/srt/export"
-import type { DialogDoc } from "@/lib/tools/srt/dialog-doc"
+} from "@/lib/tools/dialog/dialog-doc"
+import { buildExport, type ExportResult } from "@/lib/tools/dialog/export"
+import type { DialogDoc } from "@/lib/tools/dialog/dialog-doc"
 import {
   fullRestoreScope,
   restoreFromSrt,
   sourcePathsFor,
-} from "@/lib/tools/srt/restore"
-import { buildZip } from "@/lib/tools/srt/zip"
-import { MAX_PPS, MIN_PPS, zoomStep } from "@/lib/tools/srt/timeline"
+} from "@/lib/tools/dialog/restore"
+import { buildZip } from "@/lib/tools/dialog/zip"
+import { MAX_PPS, MIN_PPS, zoomStep } from "@/lib/tools/dialog/timeline"
 import { cn } from "@/lib/utils"
 import { SourcePicker } from "../source-picker"
 import { useTools, type ToolInstance } from "../tools-context"
 import { CueList } from "./cue-list"
 import {
-  DEFAULT_LEFT_W,
-  DEFAULT_TIMELINE_H,
   useHeldTool,
   usePlayerClock,
   useUndoableDoc,
   useViewPrefs,
-  type HotkeyAction,
-  type TimelineTool,
+  type SoundMode,
   type TrackFlags,
   type TrackMode,
-} from "./editor-state"
-import { downloadFile, ZIP_MIME } from "./download"
+} from "../shared/editor-state"
+import {
+  DEFAULT_LEFT_W,
+  DEFAULT_PREFS,
+  DEFAULT_TIMELINE_H,
+  viewPrefsKey,
+  type HotkeyAction,
+  type TimelineTool,
+} from "./prefs"
+import { downloadFile, ZIP_MIME } from "../shared/download"
 import { SrtExportDialog } from "./export-dialog"
 import { SrtHelpDialog } from "./help-dialog"
 import { SrtRestoreDialog } from "./restore-dialog"
-import { LanguagePicker, languageName } from "./language-picker"
+import { LanguagePicker, languageName } from "../shared/language-picker"
 import { PreviewPane } from "./preview-pane"
 import { SrtProvider, type SrtApi } from "./srt-context"
 import { TimelinePane } from "./timeline-pane"
@@ -87,10 +89,11 @@ import {
   useSignedUrl,
   useSignedUrls,
   useTaskFolder,
-} from "./use-task-folder"
+} from "../shared/use-task-folder"
 import { SrtSettingsDialog } from "./settings-dialog"
-import { useAutosave, type SaveState } from "./use-autosave"
-import type { FolderEntry } from "./use-task-folder"
+import { SaveBadge } from "../shared/save-badge"
+import { useAutosave } from "../shared/use-autosave"
+import type { FolderEntry } from "../shared/use-task-folder"
 
 /**
  * Редактор титров по дорожкам персонажей.
@@ -153,7 +156,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
     )
   }, [save.state, t.srtSaveMergedNote])
 
-  const { prefs, setPref, resetPrefs } = useViewPrefs(tool.id)
+  const { prefs, setPref, resetPrefs } = useViewPrefs(viewPrefsKey(tool.id), DEFAULT_PREFS)
   const left = useDragSize({
     initial: DEFAULT_LEFT_W,
     min: 320,
@@ -201,26 +204,36 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
   /**
    * Матрица звука (§15.3), в том виде, в каком её описал владелец: по
    * умолчанию звучит основная дорожка — звук видео, дорожки персонажей молчат.
-   * Включили solo — видео заглушено, звучат только выбранные дорожки, и только
-   * если у них вообще есть свой звук.
+   * Solo и mute — два способа её разобрать, и оба глушат видео: иначе к стему
+   * добавлялся бы микс, где тот же голос уже есть.
+   *
+   * Solo старше mute: включённый solo отвечает на вопрос «что я хочу слышать»
+   * целиком, и выключенное раньше не должно этот ответ править. Поэтому режим
+   * один, а не два независимых флага.
    */
-  const soloTracks = useMemo(() => {
-    if (!doc) return []
-    return doc.tracks.filter((track) => {
-      const flag = flags[track.id]
-      return Boolean(flag?.solo) && !flag?.mute && Boolean(track.audio)
-    })
+  const soundMode = useMemo<SoundMode>(() => {
+    if (!doc) return "main"
+    if (doc.tracks.some((track) => flags[track.id]?.solo)) return "solo"
+    // В задаче без стемов вычитать голос из общего микса нечем, и mute там
+    // означал бы «тишина вместо всего» — не то, что человек нажимал.
+    const stems = doc.tracks.some((track) => Boolean(track.audio))
+    if (stems && doc.tracks.some((track) => flags[track.id]?.mute)) return "mute"
+    return "main"
   }, [doc, flags])
-  const anySolo = useMemo(
-    () => (doc ? doc.tracks.some((track) => flags[track.id]?.solo) : false),
-    [doc, flags],
-  )
+  /** Дорожки, которые должны звучать в этом режиме, — если есть свой звук. */
+  const audibleTracks = useMemo(() => {
+    if (!doc || soundMode === "main") return []
+    return doc.tracks.filter((track) => {
+      if (!track.audio) return false
+      return soundMode === "solo" ? Boolean(flags[track.id]?.solo) : !flags[track.id]?.mute
+    })
+  }, [doc, flags, soundMode])
   const trackAudioEntries = useMemo(() => {
     if (!folderPath) return []
-    return soloTracks
+    return audibleTracks
       .map((track) => ({ id: track.id, entry: findEntry(entries, folderPath, track.audio) }))
       .filter((item): item is { id: string; entry: FolderEntry } => Boolean(item.entry?.s3Key))
-  }, [entries, folderPath, soloTracks])
+  }, [entries, folderPath, audibleTracks])
   const trackAudioUrls = useSignedUrls(
     projectId,
     trackAudioEntries.map((item) => item.entry.s3Key ?? ""),
@@ -586,8 +599,9 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
         })),
       clock,
       videoUrl,
-      soloTrackIds: trackAudioEntries.map((item) => item.id),
-      mainMuted: anySolo,
+      soundMode,
+      audibleTrackIds: trackAudioEntries.map((item) => item.id),
+      mainMuted: soundMode !== "main",
       trackAudioUrl: (trackId) => {
         const key = trackAudioEntries.find((item) => item.id === trackId)?.entry.s3Key
         return key ? trackAudioUrls[key] ?? null : null
@@ -604,7 +618,6 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
       openHelp: () => setHelpOpen(true),
     }
   }, [
-    anySolo,
     bottom,
     clock,
     cueQuery,
@@ -623,6 +636,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
     selectedCueId,
     selectedTrackId,
     setPref,
+    soundMode,
     taskName,
     tool_,
     trackAudioEntries,
@@ -845,46 +859,6 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
  * сейчас» появляется, когда есть что записывать, — на случай, когда ждать
  * затишья не хочется.
  */
-function SaveBadge({
-  state,
-  dirty,
-  onFlush,
-}: {
-  state: SaveState
-  dirty: boolean
-  onFlush: () => void
-}) {
-  const { t } = useWorkspace()
-
-  const view =
-    state.kind === "saving"
-      ? { icon: Loader2, text: t.srtSaveSaving, tone: "text-ws-3", spin: true }
-      : state.kind === "error"
-        ? { icon: CloudOff, text: t.srtSaveError, tone: "text-ws-playhead", spin: false }
-        : state.kind === "merged"
-          ? { icon: TriangleAlert, text: t.srtSaveMerged, tone: "text-[#e0a33a]", spin: false }
-          : dirty || state.kind === "pending"
-            ? { icon: TriangleAlert, text: t.srtSavePending, tone: "text-ws-4", spin: false }
-            : { icon: Check, text: t.srtSaveClean, tone: "text-ws-out", spin: false }
-  const Icon = view.icon
-
-  return (
-    <button
-      type="button"
-      onClick={onFlush}
-      disabled={!dirty && state.kind !== "error"}
-      title={state.kind === "error" ? state.message : t.srtSaveNow}
-      className={cn(
-        "flex h-[34px] items-center gap-1.5 rounded px-2 text-[12px]",
-        view.tone,
-        dirty || state.kind === "error" ? "hover:bg-ws-hover" : "cursor-default",
-      )}
-    >
-      <Icon className={cn("h-4 w-4", view.spin && "animate-spin")} />
-      <span className="hidden lg:inline">{view.text}</span>
-    </button>
-  )
-}
 
 /** Пункт меню экспорта: что выгружаем слева, в каком формате — справа. */
 function ExportMenuItem({

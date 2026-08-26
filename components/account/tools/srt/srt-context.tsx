@@ -2,16 +2,19 @@
 
 import { createContext, useContext } from "react"
 
-import type { Cue, DialogDoc, Track } from "@/lib/tools/srt/dialog-doc"
-import type { SrtCue } from "@/lib/tools/srt/srt-parse"
-import type { Peaks } from "@/lib/tools/srt/peaks"
+import type { Cue, DialogDoc, Track } from "@/lib/tools/dialog/dialog-doc"
+import type { SrtCue } from "@/lib/tools/dialog/srt-parse"
+import type { Peaks } from "@/lib/tools/dialog/peaks"
 import type {
   EditorClock,
-  TimelineTool,
+  SoundMode,
   TrackFlags,
   TrackMode,
+} from "../shared/editor-state"
+import type {
+  TimelineTool,
   ViewPrefs,
-} from "./editor-state"
+} from "./prefs"
 
 /**
  * Всё состояние редактора одним объектом.
@@ -68,12 +71,15 @@ export type SrtApi = {
 
   clock: EditorClock
   videoUrl: string | null
+  /** Как сведён звук: основная дорожка, только solo или всё кроме mute (§15.3). */
+  soundMode: SoundMode
   /**
-   * Дорожки, которые сейчас звучат: solo, не mute, свой звук включён и файл
-   * есть. Пусто — звучит основная дорожка (звук видео).
+   * Дорожки, которые сейчас звучат: подходят под режим, свой звук у них есть и
+   * файл нашёлся. Пусто в режиме `main` — звучит звук видео; пусто в остальных
+   * режимах — тишина, и подпись под превью объясняет причину.
    */
-  soloTrackIds: string[]
-  /** Звук видео заглушён: кто-то включил solo (§15.3). */
+  audibleTrackIds: string[]
+  /** Звук видео заглушён: включён solo или mute (§15.3). */
   mainMuted: boolean
   /** Ссылка на аудиофайл дорожки, если он подписан. */
   trackAudioUrl: (trackId: string) => string | null

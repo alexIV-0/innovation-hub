@@ -16,10 +16,10 @@ import {
   restoreFromSrt,
   sourcePathsFor,
   type RestoreScope,
-} from "@/lib/tools/srt/restore"
-import type { SrtCue } from "@/lib/tools/srt/srt-parse"
+} from "@/lib/tools/dialog/restore"
+import type { SrtCue } from "@/lib/tools/dialog/srt-parse"
 import { cn } from "@/lib/utils"
-import { languageName } from "./language-picker"
+import { languageName } from "../shared/language-picker"
 import { useSrt } from "./srt-context"
 
 type Lang = string | null

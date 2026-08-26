@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 
-import { peakBars, type Peaks } from "@/lib/tools/srt/peaks"
+import { peakBars, type Peaks } from "@/lib/tools/dialog/peaks"
 import { readToken } from "./tokens"
 import type { ViewportSource } from "./viewport"
 

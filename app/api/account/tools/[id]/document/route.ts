@@ -10,9 +10,9 @@ import { findUserTool } from "@/lib/repositories/user-tools"
 import { getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
 import { StorageWriteError, writeNotifyUpload } from "@/lib/storage/write-path"
-import { parseDialogDoc, type DialogDoc } from "@/lib/tools/srt/dialog-doc"
-import { mergeDialogDocs } from "@/lib/tools/srt/merge"
-import { serializeDialogDoc, stampForSave } from "@/lib/tools/srt/serialize"
+import { parseDialogDoc, type DialogDoc } from "@/lib/tools/dialog/dialog-doc"
+import { mergeDialogDocs } from "@/lib/tools/dialog/merge"
+import { serializeDialogDoc, stampForSave } from "@/lib/tools/dialog/serialize"
 
 export const runtime = "nodejs"
 

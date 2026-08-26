@@ -2,9 +2,9 @@
 
 import { useEffect, useRef } from "react"
 
-import { peakBars, type Peaks } from "@/lib/tools/srt/peaks"
-import { buildTicks } from "@/lib/tools/srt/timeline"
-import { formatTcShort } from "@/lib/tools/srt/timecode"
+import { peakBars, type Peaks } from "@/lib/tools/dialog/peaks"
+import { buildTicks } from "@/lib/tools/dialog/timeline"
+import { formatTcShort } from "@/lib/tools/dialog/timecode"
 import { readTimelinePalette } from "./tokens"
 import type { ViewportSource } from "./viewport"
 

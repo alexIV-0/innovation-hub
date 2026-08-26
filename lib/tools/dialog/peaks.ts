@@ -14,6 +14,56 @@ export type Peaks = {
   values: Float32Array
 }
 
+/**
+ * Собрать файл пиков из готовых сэмплов.
+ *
+ * Нужно тому, кто создал звук сам: волну к нему больше посчитать некому, а
+ * `ffmpeg` для этого не требуется — сэмплы уже на руках. Формат тот же, что у
+ * ноды `audioPeaks`, чтобы файлы были неотличимы по происхождению.
+ */
+export function buildPeaks(
+  samples: Float32Array | Int16Array,
+  sampleRate: number,
+  pps = 50,
+): { version: 1; pps: number; bits: 8; dur: number; data: string } {
+  const scale = samples instanceof Int16Array ? 32768 : 1
+  const window = Math.max(1, Math.round(sampleRate / pps))
+  const pairs = Math.ceil(samples.length / window)
+  const bytes = new Int8Array(pairs * 2)
+  for (let i = 0; i < pairs; i += 1) {
+    let lo = 0
+    let hi = 0
+    const from = i * window
+    const to = Math.min(from + window, samples.length)
+    for (let j = from; j < to; j += 1) {
+      const value = samples[j] / scale
+      if (value < lo) lo = value
+      if (value > hi) hi = value
+    }
+    // −128 не используем: диапазон должен быть симметричным, иначе тихий звук
+    // рисуется чуть ниже нуля даже при полной тишине.
+    bytes[i * 2] = Math.max(-127, Math.round(lo * 127))
+    bytes[i * 2 + 1] = Math.min(127, Math.round(hi * 127))
+  }
+  return {
+    version: 1,
+    pps,
+    bits: 8,
+    dur: Number((samples.length / sampleRate).toFixed(3)),
+    data: toBase64(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)),
+  }
+}
+
+/** Base64 и на сервере, и в браузере: `Buffer` есть только в первом. */
+function toBase64(bytes: Uint8Array): string {
+  const maybeBuffer = (globalThis as { Buffer?: { from(b: Uint8Array): { toString(e: string): string } } })
+    .Buffer
+  if (maybeBuffer) return maybeBuffer.from(bytes).toString("base64")
+  let binary = ""
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
 export function parsePeaks(input: unknown): Peaks | null {
   if (!input || typeof input !== "object") return null
   const raw = input as Record<string, unknown>

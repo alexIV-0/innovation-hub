@@ -8,6 +8,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  FileArchive,
   FilePlus,
   FileText,
   FolderInput,
@@ -100,6 +101,21 @@ export function WorkspaceContextMenu() {
             } as MenuEntry,
           ]
         : []),
+      // Папка целиком: диалог показывает, во сколько архивов она разложится.
+      ...(!many && file.isFolder
+        ? [
+            {
+              icon: FileArchive,
+              label: t.mDownloadFolder,
+              onClick: () =>
+                ws.openArchiveDialog({
+                  folderId: file.id,
+                  folderPath: "",
+                  name: file.name,
+                }),
+            } as MenuEntry,
+          ]
+        : []),
       ...(many || !can.renameItem
         ? []
         : [
@@ -173,6 +189,20 @@ export function WorkspaceContextMenu() {
             } as MenuEntry,
           ]
         : []),
+      { sep: true },
+      {
+        icon: FileArchive,
+        label: t.mDownloadFolder,
+        onClick: () =>
+          ws.openArchiveDialog({
+            folderId: null,
+            folderPath: target.folderPath,
+            name:
+              target.folderPath.split("/").filter(Boolean).pop() ??
+              ws.selected?.name ??
+              "",
+          }),
+      },
       // «Вставить» показываем только когда в буфере что-то есть.
       ...(ws.clipboard && can.move
         ? [

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import {
   ArrowDown,
   ArrowDownUp,
@@ -26,10 +26,8 @@ import {
   translationOf,
   type Cue,
   type Track,
-} from "@/lib/tools/srt/dialog-doc"
+} from "@/lib/tools/dialog/dialog-doc"
 import {
-  MAX_PPS,
-  MIN_PPS,
   msToX,
   ppsToSlider,
   sliderToPps,
@@ -37,27 +35,26 @@ import {
   snapMs,
   xToMs,
   zoomStep,
-} from "@/lib/tools/srt/timeline"
+} from "@/lib/tools/dialog/timeline"
 import { cn } from "@/lib/utils"
-import { keyLabel, type TimelineTool } from "./editor-state"
+import {
+  keyLabel,
+} from "../shared/editor-state"
+import {
+  type TimelineTool,
+} from "./prefs"
 import { useSrt } from "./srt-context"
-import { TimelineRuler } from "./timeline-ruler"
-import { TrackColorPicker } from "./track-color-picker"
-import { useViewportSource, type ViewportSource } from "./viewport"
-import { WaveCanvas } from "./wave-canvas"
+import { TimelineFrame } from "../shared/timeline-frame"
+import { TrackColorPicker } from "../shared/track-color-picker"
+import { type ViewportSource } from "../shared/viewport"
+import { WaveCanvas } from "../shared/wave-canvas"
 
-/** Хвост после конца материала, чтобы последний титр не липнул к краю. */
-const TAIL_MS = 3000
-/** Высота линейки времени — та же, что внутри `TimelineRuler`. */
-const RULER_H = 40
 /** Порог, отделяющий клик от перетаскивания (§17.5). */
 const DRAG_THRESHOLD_PX = 3
 /** Клип уже этого — ручек нет вовсе, иначе за него не взяться (§17.4). */
 const MIN_HANDLE_WIDTH_PX = 18
 /** Минимальная длительность реплики при растягивании. */
 const MIN_CUE_MS = 200
-/** Отступ, на который отводим выбранную реплику от края окна. */
-const REVEAL_PAD_PX = 96
 /** Какую долю высоты дорожки занимает волна у нижнего края. */
 const WAVE_SHARE = 0.5
 
@@ -77,148 +74,30 @@ function cursorFor(tool: TimelineTool, overClip: boolean): string {
 /** Зона 4: панель дорожек слева и полотно справа. */
 export function TimelinePane() {
   const srt = useSrt()
-  const scrollerRef = useRef<HTMLDivElement | null>(null)
-  const lanesRef = useRef<HTMLDivElement | null>(null)
-  const viewport = useViewportSource(scrollerRef)
-  const laneWidth = msToX(srt.durationMs + TAIL_MS, srt.pps)
-
-  const srtRef = useRef(srt)
-  srtRef.current = srt
-
-  /** Секунда под курсором на момент зума — после смены масштаба вернём её на место. */
-  const zoomAnchor = useRef<{ ms: number; x: number } | null>(null)
-
-  // Зум колесом с Cmd / Ctrl / Alt. Слушаем сами, а не через `onWheel`: React
-  // ставит пассивный обработчик, а без `preventDefault` браузер на Cmd+колесо
-  // масштабирует всю страницу.
-  useEffect(() => {
-    const el = scrollerRef.current
-    if (!el) return
-    const onWheel = (event: WheelEvent) => {
-      if (!(event.metaKey || event.ctrlKey || event.altKey)) return
-      event.preventDefault()
-      const api = srtRef.current
-      const x = event.clientX - el.getBoundingClientRect().left
-      zoomAnchor.current = { ms: xToMs(el.scrollLeft + x, api.pps), x }
-      // Плавно и по экспоненте: шаг зума пропорционален текущему масштабу,
-      // иначе на мелком масштабе колесо почти ничего не меняет.
-      const next = api.pps * Math.exp(-event.deltaY * 0.003)
-      api.setPps(Math.min(MAX_PPS, Math.max(MIN_PPS, next)))
-    }
-    el.addEventListener("wheel", onWheel, { passive: false })
-    return () => el.removeEventListener("wheel", onWheel)
-  }, [])
-
-  // Возвращаем секунду под курсор до того, как кадр покажут: в обычном эффекте
-  // это дало бы видимый прыжок полотна.
-  useLayoutEffect(() => {
-    const el = scrollerRef.current
-    const anchor = zoomAnchor.current
-    if (!el || !anchor) return
-    zoomAnchor.current = null
-    el.scrollLeft = Math.max(0, msToX(anchor.ms, srt.pps) - anchor.x)
-  }, [srt.pps])
-
-  /**
-   * Показать выбранную реплику.
-   *
-   * Только на смену выбора, а не на каждую перерисовку: иначе прокрутка спорила
-   * бы с зумом (он тоже меняет `scrollLeft`) и с рукой человека.
-   */
-  const revealed = useRef<string | null>(null)
-  useEffect(() => {
-    const el = scrollerRef.current
-    const api = srtRef.current
-    if (!el || api.selectedCueId === revealed.current) return
-    revealed.current = api.selectedCueId
-    if (!api.selectedCueId) return
-    const cue = api.doc.cues.find((item) => item.id === api.selectedCueId)
-    if (!cue) return
-
-    const x = msToX(cue.startMs, api.pps)
-    if (x < el.scrollLeft + REVEAL_PAD_PX) {
-      el.scrollLeft = Math.max(0, x - REVEAL_PAD_PX)
-    } else if (x > el.scrollLeft + el.clientWidth - REVEAL_PAD_PX) {
-      el.scrollLeft = x - el.clientWidth + REVEAL_PAD_PX
-    }
-
-    const index = api.visibleTracks.findIndex((track) => track.id === cue.trackId)
-    if (index < 0) return
-    const top = RULER_H + index * api.prefs.trackH
-    if (top < el.scrollTop) el.scrollTop = top
-    else if (top + api.prefs.trackH > el.scrollTop + el.clientHeight) {
-      el.scrollTop = top + api.prefs.trackH - el.clientHeight
-    }
-  }, [srt.selectedCueId])
-
-  const scrub = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const rect = event.currentTarget.getBoundingClientRect()
-      const seek = (clientX: number) =>
-        srt.clock.seek(xToMs(clientX - rect.left, srt.pps))
-      seek(event.clientX)
-      const move = (e: PointerEvent) => seek(e.clientX)
-      const up = () => {
-        window.removeEventListener("pointermove", move)
-        window.removeEventListener("pointerup", up)
-      }
-      window.addEventListener("pointermove", move)
-      window.addEventListener("pointerup", up)
-    },
-    [srt.clock, srt.pps],
-  )
+  const cue = srt.doc.cues.find((item) => item.id === srt.selectedCueId)
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-ws-panel">
-      <TimelineToolbar />
-      <div className="flex min-h-0 flex-1">
-        <TrackColumn viewport={viewport} scroller={scrollerRef} />
-        <div ref={scrollerRef} className="relative min-w-0 flex-1 overflow-auto">
-          <div className="relative" style={{ width: laneWidth, minWidth: "100%" }}>
-            <TimelineRuler
-              durationMs={srt.durationMs + TAIL_MS}
-              pps={srt.pps}
-              peaks={srt.mainPeaks}
-              showWave={srt.prefs.mainWave}
-              viewport={viewport}
-              onScrub={scrub}
-            />
-            <div ref={lanesRef}>
-              {srt.visibleTracks.map((track) => (
-                <Lane key={track.id} track={track} viewport={viewport} lanesRef={lanesRef} />
-              ))}
-            </div>
-            <Playhead pps={srt.pps} />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Курсор воспроизведения. Двигается подпиской, вне рендера React (§15.1). */
-function Playhead({ pps }: { pps: number }) {
-  const { clock } = useSrt()
-  const ref = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    return clock.subscribe((ms) => {
-      const el = ref.current
-      if (el) el.style.transform = `translateX(${msToX(ms, pps)}px)`
-    })
-  }, [clock, pps])
-
-  return (
-    <div
-      ref={ref}
-      aria-hidden
-      className="pointer-events-none absolute bottom-0 top-0 z-[4] w-px bg-ws-playhead will-change-transform"
-    >
-      <div
-        className="absolute left-[-6px] top-0 h-[10px] w-[13px] bg-ws-playhead"
-        style={{ clipPath: "polygon(0 0, 100% 0, 50% 100%)" }}
-      />
-    </div>
+    <TimelineFrame
+      tracks={srt.visibleTracks}
+      trackH={srt.prefs.trackH}
+      durationMs={srt.durationMs}
+      pps={srt.pps}
+      setPps={srt.setPps}
+      clock={srt.clock}
+      mainPeaks={srt.mainPeaks}
+      showMainWave={srt.prefs.mainWave}
+      reveal={{
+        key: srt.selectedCueId,
+        atMs: cue?.startMs ?? 0,
+        trackId: cue?.trackId ?? null,
+      }}
+      toolbar={<TimelineToolbar />}
+      columnHeader={<TrackColumnHeader />}
+      renderRow={(track) => <TrackHeader track={track} />}
+      renderLane={(track, context) => (
+        <Lane track={track} viewport={context.viewport} lanesRef={context.lanesRef} />
+      )}
+    />
   )
 }
 
@@ -348,82 +227,41 @@ function TimelineToolbar() {
  * Панель дорожек. Скроллится не сама: повторяет вертикальный сдвиг полотна,
  * иначе имя дорожки уезжает от своей полосы.
  */
-function TrackColumn({
-  viewport,
-  scroller,
-}: {
-  viewport: ViewportSource
-  scroller: React.RefObject<HTMLDivElement | null>
-}) {
+/** Шапка панели дорожек: название зоны и режимы работы с дорожками. */
+function TrackColumnHeader() {
   const { t } = useWorkspace()
   const srt = useSrt()
-  const innerRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    return viewport.subscribe((view) => {
-      const el = innerRef.current
-      if (el) el.style.transform = `translateY(${-view.top}px)`
-    })
-  }, [viewport])
-
-  /**
-   * Колесо над панелью дорожек листает полотно.
-   *
-   * Панель не скроллится сама — она повторяет сдвиг полотна, — поэтому без этой
-   * передачи колесо над именем дорожки просто ничего не делало.
-   */
-  const onWheel = useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
-      const el = scroller.current
-      if (!el) return
-      el.scrollTop += event.deltaY
-      el.scrollLeft += event.deltaX
-    },
-    [scroller],
-  )
 
   return (
-    <div
-      onWheel={onWheel}
-      className="flex w-[288px] flex-none flex-col border-r border-white/[0.07] bg-ws-well"
-    >
-      <div className="flex h-10 flex-none items-center gap-1 border-b border-white/[0.07] px-3">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.32px] text-ws-4">
-          {t.srtTracks}
-        </span>
-        <div className="flex-1" />
-        <button
-          type="button"
-          title={t.srtAddTrackHint}
-          onClick={srt.ops.addTrack}
-          className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1"
-        >
-          <Plus className="h-[15px] w-[15px]" />
-        </button>
-        <ModeButton
-          title={t.srtTrackReorderHint}
-          on={srt.trackMode === "reorder"}
-          onClick={() => srt.setTrackMode(srt.trackMode === "reorder" ? "none" : "reorder")}
-          activeClass="border-ws-action bg-ws-action/20 text-ws-1"
-        >
-          <ArrowDownUp className="h-[15px] w-[15px]" />
-        </ModeButton>
-        <ModeButton
-          title={t.srtTrackDeleteHint}
-          on={srt.trackMode === "delete"}
-          onClick={() => srt.setTrackMode(srt.trackMode === "delete" ? "none" : "delete")}
-          activeClass="border-destructive bg-destructive/20 text-ws-1"
-        >
-          <Trash2 className="h-[15px] w-[15px]" />
-        </ModeButton>
-      </div>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <div ref={innerRef} className="will-change-transform">
-          {srt.visibleTracks.map((track) => (
-            <TrackHeader key={track.id} track={track} />
-          ))}
-        </div>
-      </div>
+    <div className="flex h-10 flex-none items-center gap-1 border-b border-white/[0.07] px-3">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.32px] text-ws-4">
+        {t.srtTracks}
+      </span>
+      <div className="flex-1" />
+      <button
+        type="button"
+        title={t.srtAddTrackHint}
+        onClick={srt.ops.addTrack}
+        className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1"
+      >
+        <Plus className="h-[15px] w-[15px]" />
+      </button>
+      <ModeButton
+        title={t.srtTrackReorderHint}
+        on={srt.trackMode === "reorder"}
+        onClick={() => srt.setTrackMode(srt.trackMode === "reorder" ? "none" : "reorder")}
+        activeClass="border-ws-action bg-ws-action/20 text-ws-1"
+      >
+        <ArrowDownUp className="h-[15px] w-[15px]" />
+      </ModeButton>
+      <ModeButton
+        title={t.srtTrackDeleteHint}
+        on={srt.trackMode === "delete"}
+        onClick={() => srt.setTrackMode(srt.trackMode === "delete" ? "none" : "delete")}
+        activeClass="border-destructive bg-destructive/20 text-ws-1"
+      >
+        <Trash2 className="h-[15px] w-[15px]" />
+      </ModeButton>
     </div>
   )
 }
@@ -676,8 +514,15 @@ function Lane({
 }) {
   const srt = useSrt()
   const flags = srt.flags[track.id]
-  const soloed = Object.values(srt.flags).some((f) => f.solo)
-  const dimmed = (soloed && !flags?.solo) || Boolean(flags?.mute)
+  // Приглушены клипы дорожек, которых сейчас не слышно (§15.3). В режиме solo
+  // это все, кроме выбранных, — включая те, что кто-то раньше выключил через
+  // mute: solo старше, и картинка обязана совпадать со звуком.
+  const dimmed =
+    srt.soundMode === "solo"
+      ? !flags?.solo
+      : srt.soundMode === "mute"
+        ? Boolean(flags?.mute)
+        : false
   const selected = track.id === srt.selectedTrackId
   const wave = srt.peaksFor(track.id)
   const height = srt.prefs.trackH

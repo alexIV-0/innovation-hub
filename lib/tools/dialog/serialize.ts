@@ -17,7 +17,14 @@
  * `scripts/check-dialog-doc.mjs`.
  */
 
-import { compareCues, type Cue, type DialogDoc, type Track } from "./dialog-doc"
+import {
+  compareCues,
+  type Cue,
+  type CueVoice,
+  type DialogDoc,
+  type Track,
+  type TrackVoice,
+} from "./dialog-doc"
 
 export function serializeDialogDoc(doc: DialogDoc): string {
   return `${JSON.stringify(canonical(doc), null, 2)}\n`
@@ -73,7 +80,7 @@ function canonicalTrack(track: Track): Record<string, unknown> {
     peaks: track.peaks ?? undefined,
     diar: track.diar,
     origin: track.origin,
-    voice: track.voice,
+    voice: track.voice ? canonicalTrackVoice(track.voice) : undefined,
     ...(track.extra ?? {}),
   })
 }
@@ -97,8 +104,54 @@ function canonicalCue(cue: Cue): Record<string, unknown> {
     origin: cue.origin,
     movedFrom: cue.movedFrom,
     note: cue.note || undefined,
-    voice: cue.voice,
+    voice: cue.voice ? canonicalCueVoice(cue.voice) : undefined,
     ...(cue.extra ?? {}),
+  })
+}
+
+function canonicalTrackVoice(voice: TrackVoice): Record<string, unknown> {
+  return compact({
+    provider: voice.provider ?? undefined,
+    voiceId: voice.voiceId ?? undefined,
+    params: Object.keys(voice.params).length > 0 ? voice.params : undefined,
+    sample: voice.sample ?? undefined,
+    ...(voice.extra ?? {}),
+  })
+}
+
+/**
+ * Озвучка реплики.
+ *
+ * Тейки пишутся в порядке создания: он же порядок в списке версий на клипе, и
+ * менять его на что-то другое значило бы каждый раз тасовать историю.
+ */
+function canonicalCueVoice(voice: CueVoice): Record<string, unknown> {
+  const markup: Record<string, string> = {}
+  for (const lang of Object.keys(voice.markup).sort()) {
+    if (voice.markup[lang]) markup[lang] = voice.markup[lang]
+  }
+  const takes = voice.takes.map((take) =>
+    compact({
+      id: take.id,
+      lang: take.lang,
+      file: take.file,
+      peaks: take.peaks ?? undefined,
+      durationMs: take.durationMs,
+      provider: take.provider ?? undefined,
+      voiceId: take.voiceId ?? undefined,
+      createdAt: take.createdAt,
+      selected: take.selected ? true : undefined,
+      offsetMs: take.offsetMs || undefined,
+      rate: take.rate === 1 ? undefined : take.rate,
+      gainDb: take.gainDb || undefined,
+      source: take.source || undefined,
+      ...(take.extra ?? {}),
+    }),
+  )
+  return compact({
+    markup: Object.keys(markup).length > 0 ? markup : undefined,
+    takes: takes.length > 0 ? takes : undefined,
+    ...(voice.extra ?? {}),
   })
 }
 

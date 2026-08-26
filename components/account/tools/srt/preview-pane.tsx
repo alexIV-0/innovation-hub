@@ -1,81 +1,62 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { AudioLines, Film, Pause, Play, SkipBack, SkipForward } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import { tf } from "@/components/account/i18n"
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
-import { findTrack, translationOf } from "@/lib/tools/srt/dialog-doc"
-import { formatTc } from "@/lib/tools/srt/timecode"
+import { findTrack, translationOf } from "@/lib/tools/dialog/dialog-doc"
 import { cn } from "@/lib/utils"
-import { keyLabel } from "./editor-state"
+import { keyLabel } from "../shared/editor-state"
+import { PreviewPane as SharedPreviewPane } from "../shared/preview-pane"
+import { TrackAudio } from "../shared/track-audio"
 import { useSrt } from "./srt-context"
-import { TrackAudio } from "./track-audio"
 
 /**
- * Зона 2: превью.
- *
- * Видео здесь — единственные часы редактора. Если файла в папке нет, кадр не
- * показывается, но титры текущего момента остаются: тайминги и текст правятся
- * и без картинки (§15.1).
+ * Зона 2 редактора титров: общее превью плюс то, что знает только он, — титры
+ * поверх кадра, стемы дорожек и подпись «что звучит».
  */
 export function PreviewPane({ videoRef }: { videoRef: React.RefObject<HTMLVideoElement | null> }) {
   const { t } = useWorkspace()
   const srt = useSrt()
 
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-3 bg-ws-well p-3">
-      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-[5px] border border-white/[0.07] bg-black">
-        {srt.videoUrl ? (
-          <video
-            ref={videoRef}
-            src={srt.videoUrl}
-            playsInline
-            preload="metadata"
-            // Звук видео — это «основная дорожка». Молчит только когда включён
-            // solo: тогда слушают выбранную дорожку персонажа, а не микс.
-            muted={srt.mainMuted}
-            className="h-full w-full object-contain"
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-2 text-ws-5">
-            <Film className="h-10 w-10" />
-            <p className="text-[12px] tracking-[0.32px]">
-              {srt.doc.media.video
-                ? tf(t.srtPreviewMissing, { file: srt.doc.media.video })
-                : t.srtNoVideo}
-            </p>
-          </div>
-        )}
-        <SubtitleOverlay />
-      </div>
+  const step = (direction: 1 | -1) => {
+    const now = srt.clock.getTimeMs()
+    const next = srt.doc.cues
+      .filter((c) => (direction > 0 ? c.startMs > now + 100 : c.startMs < now - 100))
+      .sort((a, b) => (direction > 0 ? a.startMs - b.startMs : b.startMs - a.startMs))[0]
+    if (next) srt.selectCue(next.id)
+  }
 
-      {srt.soloTrackIds.map((trackId) => {
+  return (
+    <SharedPreviewPane
+      videoRef={videoRef}
+      videoUrl={srt.videoUrl}
+      missing={
+        srt.doc.media.video ? tf(t.srtPreviewMissing, { file: srt.doc.media.video }) : t.srtNoVideo
+      }
+      // Звук видео — это «основная дорожка». Молчит, когда включён solo или
+      // mute: тогда слушают дорожки персонажей, а не микс, где те же голоса
+      // уже сведены.
+      muted={srt.mainMuted}
+      durationMs={srt.durationMs}
+      clock={srt.clock}
+      labels={{
+        play: tf(t.srtPlayPause, { key: keyLabel(srt.prefs.keymap.playPause) }),
+        prev: t.srtPrevCue,
+        next: t.srtNextCue,
+        sound: t.srtPreviewSound,
+      }}
+      onStep={step}
+      overlay={<SubtitleOverlay />}
+      audio={srt.audibleTrackIds.map((trackId) => {
         const url = srt.trackAudioUrl(trackId)
         return url ? (
           <TrackAudio key={trackId} url={url} playing={srt.clock.playing} clock={srt.clock} />
         ) : null
       })}
-
-      <Transport />
-
-      <div className="flex items-center gap-2.5 rounded-[5px] border border-white/[0.07] bg-ws-raised px-3 py-2.5">
-        <AudioLines
-          className={cn(
-            "h-[18px] w-[18px] shrink-0",
-            srt.mainMuted && srt.soloTrackIds.length === 0 ? "text-ws-5" : "text-ws-accent",
-          )}
-        />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="text-[11px] uppercase tracking-[0.32px] text-ws-4">
-            {t.srtPreviewSound}
-          </span>
-          <span className="truncate text-[13px] text-ws-2">
-            <AudioSource />
-          </span>
-        </div>
-      </div>
-    </div>
+      sound={<AudioSource />}
+      silent={srt.mainMuted && srt.audibleTrackIds.length === 0}
+    />
   )
 }
 
@@ -136,81 +117,27 @@ function SubtitleOverlay() {
   )
 }
 
-function Transport() {
-  const { t } = useWorkspace()
-  const srt = useSrt()
-  const nowRef = useRef<HTMLSpanElement | null>(null)
-
-  useEffect(() => {
-    return srt.clock.subscribe((ms) => {
-      const el = nowRef.current
-      if (el) el.textContent = formatTc(ms)
-    })
-  }, [srt.clock])
-
-  const step = (direction: 1 | -1) => {
-    const now = srt.clock.getTimeMs()
-    const candidates = srt.doc.cues
-      .filter((c) => (direction > 0 ? c.startMs > now + 100 : c.startMs < now - 100))
-      .sort((a, b) => (direction > 0 ? a.startMs - b.startMs : b.startMs - a.startMs))
-    const next = candidates[0]
-    if (next) srt.selectCue(next.id)
-  }
-
-  return (
-    <div className="flex items-center gap-2.5 rounded-[5px] border border-white/[0.07] bg-ws-raised px-2.5 py-2">
-      <button
-        type="button"
-        onClick={srt.clock.togglePlay}
-        title={tf(t.srtPlayPause, { key: keyLabel(srt.prefs.keymap.playPause) })}
-        className="flex h-8 w-8 items-center justify-center rounded bg-ws-action text-white hover:bg-ws-action-hover"
-      >
-        {srt.clock.playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-      </button>
-      <button
-        type="button"
-        onClick={() => step(-1)}
-        title={t.srtPrevCue}
-        className="flex h-[30px] w-[30px] items-center justify-center rounded border border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1"
-      >
-        <SkipBack className="h-[18px] w-[18px]" />
-      </button>
-      <button
-        type="button"
-        onClick={() => step(1)}
-        title={t.srtNextCue}
-        className="flex h-[30px] w-[30px] items-center justify-center rounded border border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1"
-      >
-        <SkipForward className="h-[18px] w-[18px]" />
-      </button>
-      <div className="flex-1" />
-      <span ref={nowRef} className="font-mono text-[13px] tabular-nums text-ws-1">
-        {formatTc(0)}
-      </span>
-      <span className="font-mono text-[13px] tabular-nums text-ws-4">
-        / {formatTc(srt.durationMs)}
-      </span>
-    </div>
-  )
-}
-
 /**
  * Что сейчас звучит — по матрице §15.3.
  *
  * Подпись обязана совпадать с тем, что слышно: «solo» на дорожке без своего
  * звука — это тишина, а не микс, и человек должен видеть причину, а не гадать.
+ * То же и с mute: выключили всех — тишина, и так и написано.
  */
 function AudioSource() {
   const { t } = useWorkspace()
   const srt = useSrt()
 
-  if (srt.mainMuted) {
-    const sounding = srt.doc.tracks.filter((track) => srt.soloTrackIds.includes(track.id))
-    if (sounding.length > 0) {
-      return <>{tf(t.srtSoundSolo, { names: sounding.map((track) => track.name).join(", ") })}</>
-    }
+  const sounding = srt.doc.tracks.filter((track) => srt.audibleTrackIds.includes(track.id))
+  const names = sounding.map((track) => track.name).join(", ")
+
+  if (srt.soundMode === "solo") {
+    if (sounding.length > 0) return <>{tf(t.srtSoundSolo, { names })}</>
     const silent = srt.doc.tracks.filter((track) => srt.flags[track.id]?.solo)
     return <>{tf(t.srtSoundSoloSilent, { names: silent.map((track) => track.name).join(", ") })}</>
+  }
+  if (srt.soundMode === "mute") {
+    return sounding.length > 0 ? <>{tf(t.srtSoundTracks, { names })}</> : <>{t.srtSoundMuteSilent}</>
   }
   const mix = srt.doc.media.mix ?? srt.doc.media.video
   return <>{mix ? tf(t.srtSoundMain, { file: mix }) : t.srtSoundNone}</>

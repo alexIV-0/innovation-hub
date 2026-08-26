@@ -51,6 +51,10 @@ export function createPipelineSource(userId: string | null): WorkspaceSource {
     folderUrl: (projectId) => `/api/admin/pipeline/projects/${projectId}`,
     uploadUrl: (projectId) => `/api/admin/pipeline/projects/${projectId}`,
     moveUrl: () => "/api/admin/pipeline/projects",
+    // Архив папки читает каталог и объекты — это чтение, поэтому «Конвейеру»
+    // он доступен так же, как превью файла, и адреса те же, что в кабинете.
+    archivePlanUrl: (params) => `/api/storage/v1/archive/plan?${params.toString()}`,
+    archivePartUrl: (params) => `/api/storage/v1/archive?${params.toString()}`,
     descriptionMdUrl: (projectId) =>
       `/api/admin/pipeline/projects/${projectId}/description`,
     chatUrl: (projectId) => `/api/admin/pipeline/projects/${projectId}/chat`,

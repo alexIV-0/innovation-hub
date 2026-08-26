@@ -8,7 +8,9 @@ import {
   CloudOff,
   Download,
   HelpCircle,
+  ChevronDown,
   Loader2,
+  RotateCcw,
   Settings,
   TriangleAlert,
   X,
@@ -16,6 +18,13 @@ import {
 import { toast } from "sonner"
 
 import { ResizeGrip } from "@/components/account/resize-grip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { tf } from "@/components/account/i18n"
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
@@ -27,7 +36,9 @@ import {
   mergeCueWithNext,
   mergeCues as mergeCuesOp,
   moveCueToTrack,
+  moveTrack as moveTrackOp,
   removeCue as removeCueOp,
+  removeTrack as removeTrackOp,
   removeLanguage as removeLanguageOp,
   renameTrack as renameTrackOp,
   setTrackColor as setTrackColorOp,
@@ -36,7 +47,14 @@ import {
   setCueTranslation,
   splitCue as splitCueOp,
 } from "@/lib/tools/srt/dialog-doc"
-import { exportDocument } from "@/lib/tools/srt/export"
+import { buildExport, type ExportResult } from "@/lib/tools/srt/export"
+import type { DialogDoc } from "@/lib/tools/srt/dialog-doc"
+import {
+  fullRestoreScope,
+  restoreFromSrt,
+  sourcePathsFor,
+} from "@/lib/tools/srt/restore"
+import { buildZip } from "@/lib/tools/srt/zip"
 import { MAX_PPS, MIN_PPS, zoomStep } from "@/lib/tools/srt/timeline"
 import { cn } from "@/lib/utils"
 import { SourcePicker } from "../source-picker"
@@ -52,14 +70,19 @@ import {
   type HotkeyAction,
   type TimelineTool,
   type TrackFlags,
+  type TrackMode,
 } from "./editor-state"
+import { downloadFile, ZIP_MIME } from "./download"
+import { SrtExportDialog } from "./export-dialog"
 import { SrtHelpDialog } from "./help-dialog"
+import { SrtRestoreDialog } from "./restore-dialog"
 import { LanguagePicker, languageName } from "./language-picker"
 import { PreviewPane } from "./preview-pane"
 import { SrtProvider, type SrtApi } from "./srt-context"
 import { TimelinePane } from "./timeline-pane"
 import {
   findEntry,
+  loadSrtSources,
   useDocPeaks,
   useSignedUrl,
   useSignedUrls,
@@ -161,6 +184,9 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
   const [flags, setFlags] = useState<Record<string, TrackFlags>>({})
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const [trackMode, setTrackMode] = useState<TrackMode>("none")
 
   const durationMs = doc ? docDurationMs(doc) : 0
   const clock = usePlayerClock(videoRef, durationMs)
@@ -238,11 +264,15 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
   const visibleTracks = useMemo(() => {
     if (!doc) return []
     const query = trackQuery.trim().toLowerCase()
-    return doc.tracks.filter(
-      (track) =>
-        (!hideShy || !flags[track.id]?.shy) &&
-        (!query || track.name.toLowerCase().includes(query)),
-    )
+    return doc.tracks
+      .filter(
+        (track) =>
+          (!hideShy || !flags[track.id]?.shy) &&
+          (!query || track.name.toLowerCase().includes(query)),
+      )
+      // Порядок на экране задаёт `no`, а не порядок в массиве: так панель
+      // дорожек и полотно всегда согласны между собой и с тем, что в файле.
+      .sort((a, b) => a.no - b.no)
   }, [doc, flags, hideShy, trackQuery])
 
   const rows = useMemo(() => {
@@ -281,6 +311,11 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
       mergeCues: (aId, bId) => apply((d) => mergeCuesOp(d, aId, bId)),
       renameTrack: (trackId, name) => apply((d) => renameTrackOp(d, trackId, name)),
       setTrackColor: (trackId, color) => apply((d) => setTrackColorOp(d, trackId, color)),
+      removeTrack: (trackId) => apply((d) => removeTrackOp(d, trackId, new Date().toISOString())),
+      moveTrack: (trackId, direction) => apply((d) => moveTrackOp(d, trackId, direction)),
+      // Восстановление проходит через историю: «отменить» возвращает то, что было
+      // до сброса, — иначе откат правок сам оказался бы необратимым.
+      replaceDoc: (next) => apply(() => next),
       addLanguage: (code) => {
         apply((d) => addLanguageOp(d, code))
         setLang(code.trim().toLowerCase())
@@ -370,6 +405,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
       } else if (event.code === "Escape") {
         setHelpOpen(false)
         setSettingsOpen(false)
+        setTrackMode("none")
       } else {
         return
       }
@@ -400,23 +436,117 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
     settingsOpen,
   ])
 
-  const exportFile = useCallback(() => {
+  /** Имя задачи — папка, в которой она лежит. Основа имён всех выгрузок. */
+  const taskName = folderPath?.split("/").pop() ?? doc?.id ?? "dialog"
+  const selectedTrack = doc?.tracks.find((track) => track.id === selectedTrackId) ?? null
+
+  /**
+   * Формат из настроек — подписью у быстрых пунктов.
+   *
+   * Информация не основная, но важная: пункты меню не спрашивают формат, и без
+   * подписи «Всё — архивом» молча отдаёт WebVTT человеку, который ждал SRT.
+   */
+  const formatLabel =
+    prefs.exportFmt === "vtt"
+      ? t.srtFmtShortVtt
+      : prefs.exportFmt === "srt-bom"
+        ? t.srtFmtShortSrtBom
+        : t.srtFmtShortSrt
+
+  /** Сырьё титров из папки — по запросу окна восстановления. */
+  const loadSources = useCallback(
+    (paths: string[]) => loadSrtSources(projectId, folderPath, entries, paths),
+    [entries, folderPath, projectId],
+  )
+
+  /**
+   * Сбросить всё до машинного результата.
+   *
+   * Спрашиваем прямо: это не отмена, а возврат к тому, с чего начиналось, и
+   * правки человека по всем дорожкам и языкам исчезнут. Обратимо через
+   * «отменить», но узнать об этом после — плохое утешение.
+   */
+  const restoreEverything = useCallback(async () => {
     if (!doc) return
-    const result = exportDocument(doc, prefs.exportFmt, { lang })
-    const blob = new Blob([result.text], { type: result.mime })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    const base = folderPath?.split("/").pop() ?? doc.id
-    link.href = url
-    link.download = `${base}.${lang ?? doc.languages.original}.${result.extension}`
-    link.click()
-    URL.revokeObjectURL(url)
-  }, [doc, folderPath, lang, prefs.exportFmt])
+    if (!window.confirm(t.srtRestoreAllConfirm)) return
+    const scope = fullRestoreScope(doc)
+    const sources = await loadSources(sourcePathsFor(doc, scope))
+    if (sources.size === 0) {
+      toast.error(t.srtRestoreNoSources)
+      return
+    }
+    const report = restoreFromSrt(doc, sources, scope)
+    if (report.changed === 0 && report.restored === 0 && report.renamed === 0) {
+      toast.info(t.srtRestoreNothing)
+      return
+    }
+    apply(() => report.doc)
+    toast.success(
+      tf(t.srtRestoreSummary, {
+        changed: report.changed,
+        restored: report.restored,
+        renamed: report.renamed,
+      }),
+    )
+  }, [apply, doc, loadSources, t])
+
+  /** Отдать человеку то, что насчитал `buildExport`: файл или архив. */
+  const deliver = useCallback((result: ExportResult | null) => {
+    if (!result) return
+    if (result.kind === "file") downloadFile(result.name, result.text, result.mime)
+    else downloadFile(result.name, buildZip(result.entries, new Date()), ZIP_MIME)
+  }, [])
+
+  /**
+   * Быстрые выгрузки.
+   *
+   * Три случая, которые нужны почти всегда. Формат берётся из настроек, язык —
+   * из переключателя в топбаре; «все дорожки архивом» выгружает **все языки**,
+   * какие есть в документе: «выгрузить всё» должно значить всё, а не «всё на
+   * том языке, который сейчас открыт». Остальное собирается в расширенном окне,
+   * чтобы меню не превращалось в форму.
+   */
+  const exportSelectedTrack = useCallback(() => {
+    if (!doc || !selectedTrack) return
+    deliver(
+      buildExport(doc, taskName, {
+        format: prefs.exportFmt,
+        langs: [lang],
+        trackIds: [selectedTrack.id],
+        layout: "per-track",
+      }),
+    )
+  }, [deliver, doc, lang, prefs.exportFmt, selectedTrack, taskName])
+
+  const exportEverything = useCallback(() => {
+    if (!doc) return
+    deliver(
+      buildExport(doc, taskName, {
+        format: prefs.exportFmt,
+        langs: [null, ...doc.languages.targets],
+        trackIds: doc.tracks.map((track) => track.id),
+        layout: "per-track",
+      }),
+    )
+  }, [deliver, doc, prefs.exportFmt, taskName])
+
+  const exportSingleFile = useCallback(() => {
+    if (!doc) return
+    deliver(
+      buildExport(doc, taskName, {
+        format: prefs.exportFmt,
+        langs: [lang],
+        trackIds: doc.tracks.map((track) => track.id),
+        layout: "single",
+      }),
+    )
+  }, [deliver, doc, lang, prefs.exportFmt, taskName])
 
   const api = useMemo<SrtApi | null>(() => {
     if (!doc) return null
     return {
       doc,
+      taskName,
       durationMs,
       mediaEndMs: doc.media.durationMs || durationMs,
       prefs,
@@ -443,6 +573,9 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
       hideShy,
       setHideShy,
       flags,
+      trackMode,
+      setTrackMode,
+      loadSources,
       toggleFlag: (trackId, key) =>
         setFlags((current) => ({
           ...current,
@@ -490,8 +623,11 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
     selectedCueId,
     selectedTrackId,
     setPref,
+    taskName,
     tool_,
     trackAudioEntries,
+    trackMode,
+    loadSources,
     trackAudioUrls,
     trackQuery,
     videoUrl,
@@ -550,6 +686,35 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
 
         {doc ? <SaveBadge state={save.state} dirty={save.dirty} onFlush={save.flush} /> : null}
 
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              title={t.srtRestoreTitle}
+              disabled={!doc}
+              className="flex h-[34px] w-[34px] items-center justify-center rounded border border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1 disabled:opacity-40"
+            >
+              <RotateCcw className="h-[17px] w-[17px]" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[280px]">
+            <DropdownMenuItem
+              onClick={() => void restoreEverything()}
+              className="cursor-pointer flex-col items-start gap-0.5 focus:bg-white/10"
+            >
+              <span>{t.srtRestoreAll}</span>
+              <span className="text-[12px] text-ws-4">{t.srtRestoreAllNote}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setRestoreOpen(true)}
+              className="cursor-pointer focus:bg-white/10"
+            >
+              {t.srtRestoreAdvanced}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <button
           type="button"
           title={t.srtHotkeys}
@@ -558,15 +723,48 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
         >
           <HelpCircle className="h-[18px] w-[18px]" />
         </button>
-        <button
-          type="button"
-          onClick={exportFile}
-          disabled={!doc}
-          className="flex h-[34px] items-center gap-2 rounded border border-white/[0.07] px-3 text-[13px] text-ws-2 hover:bg-ws-hover disabled:opacity-40"
-        >
-          <Download className="h-[17px] w-[17px]" />
-          {t.srtExport}
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={!doc}
+              className="flex h-[34px] items-center gap-2 rounded border border-white/[0.07] px-3 text-[13px] text-ws-2 hover:bg-ws-hover disabled:opacity-40"
+            >
+              <Download className="h-[17px] w-[17px]" />
+              {t.srtExport}
+              <ChevronDown className="h-[15px] w-[15px] text-ws-5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[320px]">
+            <ExportMenuItem
+              title={t.srtExportTrack}
+              note={selectedTrack ? selectedTrack.name : t.srtExportNoTrack}
+              format={formatLabel}
+              disabled={!selectedTrack}
+              onClick={exportSelectedTrack}
+            />
+            <ExportMenuItem
+              title={t.srtExportArchive}
+              note={tf(t.srtExportArchiveNote, {
+                langs: doc ? doc.languages.targets.length + 1 : 1,
+              })}
+              format={formatLabel}
+              onClick={exportEverything}
+            />
+            <ExportMenuItem
+              title={t.srtExportSingle}
+              format={formatLabel}
+              onClick={exportSingleFile}
+            />
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setExportOpen(true)}
+              className="cursor-pointer focus:bg-white/10"
+            >
+              {t.srtExportAdvanced}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           type="button"
           title={t.toolClose}
@@ -610,6 +808,9 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
               <TimelinePane />
             </div>
           </div>
+          {/* Внутри провайдера: окну нужен документ, дорожки и текущий язык. */}
+          <SrtExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+          <SrtRestoreDialog open={restoreOpen} onOpenChange={setRestoreOpen} />
         </SrtProvider>
       ) : (
         <EmptyArea state={state} />
@@ -682,6 +883,35 @@ function SaveBadge({
       <Icon className={cn("h-4 w-4", view.spin && "animate-spin")} />
       <span className="hidden lg:inline">{view.text}</span>
     </button>
+  )
+}
+
+/** Пункт меню экспорта: что выгружаем слева, в каком формате — справа. */
+function ExportMenuItem({
+  title,
+  note,
+  format,
+  disabled,
+  onClick,
+}: {
+  title: string
+  note?: string
+  format: string
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <DropdownMenuItem
+      onClick={onClick}
+      disabled={disabled}
+      className="cursor-pointer gap-3 focus:bg-white/10"
+    >
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate">{title}</span>
+        {note ? <span className="truncate text-[12px] text-ws-4">{note}</span> : null}
+      </span>
+      <span className="shrink-0 self-center font-mono text-[11px] text-ws-5">{format}</span>
+    </DropdownMenuItem>
   )
 }
 

@@ -58,6 +58,15 @@ export function keyLabel(code: string): string {
  */
 export type TrackFlags = { solo: boolean; mute: boolean; shy: boolean; wave: boolean }
 
+/**
+ * Что делают кнопки в строке дорожки.
+ *
+ * `none` — обычные mute/solo/shy. Перестановка и удаление — отдельные режимы, и
+ * они подменяют эти кнопки, а не добавляются к ним: строка узкая, а главное —
+ * рука, потянувшаяся к стрелке, не должна попадать в корзину.
+ */
+export type TrackMode = "none" | "reorder" | "delete"
+
 export type ViewPrefs = {
   trackH: number
   fontSize: number

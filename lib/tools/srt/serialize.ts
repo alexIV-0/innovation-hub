@@ -72,6 +72,7 @@ function canonicalTrack(track: Track): Record<string, unknown> {
     audio: track.audio ?? undefined,
     peaks: track.peaks ?? undefined,
     diar: track.diar,
+    origin: track.origin,
     voice: track.voice,
     ...(track.extra ?? {}),
   })

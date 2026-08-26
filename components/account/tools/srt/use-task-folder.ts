@@ -11,6 +11,7 @@ import {
   type DocWarning,
 } from "@/lib/tools/srt/dialog-doc"
 import { parsePeaks, type Peaks } from "@/lib/tools/srt/peaks"
+import { parseSrt, type SrtCue } from "@/lib/tools/srt/srt-parse"
 import type { ToolInstance } from "../tools-context"
 
 /** Запись дерева хранилища — то, что отдаёт `/api/storage/v1/tree`. */
@@ -48,10 +49,13 @@ export function docErrorText(
     srtDocDuplicateCue: string
     srtDocUnknownTrack: string
     srtDocBadInterval: string
+    srtDocMissingField: string
   },
   error: DocError,
 ): string {
   switch (error.kind) {
+    case "missingField":
+      return tf(t.srtDocMissingField, { field: error.field })
     case "newerVersion":
       return tf(t.srtDocNewer, { version: error.version })
     case "badPath":
@@ -302,4 +306,40 @@ export function useDocPeaks(
   }, [projectId, folderPath, wanted])
 
   return state
+}
+
+/**
+ * Сырьё титров из папки — для восстановления.
+ *
+ * Читается по требованию, а не при открытии задачи: файлы нужны только когда
+ * человек решил откатить правки, а на открытии это лишние запросы к хранилищу на
+ * каждую дорожку и каждый язык.
+ *
+ * Чего нет в папке, того нет и в ответе: вызывающий по разнице путей видит, что
+ * восстанавливать было не из чего, и говорит об этом человеку.
+ */
+export async function loadSrtSources(
+  projectId: string | null,
+  folderPath: string | null,
+  entries: FolderEntry[],
+  paths: string[],
+): Promise<Map<string, SrtCue[]>> {
+  const out = new Map<string, SrtCue[]>()
+  if (!projectId || !folderPath) return out
+
+  for (const relative of paths) {
+    const entry = findEntry(entries, folderPath, relative)
+    if (!entry?.s3Key) continue
+    try {
+      const url = await signGet(projectId, entry.s3Key)
+      if (!url) continue
+      const file = await fetch(url)
+      if (!file.ok) continue
+      const cues = parseSrt(await file.text())
+      if (cues.length > 0) out.set(relative, cues)
+    } catch {
+      // Недоступный файл — просто отсутствующее сырьё, не ошибка задачи.
+    }
+  }
+  return out
 }

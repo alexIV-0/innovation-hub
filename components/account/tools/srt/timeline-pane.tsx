@@ -2,17 +2,20 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
+  ArrowDown,
+  ArrowDownUp,
+  ArrowUp,
   ArrowUpDown,
   AudioLines,
   ChevronsRightLeft,
   EyeOff,
-  ListPlus,
   Minus,
   MousePointer2,
   Plus,
   Scissors,
   Search,
   SquarePlus,
+  Trash2,
 } from "lucide-react"
 
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
@@ -303,15 +306,6 @@ function TimelineToolbar() {
 
       <div className="flex-1" />
 
-      <button
-        type="button"
-        onClick={srt.ops.addTrack}
-        className="flex h-7 items-center gap-1.5 rounded border border-white/[0.07] px-2.5 text-[12px] text-ws-2 hover:bg-ws-hover"
-      >
-        <ListPlus className="h-4 w-4" />
-        {t.srtAddTrack}
-      </button>
-
       <div
         title={t.srtZoomWheel}
         className="flex h-7 items-center gap-2 rounded border border-white/[0.07] bg-ws-raised px-2.5"
@@ -393,8 +387,35 @@ function TrackColumn({
       onWheel={onWheel}
       className="flex w-[288px] flex-none flex-col border-r border-white/[0.07] bg-ws-well"
     >
-      <div className="flex h-10 flex-none items-center border-b border-white/[0.07] px-3 text-[11px] font-semibold uppercase tracking-[0.32px] text-ws-4">
-        {t.srtTracks}
+      <div className="flex h-10 flex-none items-center gap-1 border-b border-white/[0.07] px-3">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.32px] text-ws-4">
+          {t.srtTracks}
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          title={t.srtAddTrackHint}
+          onClick={srt.ops.addTrack}
+          className="flex h-6 w-6 items-center justify-center rounded border border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1"
+        >
+          <Plus className="h-[15px] w-[15px]" />
+        </button>
+        <ModeButton
+          title={t.srtTrackReorderHint}
+          on={srt.trackMode === "reorder"}
+          onClick={() => srt.setTrackMode(srt.trackMode === "reorder" ? "none" : "reorder")}
+          activeClass="border-ws-action bg-ws-action/20 text-ws-1"
+        >
+          <ArrowDownUp className="h-[15px] w-[15px]" />
+        </ModeButton>
+        <ModeButton
+          title={t.srtTrackDeleteHint}
+          on={srt.trackMode === "delete"}
+          onClick={() => srt.setTrackMode(srt.trackMode === "delete" ? "none" : "delete")}
+          activeClass="border-destructive bg-destructive/20 text-ws-1"
+        >
+          <Trash2 className="h-[15px] w-[15px]" />
+        </ModeButton>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <div ref={innerRef} className="will-change-transform">
@@ -413,6 +434,21 @@ function TrackHeader({ track }: { track: Track }) {
   const flags = srt.flags[track.id]
   const selected = track.id === srt.selectedTrackId
   const wave = srt.peaksFor(track.id)
+  const ordered = srt.doc.tracks.slice().sort((a, b) => a.no - b.no)
+  const first = ordered[0]?.id === track.id
+  const last = ordered[ordered.length - 1]?.id === track.id
+
+  /**
+   * Удаление дорожки уносит её реплики, поэтому спрашиваем — и говорим сколько.
+   * Пустую дорожку убираем сразу: терять там нечего.
+   */
+  const remove = () => {
+    const own = srt.doc.cues.filter((cue) => cue.trackId === track.id).length
+    if (own > 0 && !window.confirm(tf(t.srtTrackDeleteConfirm, { name: track.name, cues: own }))) {
+      return
+    }
+    srt.ops.removeTrack(track.id)
+  }
 
   return (
     <div
@@ -436,39 +472,74 @@ function TrackHeader({ track }: { track: Track }) {
           {t.srtSharedWaveShort}
         </span>
       ) : null}
-      <TrackFlagButton
-        title={wave.peaks ? t.srtTrackWave : t.srtTrackNoWave}
-        active={Boolean(wave.peaks) && (flags?.wave ?? false)}
-        disabled={!wave.peaks}
-        onClick={() => srt.toggleFlag(track.id, "wave")}
-        activeClass="text-ws-accent"
-      >
-        <AudioLines className="h-[14px] w-[14px]" />
-      </TrackFlagButton>
-      <TrackFlagButton
-        title={t.srtSolo}
-        active={flags?.solo ?? false}
-        onClick={() => srt.toggleFlag(track.id, "solo")}
-        activeClass="bg-ws-out text-ws-well"
-      >
-        <span className="text-[11px] font-bold">S</span>
-      </TrackFlagButton>
-      <TrackFlagButton
-        title={t.srtMute}
-        active={flags?.mute ?? false}
-        onClick={() => srt.toggleFlag(track.id, "mute")}
-        activeClass="bg-[#e0a33a] text-ws-well"
-      >
-        <span className="text-[11px] font-bold">M</span>
-      </TrackFlagButton>
-      <TrackFlagButton
-        title={t.srtShy}
-        active={flags?.shy ?? false}
-        onClick={() => srt.toggleFlag(track.id, "shy")}
-        activeClass="bg-[#8b6fd6] text-ws-well"
-      >
-        <EyeOff className="h-[14px] w-[14px]" />
-      </TrackFlagButton>
+      {srt.trackMode === "reorder" ? (
+        <>
+          <TrackFlagButton
+            title={t.srtTrackUp}
+            active={false}
+            activeClass=""
+            disabled={first}
+            onClick={() => srt.ops.moveTrack(track.id, -1)}
+          >
+            <ArrowUp className="h-[14px] w-[14px]" />
+          </TrackFlagButton>
+          <TrackFlagButton
+            title={t.srtTrackDown}
+            active={false}
+            activeClass=""
+            disabled={last}
+            onClick={() => srt.ops.moveTrack(track.id, 1)}
+          >
+            <ArrowDown className="h-[14px] w-[14px]" />
+          </TrackFlagButton>
+        </>
+      ) : srt.trackMode === "delete" ? (
+        <TrackFlagButton
+          title={tf(t.srtTrackDelete, { name: track.name })}
+          active={false}
+          activeClass=""
+          onClick={() => remove()}
+          className="border-destructive/40 text-destructive hover:bg-destructive/15"
+        >
+          <Trash2 className="h-[14px] w-[14px]" />
+        </TrackFlagButton>
+      ) : (
+        <>
+          <TrackFlagButton
+            title={wave.peaks ? t.srtTrackWave : t.srtTrackNoWave}
+            active={Boolean(wave.peaks) && (flags?.wave ?? false)}
+            disabled={!wave.peaks}
+            onClick={() => srt.toggleFlag(track.id, "wave")}
+            activeClass="text-ws-accent"
+          >
+            <AudioLines className="h-[14px] w-[14px]" />
+          </TrackFlagButton>
+          <TrackFlagButton
+            title={t.srtSolo}
+            active={flags?.solo ?? false}
+            onClick={() => srt.toggleFlag(track.id, "solo")}
+            activeClass="bg-ws-out text-ws-well"
+          >
+            <span className="text-[11px] font-bold">S</span>
+          </TrackFlagButton>
+          <TrackFlagButton
+            title={t.srtMute}
+            active={flags?.mute ?? false}
+            onClick={() => srt.toggleFlag(track.id, "mute")}
+            activeClass="bg-[#e0a33a] text-ws-well"
+          >
+            <span className="text-[11px] font-bold">M</span>
+          </TrackFlagButton>
+          <TrackFlagButton
+            title={t.srtShy}
+            active={flags?.shy ?? false}
+            onClick={() => srt.toggleFlag(track.id, "shy")}
+            activeClass="bg-[#8b6fd6] text-ws-well"
+          >
+            <EyeOff className="h-[14px] w-[14px]" />
+          </TrackFlagButton>
+        </>
+      )}
     </div>
   )
 }
@@ -530,6 +601,7 @@ function TrackFlagButton({
   active,
   activeClass,
   disabled,
+  className,
   onClick,
   children,
 }: {
@@ -537,6 +609,7 @@ function TrackFlagButton({
   active: boolean
   activeClass: string
   disabled?: boolean
+  className?: string
   onClick: () => void
   children: React.ReactNode
 }) {
@@ -552,7 +625,38 @@ function TrackFlagButton({
       className={cn(
         "flex h-6 w-6 flex-none items-center justify-center rounded border border-white/[0.07]",
         active ? activeClass : "text-ws-3 hover:bg-ws-hover",
+        className,
         disabled && "cursor-default text-ws-5 opacity-50 hover:bg-transparent",
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Кнопка-режим в шапке панели дорожек: включена — горит. */
+function ModeButton({
+  title,
+  on,
+  activeClass,
+  onClick,
+  children,
+}: {
+  title: string
+  on: boolean
+  activeClass: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "flex h-6 w-6 items-center justify-center rounded border",
+        on ? activeClass : "border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1",
       )}
     >
       {children}

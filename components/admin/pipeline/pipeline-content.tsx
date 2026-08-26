@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
 import { useAdminI18n } from "@/components/admin/admin-dict"
+import { ArchiveDialog } from "@/components/account/workspace/archive-dialog"
 import { ClipboardPanel } from "@/components/account/workspace/clipboard-panel"
 import { WorkspaceContextMenu } from "@/components/account/workspace/context-menu"
 import { PreviewDialog } from "@/components/account/workspace/file-preview"
@@ -70,6 +71,7 @@ function PipelineLayout({
 
       <ClipboardPanel />
       <WorkspaceContextMenu />
+      <ArchiveDialog />
       <PreviewDialog />
       <ShareDialog />
       <WorkspaceDialogs />

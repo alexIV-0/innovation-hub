@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { projectRules, taskItems } from "./srt/project-rules"
+import { projectRules, taskItems } from "./shared/project-rules"
 import { useTools, type ToolInstance } from "./tools-context"
 
 /** Запись дерева хранилища — нужно то, что лежит прямо в `sourceRoot`. */

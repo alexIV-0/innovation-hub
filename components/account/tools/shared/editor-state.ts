@@ -2,43 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import type { DialogDoc } from "@/lib/tools/srt/dialog-doc"
-import type { ExportFormat } from "@/lib/tools/srt/export"
-
-/** Инструмент таймлинии: выделение, создание, разрез, перенос, объединение. */
-export type TimelineTool = "select" | "create" | "razor" | "shift" | "merge"
-
-/** Действия, у которых есть горячая клавиша и которые можно переназначить. */
-export type HotkeyAction = TimelineTool | "playPause" | "mainWave"
-
-export const HOTKEY_ACTIONS: HotkeyAction[] = [
-  "select",
-  "create",
-  "razor",
-  "shift",
-  "merge",
-  "playPause",
-  "mainWave",
-]
-
 /**
- * Клавиши хранятся кодом физической кнопки (`KeyB`), а не набранным символом.
+ * Состояние редактора, общее для всех инструментов раздела.
  *
- * `event.key` зависит от раскладки: на русской та же кнопка даёт «и», и
- * привязка к букве просто перестаёт работать, пока не переключишь язык.
- * `event.code` описывает кнопку, поэтому раскладку можно не трогать.
+ * Здесь только то, что не знает ни про титры, ни про озвучку: документ с
+ * историей, часы плеера, настройки вида и удержание клавиши. Набор инструментов,
+ * раскладка клавиш и состав настроек у каждого инструмента свои и живут рядом с
+ * ним (`srt/prefs.ts` и подобные).
  */
-export type Keymap = Record<HotkeyAction, string>
-
-export const DEFAULT_KEYMAP: Keymap = {
-  select: "KeyV",
-  create: "KeyC",
-  razor: "KeyB",
-  shift: "KeyM",
-  merge: "KeyJ",
-  playPause: "Space",
-  mainWave: "KeyW",
-}
 
 /** Подпись клавиши для интерфейса: `KeyB` → `B`, `Digit1` → `1`. */
 export function keyLabel(code: string): string {
@@ -53,10 +24,23 @@ export function keyLabel(code: string): string {
  * Состояние дорожки, которого нет в документе.
  *
  * `solo`, `mute` и `shy` — это вид (§2.8 контракта формата), `wave` — тоже:
- * показывать волну этой дорожки или нет. Что звучит, решает `solo`; волна на
- * звук не влияет и наоборот — иначе одна кнопка делала бы две разные вещи.
+ * показывать волну этой дорожки или нет. Что звучит, решают `solo` и `mute`
+ * (§15.3); волна на звук не влияет и наоборот — иначе одна кнопка делала бы
+ * две разные вещи.
  */
 export type TrackFlags = { solo: boolean; mute: boolean; shy: boolean; wave: boolean }
+
+/**
+ * Как сведён звук превью (§15.3).
+ *
+ * `main` — звучит основная дорожка, звук видео; `solo` — звучат только
+ * выбранные дорожки; `mute` — звучат все, кроме выключенных. Режим один на
+ * редактор, а не флаг на дорожке: `solo` и `mute` — два способа разобрать один
+ * и тот же микс, и одновременно они означали бы взаимоисключающие вещи.
+ * Поэтому `solo` старше: пока он включён хоть у одной дорожки, `mute` на
+ * других ничего не решает.
+ */
+export type SoundMode = "main" | "solo" | "mute"
 
 /**
  * Что делают кнопки в строке дорожки.
@@ -66,30 +50,6 @@ export type TrackFlags = { solo: boolean; mute: boolean; shy: boolean; wave: boo
  * рука, потянувшаяся к стрелке, не должна попадать в корзину.
  */
 export type TrackMode = "none" | "reorder" | "delete"
-
-export type ViewPrefs = {
-  trackH: number
-  fontSize: number
-  snap: boolean
-  exportFmt: ExportFormat
-  mainWave: boolean
-  zoom: number
-  keymap: Keymap
-}
-
-export const DEFAULT_PREFS: ViewPrefs = {
-  trackH: 52,
-  fontSize: 14,
-  snap: true,
-  exportFmt: "srt",
-  mainWave: true,
-  zoom: 64,
-  keymap: DEFAULT_KEYMAP,
-}
-
-/** Размеры зон по умолчанию — из дизайна. */
-export const DEFAULT_LEFT_W = 420
-export const DEFAULT_TIMELINE_H = 300
 
 /**
  * Документ с историей.
@@ -101,14 +61,14 @@ export const DEFAULT_TIMELINE_H = 300
  */
 const HISTORY_LIMIT = 100
 
-export function useUndoableDoc(initial: DialogDoc | null) {
-  const [doc, setDoc] = useState<DialogDoc | null>(initial)
-  const past = useRef<DialogDoc[]>([])
-  const future = useRef<DialogDoc[]>([])
+export function useUndoableDoc<T>(initial: T | null) {
+  const [doc, setDoc] = useState<T | null>(initial)
+  const past = useRef<T[]>([])
+  const future = useRef<T[]>([])
   const lastGesture = useRef<string | null>(null)
   const [version, setVersion] = useState(0)
 
-  const reset = useCallback((next: DialogDoc | null) => {
+  const reset = useCallback((next: T | null) => {
     past.current = []
     future.current = []
     lastGesture.current = null
@@ -124,7 +84,7 @@ export function useUndoableDoc(initial: DialogDoc | null) {
    * пиксель назад — шестьдесят раз подряд.
    */
   const apply = useCallback(
-    (fn: (current: DialogDoc) => DialogDoc, gesture?: string) => {
+    (fn: (current: T) => T, gesture?: string) => {
       setDoc((current) => {
         if (!current) return current
         const next = fn(current)
@@ -181,32 +141,27 @@ export function useUndoableDoc(initial: DialogDoc | null) {
  * высота дорожек и размер шрифта — свойство экрана, за которым сидят, и тащить
  * их между машинами через базу было бы неверно (§9).
  */
-export function useViewPrefs(toolId: string) {
-  const storageKey = `ffworks-srt-view:${toolId}`
-  const [prefs, setPrefs] = useState<ViewPrefs>(DEFAULT_PREFS)
+export function useViewPrefs<P extends object>(storageKey: string, defaults: P) {
+  const [prefs, setPrefs] = useState<P>(defaults)
+  const defaultsRef = useRef(defaults)
+  defaultsRef.current = defaults
 
   useEffect(() => {
+    const base = defaultsRef.current
     try {
       const raw = window.localStorage.getItem(storageKey)
       if (!raw) {
-        setPrefs(DEFAULT_PREFS)
+        setPrefs(base)
         return
       }
-      const saved = JSON.parse(raw) as Partial<ViewPrefs>
-      // Клавиши сливаем, а не заменяем: у сохранённой раскладки может не быть
-      // действия, которое появилось позже, и оно осталось бы без клавиши.
-      setPrefs({
-        ...DEFAULT_PREFS,
-        ...saved,
-        keymap: { ...DEFAULT_KEYMAP, ...(saved.keymap ?? {}) },
-      })
+      setPrefs(mergePrefs(base, JSON.parse(raw) as Partial<P>))
     } catch {
-      setPrefs(DEFAULT_PREFS)
+      setPrefs(base)
     }
   }, [storageKey])
 
   const setPref = useCallback(
-    <K extends keyof ViewPrefs>(key: K, value: ViewPrefs[K]) => {
+    <K extends keyof P>(key: K, value: P[K]) => {
       setPrefs((current) => {
         const next = { ...current, [key]: value }
         try {
@@ -221,7 +176,7 @@ export function useViewPrefs(toolId: string) {
   )
 
   const resetPrefs = useCallback(() => {
-    setPrefs(DEFAULT_PREFS)
+    setPrefs(defaultsRef.current)
     try {
       window.localStorage.removeItem(storageKey)
     } catch {
@@ -230,6 +185,30 @@ export function useViewPrefs(toolId: string) {
   }, [storageKey])
 
   return { prefs, setPref, resetPrefs }
+}
+
+/**
+ * Слияние сохранённых настроек со значениями по умолчанию.
+ *
+ * Вложенные объекты сливаются, а не заменяются: в сохранённой раскладке клавиш
+ * может не быть действия, которое появилось позже, и оно осталось бы без клавиши.
+ */
+function mergePrefs<P extends object>(defaults: P, saved: Partial<P>): P {
+  const out = { ...defaults }
+  for (const [key, value] of Object.entries(saved)) {
+    const base = (defaults as Record<string, unknown>)[key]
+    const nested =
+      value != null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      base != null &&
+      typeof base === "object" &&
+      !Array.isArray(base)
+    ;(out as Record<string, unknown>)[key] = nested
+      ? { ...(base as object), ...(value as object) }
+      : value
+  }
+  return out
 }
 
 /**
@@ -342,15 +321,15 @@ const HOLD_MS = 260
  * Пока держите — инструмент активен, отпустили — вернулся предыдущий; короткое
  * нажатие переключает насовсем.
  */
-export function useHeldTool(tool: TimelineTool, setTool: (next: TimelineTool) => void) {
-  const held = useRef<{ code: string; previous: TimelineTool; at: number } | null>(null)
+export function useHeldTool<T extends string>(tool: T, setTool: (next: T) => void) {
+  const held = useRef<{ code: string; previous: T; at: number } | null>(null)
   // Текущий инструмент — через ref: обработчик клавиш вешается на окно один раз,
   // и без ref он запомнил бы тот инструмент, который был активен при подписке.
   const current = useRef(tool)
   current.current = tool
 
   const press = useCallback(
-    (code: string, next: TimelineTool, repeat: boolean) => {
+    (code: string, next: T, repeat: boolean) => {
       // Повтор от удержания игнорируем: жест начинается один раз.
       if (repeat) return
       if (!held.current) held.current = { code, previous: current.current, at: Date.now() }

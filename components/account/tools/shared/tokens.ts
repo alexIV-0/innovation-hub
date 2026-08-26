@@ -14,6 +14,23 @@ export function readToken(element: Element | null, name: string, alpha = 1): str
   return alpha >= 1 ? `hsl(${raw})` : `hsl(${raw} / ${alpha})`
 }
 
+/**
+ * Цвет дорожки с прозрачностью.
+ *
+ * Палитра дорожек — шестнадцатеричные строки (`#5b9be0`), а фон клипа нужен
+ * полупрозрачным. Принимает и то, что уже с прозрачностью: тогда возвращает как
+ * есть, чтобы вызов не приходилось оборачивать проверкой.
+ */
+export function withAlpha(color: string, alpha: number): string {
+  const hex = color.trim()
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex
+  const value = parseInt(hex.slice(1), 16)
+  const r = (value >> 16) & 0xff
+  const g = (value >> 8) & 0xff
+  const b = value & 0xff
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 export type TimelinePalette = {
   tick: string
   tickLabel: string

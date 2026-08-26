@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import { Plus, Search, Trash2 } from "lucide-react"
 
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
-import { findTrack, translationOf, type Cue } from "@/lib/tools/srt/dialog-doc"
-import { formatDuration, formatTc } from "@/lib/tools/srt/timecode"
+import { findTrack, translationOf, type Cue } from "@/lib/tools/dialog/dialog-doc"
+import { formatDuration, formatTc } from "@/lib/tools/dialog/timecode"
 import { cn } from "@/lib/utils"
 import { useSrt } from "./srt-context"
 

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import type { DialogDoc } from "@/lib/tools/srt/dialog-doc"
-import { canonical } from "@/lib/tools/srt/serialize"
+import type { DialogDoc } from "@/lib/tools/dialog/dialog-doc"
+import { canonical } from "@/lib/tools/dialog/serialize"
 
 /**
  * Затишье, после которого правки уходят в папку.
@@ -166,10 +166,15 @@ export function useAutosave({
     return () => window.removeEventListener("beforeunload", onBeforeUnload)
   }, [dirty])
 
-  /** Записать сейчас — `Cmd/Ctrl+S`. */
-  const flush = useCallback(() => {
+  /**
+   * Записать сейчас — `Cmd/Ctrl+S`, и всё, что должно увидеть свежий документ.
+   *
+   * Возвращает обещание: тому, кто просит сервер что-то сделать с документом,
+   * надо дождаться записи, иначе сервер прочитает версию до правки.
+   */
+  const flush = useCallback(async () => {
     if (!docRef.current) return
-    void save()
+    await save()
   }, [save])
 
   /**

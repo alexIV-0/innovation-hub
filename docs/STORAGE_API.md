@@ -346,6 +346,84 @@ Progress for long-running storage jobs (`copy`, `move`, `purge`, `recatalog`).
 
 ---
 
+## `GET /api/storage/v1/archive/plan`
+
+Folder as ZIP: what the archives will be, without downloading anything. The plan
+is derived from the catalog on every call — nothing is stored server-side.
+
+**Query**
+
+| Param | Type | Required | Notes |
+|---|---|---|---|
+| `projectId` | string | yes | |
+| `folderId` | string | no | Catalog row of the folder |
+| `folderPath` | string | no | Used when `folderId` is absent; empty string = whole project |
+| `partSize` | number | no | Bytes per archive. Default `2147483648` (2 GiB), clamped to 64 MiB … 2 GiB |
+
+**Response `200`**
+
+```json
+{
+  "plan": {
+    "baseName": "Клип 12",
+    "fileCount": 428,
+    "totalBytes": 7516192768,
+    "partSize": 2147483648,
+    "version": "9f1c2ad4bb70e155",
+    "parts": [
+      {
+        "index": 1,
+        "name": "Клип 12-part1of4.zip",
+        "fileCount": 118,
+        "contentBytes": 2147000000,
+        "archiveBytes": 2147045678,
+        "oversize": false
+      }
+    ]
+  },
+  "limits": { "minPartSize": 67108864, "maxPartSize": 2147483648 }
+}
+```
+
+`archiveBytes` is the exact `Content-Length` of that part. `oversize: true`
+means the part holds a single file that is itself larger than `partSize` — files
+are never split across parts. `parts: []` means the folder has no files.
+
+Service rows (`options/`, `_catalog/`) are never included, admins included.
+`413` when the subtree holds more than 100 000 items.
+
+---
+
+## `GET /api/storage/v1/archive`
+
+One part, streamed. Viewer role is enough — the same as downloading a single
+file.
+
+**Query** — same as `/archive/plan`, plus:
+
+| Param | Type | Required | Notes |
+|---|---|---|---|
+| `part` | number | no | Part index from the plan, 1-based. Default `1` |
+| `version` | string | no | Plan fingerprint. Mismatch → `409` |
+
+**Response `200`** — `application/zip`, uncompressed (`store`), with an exact
+`Content-Length`, `Content-Disposition: attachment`, `Accept-Ranges: none` and
+`X-Archive-Part: 2/4`.
+
+**`409`** — `{ "message": "Folder changed — reload the archive list.", "version": "…" }`.
+The folder changed after the plan was read, so part numbering is no longer the
+same. Re-read the plan and start over.
+
+Not resumable: entry CRCs are computed while streaming, so serving the middle of
+an archive would mean re-reading everything before it. A broken part is
+downloaded again.
+
+Behind nginx the response carries `X-Accel-Buffering: no` — with
+`proxy_buffering` on, a 2 GB response would be spooled to disk before the client
+sees the first byte.
+
+---
+
 ## Multipart upload
 
 For objects larger than ~5 GiB or resumable uploads. After `complete`, the catalog is updated the same way as `/notify`.
@@ -815,6 +893,13 @@ POST /presign { projectId, method: "GET", s3Key }
 ```
 
 Or use existing media proxy / legacy download routes for browser session users.
+
+Whole folder:
+
+```
+GET /archive/plan?projectId=…&folderId=…   → { parts: […], version }
+GET /archive?projectId=…&folderId=…&part=1&version=…   (repeat per part)
+```
 
 ---
 

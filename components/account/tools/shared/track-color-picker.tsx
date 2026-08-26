@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Check } from "lucide-react"
 
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
@@ -9,7 +10,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { TRACK_PALETTE } from "@/lib/tools/srt/dialog-doc"
+import { TRACK_PALETTE } from "@/lib/tools/dialog/dialog-doc"
 
 /**
  * Цвет дорожки.
@@ -27,9 +28,12 @@ export function TrackColorPicker({
   onPick: (color: string) => void
 }) {
   const { t } = useWorkspace()
+  // Оттенки — обычные кнопки, а не пункты меню (сетка из квадратов), поэтому
+  // закрытие после выбора за нами: цвет выбран, держать меню открытым нечего.
+  const [open, setOpen] = useState(false)
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -50,7 +54,10 @@ export function TrackColorPicker({
               key={swatch}
               type="button"
               aria-label={swatch}
-              onClick={() => onPick(swatch)}
+              onClick={() => {
+                onPick(swatch)
+                setOpen(false)
+              }}
               className="flex h-8 items-center justify-center rounded border border-white/10 hover:border-white/40"
               style={{ background: swatch }}
             >

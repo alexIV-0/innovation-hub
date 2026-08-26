@@ -30,6 +30,8 @@ export const CABINET_SOURCE: WorkspaceSource = {
   uploadUrl: (projectId, params) =>
     `/api/projects/${projectId}/media?${params.toString()}`,
   moveUrl: () => "/api/storage/v1/rename",
+  archivePlanUrl: (params) => `/api/storage/v1/archive/plan?${params.toString()}`,
+  archivePartUrl: (params) => `/api/storage/v1/archive?${params.toString()}`,
   exposedOptionsUrl: (projectId) => `/api/projects/${projectId}/drive/options`,
   // Только чтение: у роута нет PUT, а `can.editDescription` ниже — false.
   descriptionMdUrl: (projectId) => `/api/projects/${projectId}/description`,

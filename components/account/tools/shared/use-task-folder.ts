@@ -9,9 +9,9 @@ import {
   type DialogDoc,
   type DocError,
   type DocWarning,
-} from "@/lib/tools/srt/dialog-doc"
-import { parsePeaks, type Peaks } from "@/lib/tools/srt/peaks"
-import { parseSrt, type SrtCue } from "@/lib/tools/srt/srt-parse"
+} from "@/lib/tools/dialog/dialog-doc"
+import { parsePeaks, type Peaks } from "@/lib/tools/dialog/peaks"
+import { parseSrt, type SrtCue } from "@/lib/tools/dialog/srt-parse"
 import type { ToolInstance } from "../tools-context"
 
 /** Запись дерева хранилища — то, что отдаёт `/api/storage/v1/tree`. */
@@ -342,4 +342,69 @@ export async function loadSrtSources(
     }
   }
   return out
+}
+
+/**
+ * Волны по путям — для тейков озвучки и всего, что появляется по ходу работы.
+ *
+ * Отдельно от `useDocPeaks`, потому что список путей здесь меняется от действий
+ * человека: сгенерировал тейк — появился ещё один файл. Прочитанное держим в
+ * кэше на всё время работы: файлы маленькие, а перечитывать их на каждую
+ * перерисовку незачем.
+ */
+export function usePeaksByPath(
+  projectId: string | null,
+  folderPath: string | null,
+  entries: FolderEntry[],
+  paths: string[],
+): Record<string, Peaks> {
+  const [peaks, setPeaks] = useState<Record<string, Peaks>>({})
+  const cache = useRef<Record<string, Peaks>>({})
+  const missing = useRef(new Set<string>())
+  const wanted = paths.filter(Boolean).sort().join("\u0000")
+
+  useEffect(() => {
+    if (!projectId || !folderPath || !wanted) return
+    const list = wanted.split("\u0000")
+    const todo = list.filter((path) => !cache.current[path] && !missing.current.has(path))
+    if (todo.length === 0) return
+    let cancelled = false
+
+    void (async () => {
+      let added = false
+      for (const path of todo) {
+        const entry = findEntry(entries, folderPath, path)
+        if (!entry?.s3Key) {
+          // Файла в папке нет: помечаем, чтобы не спрашивать о нём каждый раз.
+          missing.current.add(path)
+          continue
+        }
+        try {
+          const url = await signGet(projectId, entry.s3Key)
+          if (!url) continue
+          const file = await fetch(url)
+          if (!file.ok) continue
+          const parsed = parsePeaks(await file.json())
+          if (parsed) {
+            cache.current[path] = parsed
+            added = true
+          } else {
+            missing.current.add(path)
+          }
+        } catch {
+          // Недоступная волна — клип нарисуется без неё.
+        }
+      }
+      if (added && !cancelled) setPeaks({ ...cache.current })
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // `entries` — новый массив на каждую перезагрузку папки, сравнивать по нему
+    // нечего; список путей и так в зависимостях строкой.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, folderPath, wanted])
+
+  return peaks
 }

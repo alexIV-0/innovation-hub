@@ -32,6 +32,7 @@ import {
 import { projectCapabilities } from "./access"
 import { CABINET_SOURCE } from "./source"
 import type {
+  ArchiveTarget,
   BottomTab,
   ChatMessage,
   Clipboard,
@@ -202,6 +203,13 @@ type WorkspaceValue = {
   /** Удаление всего выделения одним подтверждением. */
   deleteItems: (files: DriveFile[]) => void
   downloadItem: (file: DriveFile) => void
+  /**
+   * Папка архивом. Диалог сначала показывает состав частей: папка проекта
+   * может не уместиться в один архив, и молча отдавать первую часть нельзя.
+   */
+  archiveTarget: ArchiveTarget | null
+  openArchiveDialog: (target: ArchiveTarget) => void
+  closeArchiveDialog: () => void
   uploadFiles: (list: FileList | File[], target: UploadTarget) => Promise<void>
   triggerUpload: (target: UploadTarget) => void
   createTextFile: (target: UploadTarget) => void
@@ -435,6 +443,7 @@ export function WorkspaceProvider({
   const [clipboard, setClipboard] = useState<Clipboard | null>(null)
   const [moveTargets, setMoveTargets] = useState<DriveFile[] | null>(null)
   const [shareTarget, setShareTarget] = useState<Project | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState("")
   const [descDraft, setDescDraft] = useState("")
@@ -1073,6 +1082,11 @@ export function WorkspaceProvider({
     [selectedId],
   )
 
+  const openArchiveDialog = useCallback((target: ArchiveTarget) => {
+    setArchiveTarget(target)
+  }, [])
+  const closeArchiveDialog = useCallback(() => setArchiveTarget(null), [])
+
   const uploadFiles = useCallback(
     async (list: FileList | File[], target: UploadTarget) => {
       if (!selectedId) return
@@ -1428,6 +1442,9 @@ export function WorkspaceProvider({
     deleteItem,
     deleteItems,
     downloadItem,
+    archiveTarget,
+    openArchiveDialog,
+    closeArchiveDialog,
     uploadFiles,
     triggerUpload,
     createTextFile,

@@ -16,11 +16,11 @@ import {
   countExportedCues,
   type ExportFormat,
   type ExportLayout,
-} from "@/lib/tools/srt/export"
-import { buildZip } from "@/lib/tools/srt/zip"
+} from "@/lib/tools/dialog/export"
+import { buildZip } from "@/lib/tools/dialog/zip"
 import { cn } from "@/lib/utils"
-import { downloadFile, ZIP_MIME } from "./download"
-import { languageName } from "./language-picker"
+import { downloadFile, ZIP_MIME } from "../shared/download"
+import { languageName } from "../shared/language-picker"
 import { useSrt } from "./srt-context"
 
 /** `null` в списке языков — оригинал. */

@@ -70,6 +70,18 @@ export type UploadTarget = {
   folderPath: string
 }
 
+/**
+ * Что архивируем: папку из контекстного меню (`folderId`) или текущую папку
+ * рабочей области (`folderPath`, пустая строка — корень проекта). Второй
+ * вариант нужен потому, что у корня проекта строки в каталоге нет.
+ */
+export type ArchiveTarget = {
+  folderId: string | null
+  folderPath: string
+  /** Имя для заголовка диалога. */
+  name: string
+}
+
 /** Что делаем с содержимым буфера при вставке. */
 export type ClipboardOp = "copy" | "cut"
 
@@ -162,6 +174,13 @@ export type WorkspaceSource = {
   uploadUrl: (projectId: string, params: URLSearchParams) => string
   /** Перемещение элемента между папками. */
   moveUrl: () => string
+  /**
+   * Архив папки: `archivePlanUrl` — состав частей, `archivePartUrl` — сама
+   * часть потоком. У обеих зон адреса совпадают: это /api/storage/v1, он
+   * принимает сессию и пускает ADMIN в любой проект (lib/storage/auth.ts).
+   */
+  archivePlanUrl: (params: URLSearchParams) => string
+  archivePartUrl: (params: URLSearchParams) => string
   /**
    * Параметры обработки из options.json: PATCH — сохранить правки клиента.
    * Необязательный — без него панель настроек показывает значения, но не даёт

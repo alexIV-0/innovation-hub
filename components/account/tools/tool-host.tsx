@@ -7,6 +7,7 @@ import { useWorkspace } from "@/components/account/workspace/workspace-context"
 import { cn } from "@/lib/utils"
 import { SourcePicker } from "./source-picker"
 import { SrtEditor } from "./srt/srt-editor"
+import { VoiceEditor } from "./voice/voice-editor"
 import { useToolTitle } from "./tools-list"
 import { useTools, type ToolInstance } from "./tools-context"
 
@@ -218,6 +219,7 @@ export function ToolHost({ tool }: { tool: ToolInstance }) {
   }, [renameTool, t.toolNamePrompt, title, tool])
 
   if (tool.toolKey === "srt-editor") return <SrtEditor tool={tool} />
+  if (tool.toolKey === "voice-over") return <VoiceEditor tool={tool} />
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

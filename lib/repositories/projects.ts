@@ -21,6 +21,9 @@ const PROJECT_FIELDS = `
   -- POST /api/v1 ломать нельзя.
   NOT COALESCE(is_paused, FALSE) AS "isActive",
   COALESCE(is_archived, FALSE) AS "isArchived",
+  -- Почему проект стоит. NULL — остановлен человеком; иначе биллингом, и
+  -- тумблер обратно не включится, пока платить нечем (lib/billing/admission.ts).
+  paused_reason AS "pausedReason",
   archived_at AS "archivedAt",
   deleted_at AS "deletedAt",
   client_id AS "clientId",

@@ -20,7 +20,7 @@ export const runtime = "nodejs"
  * Кнопка на странице — это одно состояние на всю установку.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const [state, counts] = await Promise.all([
@@ -60,7 +60,7 @@ const patchSchema = z
  * не общий словарь, и на десктоп не синхронизируются.
  */
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const body = await request.json().catch(() => null)

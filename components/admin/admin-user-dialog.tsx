@@ -1,4 +1,5 @@
 "use client"
+import type { UserRole } from "@/lib/domain-types"
 
 import { useEffect, useState } from "react"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
@@ -31,7 +32,7 @@ export type UserDraft = {
   fullName: string
   email: string
   password: string
-  role: "USER" | "ADMIN"
+  role: UserRole
   isActive: boolean
 }
 
@@ -48,6 +49,8 @@ type Props = {
   mode: Mode
   initialUser?: AdminUser
   isSelf: boolean
+  /** Актор — суперадмин: только он выбирает роль и видит ступень SUPERADMIN. */
+  canManageRoles: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (draft: UserDraft, user?: AdminUser) => Promise<boolean>
 }
@@ -57,6 +60,7 @@ export function AdminUserDialog({
   mode,
   initialUser,
   isSelf,
+  canManageRoles,
   onOpenChange,
   onSubmit,
 }: Props) {
@@ -200,10 +204,10 @@ export function AdminUserDialog({
                 onValueChange={(value) =>
                   setDraft((prev) => ({
                     ...prev,
-                    role: value as "USER" | "ADMIN",
+                    role: value as UserRole,
                   }))
                 }
-                disabled={isSelf && draft.role === "ADMIN"}
+                disabled={isSelf || !canManageRoles}
               >
                 <SelectTrigger
                   id="user-role"
@@ -214,11 +218,18 @@ export function AdminUserDialog({
                 <SelectContent>
                   <SelectItem value="USER">{t.member}</SelectItem>
                   <SelectItem value="ADMIN">{t.admin}</SelectItem>
+                  {canManageRoles ? (
+                    <SelectItem value="SUPERADMIN">{t.superadmin}</SelectItem>
+                  ) : null}
                 </SelectContent>
               </Select>
               {isSelf ? (
                 <p className="text-[11px] text-muted-foreground">
                   {t.cantDemoteSelf}
+                </p>
+              ) : !canManageRoles ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {t.rolesSuperadminOnly}
                 </p>
               ) : null}
             </div>

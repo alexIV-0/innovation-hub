@@ -44,7 +44,7 @@ function decodeFileNameHeader(value: string | null): string {
 }
 
 async function runUpload(request: NextRequest): Promise<Response> {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   const maxBytes = getMaxUploadBytes()

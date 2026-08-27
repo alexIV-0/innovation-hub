@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto"
 import { query } from "@/lib/db"
 
-export type StorageJobKind = "copy" | "move" | "purge" | "recatalog"
+export type StorageJobKind =
+  | "copy"
+  | "move"
+  | "purge"
+  | "recatalog"
+  /** Выдача тестового периода: копии шаблонов + включение обработки. */
+  | "trial-provision"
 export type StorageJobState =
   | "queued"
   | "running"

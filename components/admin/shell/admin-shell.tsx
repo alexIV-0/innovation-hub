@@ -2,9 +2,13 @@
 
 import { usePathname } from "next/navigation"
 import { AdminDataProvider } from "@/components/admin/data/admin-data-context"
+import type { UserRole } from "@/lib/domain-types"
+import type { AdminCapability } from "@/lib/admin-capabilities"
 
 type Props = {
   currentUserId: string
+  currentUserRole: UserRole
+  currentUserCapabilities: AdminCapability[]
   children: React.ReactNode
 }
 
@@ -18,14 +22,23 @@ type Props = {
  */
 const FULL_BLEED_PATHS = ["/admin/pipeline"]
 
-export function AdminShell({ currentUserId, children }: Props) {
+export function AdminShell({
+  currentUserId,
+  currentUserRole,
+  currentUserCapabilities,
+  children,
+}: Props) {
   const pathname = usePathname()
   const fullBleed = FULL_BLEED_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
   )
 
   return (
-    <AdminDataProvider currentUserId={currentUserId}>
+    <AdminDataProvider
+      currentUserId={currentUserId}
+      currentUserRole={currentUserRole}
+      currentUserCapabilities={currentUserCapabilities}
+    >
       {fullBleed ? (
         <div className="h-full overflow-hidden bg-background">{children}</div>
       ) : (

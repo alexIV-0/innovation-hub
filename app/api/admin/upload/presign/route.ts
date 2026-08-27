@@ -36,7 +36,7 @@ import {
 export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   let body: unknown

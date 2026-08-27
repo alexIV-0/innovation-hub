@@ -1,4 +1,5 @@
 ﻿"use client"
+import { isElevated } from "@/lib/admin-roles"
 
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
@@ -16,6 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import {
   ChevronDown,
   FolderKanban,
+  Gift,
   LogIn,
   LogOut,
   Menu,
@@ -28,6 +30,8 @@ import type { UserRole } from "@/lib/domain-types"
 type SessionUser = {
   email: string
   role: UserRole
+  /** Тестовый период ещё не брали и он включён — есть что предложить. */
+  trialAvailable: boolean
 }
 
 const TOOL_LINKS = [
@@ -61,6 +65,30 @@ function ToolsMenu() {
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * «Попробовать бесплатно» — перед входом, потому что это первое, что мы
+ * предлагаем незнакомому человеку, а вход нужен тому, кто уже решил.
+ *
+ * Гостя ведём в регистрацию с пометкой намерения, вошедшего — в дашборд, где
+ * период активируется явной кнопкой. Сам по себе период не включается нигде:
+ * копии шаблонов не должны заводиться тому, кто зарегистрировался и ушёл.
+ */
+function TrialButton({ href }: { href: string }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="hidden rounded-full border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary sm:inline-flex"
+      asChild
+    >
+      <Link href={href}>
+        <Gift className="mr-2 h-4 w-4" />
+        <span>Try free</span>
+      </Link>
+    </Button>
   )
 }
 
@@ -131,7 +159,7 @@ function UserMenu({ user, onSignOut }: { user: SessionUser; onSignOut: () => voi
             Profile
           </Link>
         </DropdownMenuItem>
-        {user.role === "ADMIN" ? (
+        {isElevated(user.role) ? (
           <DropdownMenuItem asChild>
             <Link href="/admin">Admin dashboard</Link>
           </DropdownMenuItem>
@@ -159,10 +187,15 @@ export function Header() {
           authenticated?: boolean
           email?: string
           role?: UserRole
+          trialAvailable?: boolean
         }
         if (cancelled) return
         if (data.authenticated && data.email) {
-          setUser({ email: data.email, role: data.role ?? "USER" })
+          setUser({
+            email: data.email,
+            role: data.role ?? "USER",
+            trialAvailable: data.trialAvailable === true,
+          })
         } else {
           setUser(null)
         }
@@ -249,9 +282,13 @@ export function Header() {
           {user === undefined ? (
             <div className="h-10 w-[7.5rem] animate-pulse rounded-md bg-muted/60" aria-hidden />
           ) : user ? (
-            <UserMenu user={user} onSignOut={signOut} />
+            <>
+              {user.trialAvailable ? <TrialButton href="/account?trial=1" /> : null}
+              <UserMenu user={user} onSignOut={signOut} />
+            </>
           ) : (
             <>
+              <TrialButton href="/register?trial=1" />
               <Button
                 variant="ghost"
                 size="sm"

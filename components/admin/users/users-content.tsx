@@ -11,16 +11,28 @@ import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { EmptyState } from "@/components/admin/shared/empty-state"
 import { LoadingBlock } from "@/components/admin/shared/loading-block"
 import { SearchInput } from "@/components/admin/shared/search-input"
+import { isElevated } from "@/lib/admin-roles"
+import type { UserRole } from "@/lib/domain-types"
 
 type Filter = "all" | "admins" | "members" | "suspended"
+
+/** Одна ступень вниз по лестнице; обычному пользователю — вверх, до админа. */
+function nextRoleDown(role: UserRole): UserRole {
+  if (role === "SUPERADMIN") return "ADMIN"
+  if (role === "ADMIN") return "USER"
+  return "ADMIN"
+}
 
 export function UsersContent() {
   const {
     users,
     loading,
     currentUserId,
+    canManageRoles,
     openCreateUser,
     openEditUser,
+    openCapabilities,
+    can,
     patchUser,
     confirmDeleteUser,
   } = useAdminData()
@@ -33,7 +45,7 @@ export function UsersContent() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return users.filter((user) => {
-      if (filter === "admins" && user.role !== "ADMIN") return false
+      if (filter === "admins" && !isElevated(user.role)) return false
       if (filter === "members" && user.role !== "USER") return false
       if (filter === "suspended" && user.isActive) return false
       if (!q) return true
@@ -46,7 +58,7 @@ export function UsersContent() {
 
   const counts = {
     all: users.length,
-    admins: users.filter((u) => u.role === "ADMIN").length,
+    admins: users.filter((u) => isElevated(u.role)).length,
     members: users.filter((u) => u.role === "USER").length,
     suspended: users.filter((u) => !u.isActive).length,
   }
@@ -58,10 +70,14 @@ export function UsersContent() {
         title={page.adminPeopleTitle}
         description={page.adminPeopleDesc}
         actions={
-          <Button onClick={openCreateUser} className="gap-2 rounded-full">
-            <Plus className="h-4 w-4" />
-            {page.adminPeopleNew}
-          </Button>
+          // Страница открыта по users.read, а заводить людей даёт users.manage:
+          // теги разные, и кнопка не должна обещать того, чего нет.
+          can("users.manage") ? (
+            <Button onClick={openCreateUser} className="gap-2 rounded-full">
+              <Plus className="h-4 w-4" />
+              {page.adminPeopleNew}
+            </Button>
+          ) : null
         }
       />
 
@@ -91,10 +107,17 @@ export function UsersContent() {
               key={user.id}
               user={user}
               isCurrent={user.id === currentUserId}
+              canManageRoles={canManageRoles}
+              canManageUsers={can("users.manage")}
               onEdit={() => openEditUser(user)}
+              onOpenCapabilities={() => openCapabilities(user)}
               onToggleRole={() =>
                 void patchUser(user.id, {
-                  role: user.role === "ADMIN" ? "USER" : "ADMIN",
+                  // Ступень вниз, а не сразу в самый низ: понижение суперадмина
+                  // до админа — рабочий сценарий (этап 5 плана), а вот сброс его
+                  // до обычного пользователя одним щелчком почти всегда промах.
+                  // Произвольная роль ставится в диалоге.
+                  role: nextRoleDown(user.role),
                 })
               }
               onToggleActive={() =>

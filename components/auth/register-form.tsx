@@ -65,7 +65,21 @@ export function RegisterForm({ googleEnabled = false }: RegisterFormProps = {}) 
         !data.redirectTo.startsWith("//")
           ? data.redirectTo
           : "/account/dashboard"
-      window.location.assign(target)
+      /**
+       * Намерение «пришёл за тестовым периодом» переносим на дашборд: там
+       * откроются условия. Сам период не активируется — ни здесь, ни там без
+       * нажатия, иначе копии шаблонов заводились бы каждому, кто ушёл сразу
+       * после регистрации.
+       *
+       * Адрес указан явно, а не собран из `target`: по умолчанию регистрация
+       * отправляет на `/account/dashboard`, то есть в СТАРЫЙ кабинет
+       * (docs/CLEANUP_PLAN.md §C.2 — известная ошибка), а карточка периода
+       * живёт на новом, `/account`. Общий редирект здесь не трогаем: это
+       * отдельная задача с собственным чеклистом.
+       */
+      const wantsTrial =
+        new URLSearchParams(window.location.search).get("trial") === "1"
+      window.location.assign(wantsTrial ? "/account?trial=1" : target)
     } catch {
       setServerError("Unable to reach the server. Please try again.")
     }

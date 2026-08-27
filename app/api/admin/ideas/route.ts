@@ -4,7 +4,7 @@ import { ideaCreateSchema } from "@/lib/admin-schemas"
 import { createIdea, listIdeas } from "@/lib/repositories/ideas"
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   const ideas = await listIdeas()
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   const payload = await request.json()

@@ -14,7 +14,7 @@ export const runtime = "nodejs"
  * паузе, все в архиве или ни в одном нет options.json.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const users = await listPipelineUsers()
@@ -32,7 +32,7 @@ const patchSchema = z.object({
  * пользователь.
  */
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const body = await request.json().catch(() => null)

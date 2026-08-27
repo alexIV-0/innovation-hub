@@ -10,12 +10,19 @@ import {
 } from "react"
 import { toast } from "sonner"
 import { AdminConfirmDialog } from "@/components/admin/admin-confirm-dialog"
+import { AdminCapabilitiesDialog } from "@/components/admin/admin-capabilities-dialog"
 import { AdminContentDialog } from "@/components/admin/admin-content-dialog"
 import { tf, useAdminI18n } from "@/components/admin/admin-dict"
 import {
   AdminUserDialog,
   type UserDraft,
 } from "@/components/admin/admin-user-dialog"
+import { isSuperAdmin } from "@/lib/admin-roles"
+import {
+  hasCapability,
+  type AdminCapability,
+} from "@/lib/admin-capabilities"
+import type { UserRole } from "@/lib/domain-types"
 import type {
   AdminIdea,
   AdminUser,
@@ -54,6 +61,16 @@ type UserDialogState =
 
 type AdminDataContextValue = {
   currentUserId: string
+  currentUserRole: UserRole
+  currentUserCapabilities: AdminCapability[]
+  /**
+   * Есть ли у текущего админа тег. Дублирует серверный гвард намеренно: сервер
+   * решает, кого пустить, а это — показывать ли кнопку. Кнопка, которая
+   * гарантированно вернёт 403, хуже отсутствующей.
+   */
+  can: (capability: AdminCapability) => boolean
+  /** Роли и права раздаёт только суперадмин — см. docs/ADMIN_ROLES_PLAN.md §2. */
+  canManageRoles: boolean
   videos: AdminVideo[]
   ideas: AdminIdea[]
   users: AdminUser[]
@@ -66,6 +83,7 @@ type AdminDataContextValue = {
 
   openCreateUser: () => void
   openEditUser: (user: AdminUser) => void
+  openCapabilities: (user: AdminUser) => void
 
   patchVideo: (id: string, payload: Partial<AdminVideo>) => Promise<boolean>
   patchIdea: (id: string, payload: Partial<AdminIdea>) => Promise<boolean>
@@ -93,10 +111,23 @@ export function useAdminData() {
 
 type ProviderProps = {
   currentUserId: string
+  currentUserRole: UserRole
+  currentUserCapabilities: AdminCapability[]
   children: React.ReactNode
 }
 
-export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
+export function AdminDataProvider({
+  currentUserId,
+  currentUserRole,
+  currentUserCapabilities,
+  children,
+}: ProviderProps) {
+  const canManageRoles = isSuperAdmin(currentUserRole)
+  const can = useCallback(
+    (capability: AdminCapability) =>
+      hasCapability(currentUserRole, currentUserCapabilities, capability),
+    [currentUserRole, currentUserCapabilities],
+  )
   const t = useAdminI18n()
   const [videos, setVideos] = useState<AdminVideo[]>([])
   const [ideas, setIdeas] = useState<AdminIdea[]>([])
@@ -107,33 +138,52 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
   const [userDialog, setUserDialog] = useState<UserDialogState>({
     open: false,
   })
+  const [capsDialog, setCapsDialog] = useState<{
+    open: boolean
+    user?: AdminUser
+  }>({ open: false })
   const [confirm, setConfirm] = useState<ConfirmState>({
     open: false,
     title: "",
     action: () => {},
   })
 
+  /**
+   * Раздел, на который у человека нет тега, отвечает 403 — и это не сбой
+   * загрузки, а нормальное состояние: такой части админки у него просто нет.
+   * Поэтому запросы независимы, 403 даёт пустой список молча, а ошибку
+   * показываем только тогда, когда доступ есть, а данные не пришли. Иначе
+   * админ по акциям встречал бы на входе три красных тоста подряд.
+   */
   const refresh = useCallback(async () => {
-    try {
-      const [vRes, iRes, uRes] = await Promise.all([
-        fetch("/api/admin/videos", { cache: "no-store" }),
-        fetch("/api/admin/ideas", { cache: "no-store" }),
-        fetch("/api/admin/users", { cache: "no-store" }),
-      ])
-      if (!vRes.ok || !iRes.ok || !uRes.ok) throw new Error("load")
-      const [vData, iData, uData] = await Promise.all([
-        vRes.json(),
-        iRes.json(),
-        uRes.json(),
-      ])
-      setVideos(vData)
-      setIdeas(iData)
-      setUsers(uData)
-    } catch {
-      toast.error(t.loadAdminError)
-    } finally {
-      setLoading(false)
+    const load = async <T,>(
+      url: string,
+      fallback: T,
+    ): Promise<{ data: T; failed: boolean }> => {
+      try {
+        const response = await fetch(url, { cache: "no-store" })
+        if (response.status === 403) return { data: fallback, failed: false }
+        if (!response.ok) return { data: fallback, failed: true }
+        return { data: (await response.json()) as T, failed: false }
+      } catch {
+        return { data: fallback, failed: true }
+      }
     }
+
+    const [videosResult, ideasResult, usersResult] = await Promise.all([
+      load<AdminVideo[]>("/api/admin/videos", []),
+      load<AdminIdea[]>("/api/admin/ideas", []),
+      load<AdminUser[]>("/api/admin/users", []),
+    ])
+
+    setVideos(videosResult.data)
+    setIdeas(ideasResult.data)
+    setUsers(usersResult.data)
+
+    if (videosResult.failed || ideasResult.failed || usersResult.failed) {
+      toast.error(t.loadAdminError)
+    }
+    setLoading(false)
   }, [t])
 
   useEffect(() => {
@@ -389,6 +439,10 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
   const value = useMemo<AdminDataContextValue>(
     () => ({
       currentUserId,
+      currentUserRole,
+      currentUserCapabilities,
+      can,
+      canManageRoles,
       videos,
       ideas,
       users,
@@ -401,6 +455,7 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
       openCreateUser: () => setUserDialog({ open: true, mode: "create" }),
       openEditUser: (user) =>
         setUserDialog({ open: true, mode: "edit", user }),
+      openCapabilities: (user) => setCapsDialog({ open: true, user }),
       patchVideo,
       patchIdea,
       reorder,
@@ -434,6 +489,10 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
     }),
     [
       currentUserId,
+      currentUserRole,
+      currentUserCapabilities,
+      can,
+      canManageRoles,
       videos,
       ideas,
       users,
@@ -504,10 +563,20 @@ export function AdminDataProvider({ currentUserId, children }: ProviderProps) {
             ? userDialog.user.id === currentUserId
             : false
         }
+        canManageRoles={canManageRoles}
         onOpenChange={(open) => {
           if (!open) setUserDialog({ open: false })
         }}
         onSubmit={submitUser}
+      />
+
+      <AdminCapabilitiesDialog
+        open={capsDialog.open}
+        user={capsDialog.user}
+        onOpenChange={(open) => {
+          if (!open) setCapsDialog({ open: false })
+        }}
+        onSaved={() => void refresh()}
       />
 
       <AdminConfirmDialog

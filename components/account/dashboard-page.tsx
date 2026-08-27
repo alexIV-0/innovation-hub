@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowRight,
   BarChart3,
@@ -12,15 +12,14 @@ import {
   Plus,
   Sparkles,
   User,
-  Wallet,
   Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
-  formatBalance,
   greetingForHour,
   useI18n,
 } from "@/components/account/i18n"
+import { TrialCard } from "@/components/account/trial-card"
 
 type Stats = {
   balanceCents: number
@@ -42,6 +41,11 @@ type Props = {
 export function DashboardPageClient({ fullName, createdAt }: Props) {
   const { t, lang } = useI18n()
   const router = useRouter()
+  /**
+   * `?trial=1` — намерение, принесённое кнопкой из шапки или из регистрации.
+   * Оно только открывает условия; период включает человек кнопкой в диалоге.
+   */
+  const trialIntent = useSearchParams().get("trial") === "1"
   const [stats, setStats] = useState<Stats | null>(null)
   const [range, setRange] = useState<"day" | "week" | "month">("week")
   const [loading, setLoading] = useState(true)
@@ -146,21 +150,7 @@ export function DashboardPageClient({ fullName, createdAt }: Props) {
 
           {/* Stat cards */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              label={t.cardBalance}
-              value={formatBalance(stats?.balanceCents ?? 0, lang)}
-              sub={t.renderMinutes}
-              icon={<Wallet className="h-5 w-5 text-[#8fb8ea]" />}
-              accent
-              action={
-                <button
-                  type="button"
-                  className="rounded-lg bg-white/10 px-3 py-1 text-[12.5px] text-[#eef1f6] hover:bg-white/[0.18]"
-                >
-                  {t.topup}
-                </button>
-              }
-            />
+            <TrialCard autoOpen={trialIntent} />
             <StatCard
               label={t.cardProjects}
               value={String(stats?.projectCount ?? "—")}

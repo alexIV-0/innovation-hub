@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto"
+import { admitItem, setPausedReason } from "@/lib/billing/admission"
+import { estimateItem } from "@/lib/billing/estimate"
+import { getFunds, type Funds } from "@/lib/billing/funds"
+import type { PayUnitProblem } from "@/lib/billing/pay-unit"
+import { readBillingSettings } from "@/lib/billing/settings"
 import { query, withTransaction } from "@/lib/db"
+import { setProjectPaused } from "@/lib/project-automation"
 import {
   buildTaskPayload,
   matchesSearchExts,
@@ -59,6 +65,12 @@ export type SkipReason =
   | "empty-folder"
   | "no-match"
   | "already-queued"
+  /** Денег не хватает на этот элемент (docs/BILLING_AND_TRIAL_PLAN.md, П13). */
+  | "insufficient-funds"
+  /** Тарифицировать нечем: оси не объявлены, пара не считается, не тот вход. */
+  | "no-pay-unit"
+  | "unsupported-pay-pair"
+  | "pay-unit-mismatch"
 
 export type SkippedProject = {
   projectId: string
@@ -71,6 +83,19 @@ export type CollectResult = {
   scannedEvents: number
   cursor: number
   skipped: SkippedProject[]
+  /**
+   * Проекты, по которым нечем тарифицировать. Это НЕ пропуск: пока гейт денег
+   * выключен, задача всё равно создаётся. Список нужен, чтобы незаполненные оси
+   * обнаружились до включения гейта, а не в момент, когда конвейер встанет
+   * целиком (docs/BILLING_AND_TRIAL_PLAN.md, В4).
+   */
+  unpriced: UnpricedProject[]
+}
+
+export type UnpricedProject = {
+  projectId: string
+  projectName: string
+  reason: PayUnitProblem
 }
 
 type ChangeRow = {
@@ -474,7 +499,13 @@ export async function collectTasks(): Promise<CollectResult> {
   // а дубли отсечёт уникальный индекс по (project_id, source_key).
   if (cursor !== since) await writeCursor(cursor)
 
-  return { created: materialized.created, scannedEvents, cursor, skipped }
+  return {
+    created: materialized.created,
+    scannedEvents,
+    cursor,
+    skipped,
+    unpriced: materialized.unpriced,
+  }
 }
 
 /**
@@ -492,10 +523,25 @@ export async function materializeCandidates(input: {
   watchedById: Map<string, WatchedProject>
   /** ISO-время прогона: на десктопе это findTime, метка всей пачки. */
   collectedAt: string
-}): Promise<{ created: number; skipped: SkippedProject[] }> {
+}): Promise<{
+  created: number
+  skipped: SkippedProject[]
+  unpriced: UnpricedProject[]
+}> {
   const { watchedById, collectedAt } = input
 
   const skipped: SkippedProject[] = []
+  const unpriced: UnpricedProject[] = []
+  const seenUnpriced = new Set<string>()
+  const noteUnpriced = (
+    projectId: string,
+    projectName: string,
+    reason: PayUnitProblem,
+  ) => {
+    if (seenUnpriced.has(projectId)) return
+    seenUnpriced.add(projectId)
+    unpriced.push({ projectId, projectName, reason })
+  }
   const seenSkips = new Set<string>()
   const noteSkip = (
     projectId: string,
@@ -549,6 +595,21 @@ export async function materializeCandidates(input: {
   const fileTypeFallback = async (): Promise<FileTypeDictionary> => {
     if (sharedFileTypes == null) sharedFileTypes = await readFileTypeDictionary()
     return sharedFileTypes
+  }
+
+  /**
+   * Тарифы читаются один раз на проход, деньги — один раз на владельца: в пачке
+   * обычно десятки элементов и два-три человека, и запрос на каждый элемент был
+   * бы самой дорогой частью сборки.
+   */
+  const { settings } = await readBillingSettings()
+  const fundsCache = new Map<string, Funds>()
+  const fundsOf = async (ownerId: string): Promise<Funds> => {
+    const cached = fundsCache.get(ownerId)
+    if (cached) return cached
+    const funds = await getFunds(ownerId)
+    fundsCache.set(ownerId, funds)
+    return funds
   }
 
   let created = 0
@@ -670,8 +731,15 @@ export async function materializeCandidates(input: {
       ? (identities.get(uploaderUserId) ?? null)
       : null
 
+    // Id задачи назначается ДО сборки payload: он уезжает в description.dbItemId,
+    // и по нему строка архива, которую напишет машина, склеивается с этой задачей
+    // (docs/PIPELINE.md §15). Сгенерировать его внутри вставки нельзя — payload к
+    // тому моменту уже собран.
+    const taskId = randomUUID()
+
     const built = buildTaskPayload({
       optionsJson,
+      taskId,
       projectId: project.projectId,
       projectName: project.name,
       ownerEmail: project.ownerEmail,
@@ -680,6 +748,7 @@ export async function materializeCandidates(input: {
       collectedAt,
       contact: uploaderIdentity,
       ownerContact: identities.get(project.ownerId) ?? null,
+      projectPayAxes: { base: project.payBase, meter: project.payMeter },
       // Один человек в списке ничего не добавляет к contact — только шум.
       uploaders:
         folderUploaders.length > 1
@@ -697,17 +766,108 @@ export async function materializeCandidates(input: {
       continue
     }
 
+    // Единица не разрешилась — задачу всё равно создаём. Отказ включится вместе
+    // с гейтом денег; до тех пор молча останавливать конвейер было бы хуже, чем
+    // обработать бесплатно и показать проблему списком.
+    if (!built.payUnit.ok) {
+      noteUnpriced(project.projectId, project.name, built.payUnit.reason)
+    }
+
+    /**
+     * Резерв под задачу. Кошелёк выбирается ОДИН раз, здесь, и до конца
+     * обработки не меняется.
+     *
+     * Отказа по деньгам тут пока нет: гейт включается отдельно и рубильником
+     * (docs/BILLING_AND_TRIAL_PLAN.md, П13). До тех пор резерв только
+     * записывается — чтобы к моменту включения цифры уже были верными, а не
+     * начинали копиться с нуля.
+     */
+    const estimateCents = built.payUnit.ok
+      ? (
+          await estimateItem({
+            projectId: project.projectId,
+            base: built.payUnit.base,
+            meter: built.payUnit.meter,
+            pair: built.payUnit.pair,
+            item: {
+              isFolder: entry.isFolder,
+              sizeBytes: candidate.sizeBytes,
+              children:
+                entry.isFolder && "children" in source ? source.children : undefined,
+            },
+            settings,
+            projectEstimateUnits: project.estimateUnits,
+          })
+        ).cents
+      : 0
+
+    const funds = await fundsOf(project.ownerId)
+    const admission = admitItem({
+      ownerId: project.ownerId,
+      projectId: project.projectId,
+      pair: built.payUnit.ok ? built.payUnit.pair : null,
+      meter: built.payUnit.ok ? built.payUnit.meter : null,
+      payUnitProblem: built.payUnit.ok ? null : built.payUnit.reason,
+      estimateCents,
+      funds,
+      ownerBillingExempt: project.ownerBillingExempt,
+    })
+
+    if (!admission.ok) {
+      noteSkip(project.projectId, project.name, admission.reason)
+      if (admission.pauseReason) {
+        await pauseForBilling(project, admission.pauseReason)
+      }
+      continue
+    }
+
     const inserted = await insertTask({
+      id: taskId,
       projectId: project.projectId,
       sourceFileId: entry.isFolder ? null : candidate.fileId,
       sourceKey: entry.key,
       payload: built.payload,
+      estimateCents: admission.estimateCents,
+      payWallet: admission.wallet,
+      payGrantId: admission.grantId,
     })
     if (inserted) created += 1
     else noteSkip(project.projectId, project.name, "already-queued")
   }
 
-  return { created, skipped }
+  return { created, skipped, unpriced }
+}
+
+/**
+ * Остановить проект, когда платить больше нечем.
+ *
+ * Пауза пишется только через `setProjectPaused`: он владеет и сайдкаром
+ * `options/folderState.json`, и колонкой `is_paused`, и кладёт событие в
+ * журнал, чтобы машина узнала. Причина — отдельно: без неё остановка
+ * неотличима от той, что сделал сам пользователь, и тумблер нечем удержать.
+ *
+ * Ошибку глотаем: не сумели записать паузу — задача всё равно не создана, а
+ * ронять из-за этого весь проход по остальным проектам незачем. Следующий
+ * проход попробует снова.
+ */
+async function pauseForBilling(
+  project: WatchedProject,
+  reason: "no-funds" | "trial-over",
+): Promise<void> {
+  try {
+    await setProjectPaused({
+      projectId: project.projectId,
+      ownerId: project.ownerId,
+      paused: true,
+      updatedBy: "billing",
+    })
+    await setPausedReason(project.projectId, reason)
+  } catch (error) {
+    console.error(
+      `[billing] не удалось остановить проект ${project.projectId}`,
+      error,
+    )
+  }
 }
 
 /**
@@ -718,23 +878,35 @@ export async function materializeCandidates(input: {
  * «нет ли уже» между чтением и вставкой ничего не гарантирует.
  */
 async function insertTask(input: {
+  /** Уже лежит в payload как description.dbItemId — второй раз генерировать нельзя. */
+  id: string
   projectId: string
   sourceFileId: string | null
   sourceKey: string
   payload: unknown
+  /** Резерв: сколько и из какого кошелька. Ноль — тарифицировать нечем. */
+  estimateCents: number
+  payWallet: "own" | "gift" | null
+  payGrantId: string | null
 }): Promise<boolean> {
   return withTransaction(async (client) => {
     const result = await client.query(
-      `INSERT INTO tasks (id, project_id, source_file_id, source_key, payload)
-       VALUES ($1, $2, $3, $4, $5::jsonb)
+      `INSERT INTO tasks (
+         id, project_id, source_file_id, source_key, payload,
+         estimate_cents, pay_wallet, pay_grant_id
+       )
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
        ON CONFLICT DO NOTHING
        RETURNING id`,
       [
-        randomUUID(),
+        input.id,
         input.projectId,
         input.sourceFileId,
         input.sourceKey,
         JSON.stringify(input.payload),
+        Math.max(0, Math.round(input.estimateCents)),
+        input.payWallet,
+        input.payGrantId,
       ],
     )
     return result.rowCount === 1

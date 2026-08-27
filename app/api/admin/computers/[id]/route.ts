@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { auditFrom } from "@/lib/audit"
 import {
   findRemoteComputerById,
   isRemoteComputerOnline,
@@ -19,7 +20,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 /** Update computer name/description. */
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
@@ -61,7 +62,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 /** Revoke a computer token (soft delete). */
 export async function DELETE(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
@@ -71,5 +72,11 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   }
 
   await revokeRemoteComputer(id)
+  await auditFrom(request, auth)({
+    action: "computer.revoked",
+    targetType: "computer",
+    targetId: id,
+    targetLabel: existing.name,
+  })
   return NextResponse.json({ ok: true })
 }

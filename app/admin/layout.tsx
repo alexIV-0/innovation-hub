@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { WorkspaceShell } from "@/components/account/workspace-shell"
 import { AdminShell } from "@/components/admin/shell/admin-shell"
 import { getCurrentUser } from "@/lib/admin-auth"
+import { isElevated } from "@/lib/admin-roles"
 
 export const dynamic = "force-dynamic"
 
@@ -20,7 +21,7 @@ export default async function AdminLayout({
 }) {
   const user = await getCurrentUser()
 
-  if (!user || !user.isActive || user.role !== "ADMIN") {
+  if (!user || !user.isActive || !isElevated(user.role)) {
     redirect("/login")
   }
 
@@ -30,9 +31,16 @@ export default async function AdminLayout({
         email={user.email}
         fullName={user.fullName ?? ""}
         role={user.role}
+        capabilities={user.capabilities}
         balanceCents={user.balanceCents ?? 0}
       >
-        <AdminShell currentUserId={user.id}>{children}</AdminShell>
+        <AdminShell
+          currentUserId={user.id}
+          currentUserRole={user.role}
+          currentUserCapabilities={user.capabilities}
+        >
+          {children}
+        </AdminShell>
       </WorkspaceShell>
     </div>
   )

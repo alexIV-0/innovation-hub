@@ -39,6 +39,7 @@ import { isAllowedProjectContentType } from "@/lib/project-upload-policy"
 import { safeBaseFileName } from "@/lib/s3-upload-policy"
 import { getS3Bucket } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
+import { canReachAnyProject } from "@/lib/storage/auth"
 
 export const presignAction = defineAction(
   z.object({
@@ -475,7 +476,7 @@ export const getJobAction = defineAction(
     const { getJob, serializeJob } = await import("@/lib/storage/jobs")
     const job = await getJob(data.jobId)
     if (!job) return apiError("Job not found.", 404)
-    if (auth.role !== "ADMIN" && job.userId !== auth.userId) {
+    if (!canReachAnyProject(auth) && job.userId !== auth.userId) {
       return apiError("Job not found.", 404)
     }
     return apiOk({ job: serializeJob(job) })

@@ -136,13 +136,29 @@ export type WatchedProject = {
   ownerId: string
   ownerEmail: string
   name: string
+  /**
+   * Оси тарификации из настройки проекта — запасной путь для графов, в которых
+   * свойства ещё нет (lib/billing/pay-unit.ts). Граф главнее, поэтому здесь
+   * почти всегда null.
+   */
+  payBase: string | null
+  payMeter: string | null
+  /** Ожидаемое количество единиц на элемент, если админ его задал. */
+  estimateUnits: number | null
+  /**
+   * Владелец освобождён от оплаты. Признак у пользователя, а не проверка роли:
+   * роль могут выдать тому, кому бесплатная обработка не полагается, а
+   * освобождение иногда нужно и не-админу.
+   */
+  ownerBillingExempt: boolean
 }
 
 /**
  * Проекты, за которыми конвейер следит прямо сейчас.
  *
  * Три условия, и все три — решение разных людей: гейт ставит админ, паузу
- * пользователь, архив тоже пользователь. Наличие options.json здесь не
+ * пользователь, архив тоже пользователь. Четвёртое — не решение, а свойство:
+ * шаблоны пробного набора исключены всегда. Наличие options.json здесь не
  * проверяется: это поход в объектное хранилище, и сканер делает его сам, уже
  * зная, что по проекту есть новые события.
  */
@@ -151,13 +167,21 @@ export async function listWatchedProjects(): Promise<WatchedProject[]> {
     `SELECT p.id AS "projectId",
             p.user_id AS "ownerId",
             u.email AS "ownerEmail",
-            p.name
+            p.name,
+            p.pay_base  AS "payBase",
+            p.pay_meter AS "payMeter",
+            p.estimate_units::float8 AS "estimateUnits",
+            COALESCE(u.billing_exempt, FALSE) AS "ownerBillingExempt"
        FROM projects p
        JOIN users u ON u.id = p.user_id
       WHERE u.is_active
         AND COALESCE(u.automation_enabled, FALSE)
         AND COALESCE(p.is_paused, FALSE) = FALSE
-        AND COALESCE(p.is_archived, FALSE) = FALSE`,
+        AND COALESCE(p.is_archived, FALSE) = FALSE
+        -- Шаблон пробного набора не обрабатывает сам себя: иначе его _stats
+        -- уедут в статистику как чужая работа, а копии пользователей получат
+        -- уже наполненный OUT.
+        AND COALESCE(p.is_template, FALSE) = FALSE`,
   )
   return result.rows
 }

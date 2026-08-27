@@ -33,6 +33,7 @@ export default async function AccountLayout({
         email={user.email}
         fullName={user.fullName ?? ""}
         role={user.role}
+        capabilities={user.capabilities}
         balanceCents={user.balanceCents ?? 0}
       >
         {children}

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { auditFrom } from "@/lib/audit"
 import {
   createRemoteComputer,
   generateRemoteComputerToken,
@@ -36,7 +37,7 @@ function serializeComputer(
 
 /** List active remote computers (admin). */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const computers = await listRemoteComputers()
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
 
 /** Create a remote computer. Raw token returned once. */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "machines.manage")
   if (auth instanceof NextResponse) return auth
 
   let body: unknown
@@ -69,6 +70,15 @@ export async function POST(request: NextRequest) {
     description: parsed.data.description,
     createdBy: auth.userId,
     rawToken: raw,
+  })
+
+  // Выпуск rc_-токена — это выпуск кредов с доступом к общей очереди.
+  // В журнал он идёт обязательно, независимо от того, кто его выпустил.
+  await auditFrom(request, auth)({
+    action: "computer.created",
+    targetType: "computer",
+    targetId: created.id,
+    targetLabel: created.name,
   })
 
   return NextResponse.json(

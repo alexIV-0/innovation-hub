@@ -30,7 +30,7 @@ function parseSinceParam(value: string | null): Date | undefined {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "visitors.view")
   if (auth instanceof NextResponse) return auth
 
   const { searchParams } = new URL(request.url)

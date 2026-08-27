@@ -1,4 +1,6 @@
 "use client"
+import { cn } from "@/lib/utils"
+import { isElevated } from "@/lib/admin-roles"
 
 import Link from "next/link"
 import { ArrowRight, ShieldCheck, Users } from "lucide-react"
@@ -92,10 +94,17 @@ export function OverviewTeam() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {user.role === "ADMIN" ? (
-                  <Badge className="gap-1 border-transparent bg-primary/15 text-primary hover:bg-primary/15">
+                {isElevated(user.role) ? (
+                  <Badge
+                    className={cn(
+                      "gap-1 border-transparent",
+                      user.role === "SUPERADMIN"
+                        ? "bg-amber-500/15 text-amber-300 hover:bg-amber-500/15"
+                        : "bg-primary/15 text-primary hover:bg-primary/15",
+                    )}
+                  >
                     <ShieldCheck className="h-3 w-3" />
-                    {t.admin}
+                    {user.role === "SUPERADMIN" ? t.superadmin : t.admin}
                   </Badge>
                 ) : (
                   <Badge variant="secondary">{t.member}</Badge>

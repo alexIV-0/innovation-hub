@@ -6,6 +6,9 @@ import { findFileByS3Key } from "@/lib/repositories/project-files"
 import { findUserById } from "@/lib/repositories/users"
 import { getS3Bucket, isAllowedMediaObjectKey } from "@/lib/s3-config"
 import { getS3Client } from "@/lib/s3-client"
+import { isElevated } from "@/lib/admin-roles"
+import { hasCapability } from "@/lib/admin-capabilities"
+import { listCapabilitiesFor } from "@/lib/repositories/admin-capabilities"
 
 export const runtime = "nodejs"
 
@@ -62,8 +65,14 @@ async function authorizeProjectKey(
     return NextResponse.json({ message: "Forbidden." }, { status: 403 })
   }
 
-  // Admins can open any project media.
-  if (user.role === "ADMIN") return null
+  // Чужие файлы открывает не всякий админ, а только тот, кому выдан
+  // projects.access: это единственный тег, дающий смотреть чужое, и держать его
+  // раздачу отдельно от самой админской роли — весь смысл разделения прав.
+  // Машины сюда не ходят: /api/media — путь браузера, у него всегда сессия.
+  if (isElevated(user.role)) {
+    const capabilities = await listCapabilitiesFor(user.id)
+    if (hasCapability(user.role, capabilities, "projects.access")) return null
+  }
 
   if (isCurrentProjectKey && keyUserId === user.id) return null
 

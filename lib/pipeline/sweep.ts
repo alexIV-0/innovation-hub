@@ -7,6 +7,7 @@ import {
   type InEntry,
   type SkipReason,
   type SkippedProject,
+  type UnpricedProject,
 } from "@/lib/pipeline/scan"
 import { projectPrefix } from "@/lib/storage/keys"
 
@@ -59,6 +60,12 @@ export type SweepResult = {
   /** Упёрлись в SWEEP_LIMIT: часть элементов осталась на следующий раз. */
   truncated: boolean
   skipped: SkippedProject[]
+  /**
+   * Проекты, по которым нечем тарифицировать. Обход видит их полнее, чем
+   * событийная линия: та замечает только те, где что-то шевелилось, а обход
+   * идёт по каталогу всех отслеживаемых проектов.
+   */
+  unpriced: UnpricedProject[]
 }
 
 type CatalogRow = {
@@ -128,10 +135,28 @@ async function readKnownSourceKeys(
  * админки. Флаг слежения проверяет вызывающий: «Стоп» на странице значит, что
  * задачи не появляются вообще — ни по событию, ни обходом.
  */
-export async function sweepInFolders(): Promise<SweepResult> {
-  const watched = await listWatchedProjects()
+export async function sweepInFolders(options?: {
+  /**
+   * Обойти только эти проекты. Нужно сразу после провижининга пробного набора:
+   * события копирования проехали мимо курсора, пока проект стоял на паузе, и
+   * второго `put` по этим файлам не будет. Обход берёт элементы IN, по которым
+   * задачи никогда не было, — ровно наш случай.
+   */
+  projectIds?: string[]
+}): Promise<SweepResult> {
+  const only = options?.projectIds?.length ? new Set(options.projectIds) : null
+  const watched = (await listWatchedProjects()).filter(
+    (p) => !only || only.has(p.projectId),
+  )
   if (watched.length === 0) {
-    return { created: 0, scanned: 0, known: 0, truncated: false, skipped: [] }
+    return {
+      created: 0,
+      scanned: 0,
+      known: 0,
+      truncated: false,
+      skipped: [],
+      unpriced: [],
+    }
   }
 
   const watchedById = new Map(watched.map((p) => [p.projectId, p]))
@@ -238,5 +263,6 @@ export async function sweepInFolders(): Promise<SweepResult> {
     known: seen.length - fresh.length,
     truncated,
     skipped: [...skipped, ...materialized.skipped],
+    unpriced: materialized.unpriced,
   }
 }

@@ -17,6 +17,12 @@ import {
 } from "@/lib/project-access"
 import { hashMachineToken, type StorageActor } from "@/lib/storage/write-path"
 import type { UserRole } from "@/lib/domain-types"
+import { isElevated, isSuperAdmin } from "@/lib/admin-roles"
+import {
+  hasCapability,
+  type AdminCapability,
+} from "@/lib/admin-capabilities"
+import { listCapabilitiesFor } from "@/lib/repositories/admin-capabilities"
 
 export type StorageApiAuth = {
   userId: string
@@ -25,6 +31,34 @@ export type StorageApiAuth = {
   machineTokenId: string | null
   computerId: string | null
   scopedProjectId: string | null
+  /**
+   * Теги актора. У машин всегда пусто и не спрашивается: программа авторизуется
+   * протоколом, а не тегами (docs/ADMIN_ROLES_PLAN.md §7).
+   */
+  capabilities: AdminCapability[]
+}
+
+/** Машина парка или десктоп под токеном, а не браузерная сессия. */
+export function isMachineAuth(auth: StorageApiAuth): boolean {
+  return auth.machineTokenId != null || auth.computerId != null
+}
+
+/**
+ * Может ли актор дотянуться до ЛЮБОГО проекта, а не только до своих.
+ *
+ * Одна функция на все места, где раньше стояло `auth.role === "ADMIN"`, и
+ * порядок в ней значим: **сначала машина, потом тег**. Программу мы в правах не
+ * ограничиваем — доступ к чужим проектам и есть её работа; спроси мы у неё тег,
+ * которого у неё нет и быть не может, встал бы весь парк. Человеку же одной
+ * админской роли мало: нужен `projects.access`.
+ *
+ * Особенно это важно там, где ветки человека и машины НЕ разделены —
+ * requireOwnedProjectAccess, project-catalog.ts, project-mutations.ts: туда
+ * нельзя поставить голую проверку тега.
+ */
+export function canReachAnyProject(auth: StorageApiAuth): boolean {
+  if (isMachineAuth(auth)) return isElevated(auth.role)
+  return hasCapability(auth.role, auth.capabilities, "projects.access")
 }
 
 /**
@@ -82,6 +116,7 @@ async function authFromRemoteComputerToken(
     machineTokenId: null,
     computerId: row.id,
     scopedProjectId: null,
+    capabilities: [],
     computerName: row.name,
   }
 }
@@ -124,6 +159,7 @@ async function authFromMachineToken(
     machineTokenId: row.id,
     computerId: null,
     scopedProjectId: row.projectId,
+    capabilities: [],
   }
 }
 
@@ -143,6 +179,13 @@ async function authFromSession(
     machineTokenId: null,
     computerId: null,
     scopedProjectId: null,
+    // Суперадмину теги не проверяются (hasCapability отвечает по роли), поэтому
+    // и запрашивать их незачем — иначе каждый его запрос к хранилищу платил бы
+    // лишним обращением к базе ни за чем.
+    capabilities:
+      isElevated(user.role) && !isSuperAdmin(user.role)
+        ? await listCapabilitiesFor(user.id)
+        : [],
   }
 }
 
@@ -203,7 +246,7 @@ export async function requireProjectAccess(
   // Machine / computer tokens: ownership only (no sharing).
   if (auth.machineTokenId || auth.computerId) {
     const project =
-      auth.role === "ADMIN"
+      canReachAnyProject(auth)
         ? await findProjectById(projectId)
         : await findOwnedProject(projectId, auth.userId)
     if (!project) {
@@ -216,7 +259,7 @@ export async function requireProjectAccess(
     }
   }
 
-  if (auth.role === "ADMIN") {
+  if (canReachAnyProject(auth)) {
     const project = await findProjectById(projectId)
     if (!project) {
       return NextResponse.json({ message: "Project not found." }, { status: 404 })
@@ -261,7 +304,7 @@ export async function requireOwnedProjectAccess(
     )
   }
   const project =
-    auth.role === "ADMIN"
+    canReachAnyProject(auth)
       ? await findProjectById(projectId)
       : await findOwnedProject(projectId, auth.userId)
   if (!project) {

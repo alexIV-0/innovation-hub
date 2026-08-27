@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { useI18n } from "@/components/account/i18n"
 import { tf, useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
+import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminConfirmDialog } from "@/components/admin/admin-confirm-dialog"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { EmptyState } from "@/components/admin/shared/empty-state"
@@ -26,6 +27,8 @@ export function RemoteAccessContent() {
   const [connectOpen, setConnectOpen] = useState(false)
   const [rotateId, setRotateId] = useState<string | null>(null)
   const [revokeId, setRevokeId] = useState<string | null>(null)
+  const { can } = useAdminData()
+  const canIssueTokens = can("machines.manage")
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -87,13 +90,18 @@ export function RemoteAccessContent() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <RemoteAccessSubnav />
-            <Button
-              onClick={() => setConnectOpen(true)}
-              className="gap-2 rounded-full"
-            >
-              <Plus className="h-4 w-4" />
-              {accountT.adminRemoteConnect}
-            </Button>
+            {/* Выпуск токена — это выдача кредов с доступом к общей очереди, и
+                он под своим тегом. Список и отзыв остаются у pipeline.operate:
+                стоп-кран не держат за стеклом. */}
+            {canIssueTokens ? (
+              <Button
+                onClick={() => setConnectOpen(true)}
+                className="gap-2 rounded-full"
+              >
+                <Plus className="h-4 w-4" />
+                {accountT.adminRemoteConnect}
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -106,13 +114,15 @@ export function RemoteAccessContent() {
           title={accountT.adminRemoteEmptyTitle}
           description={accountT.adminRemoteEmptyDesc}
           action={
-            <Button
-              onClick={() => setConnectOpen(true)}
-              className="mt-2 gap-2 rounded-full"
-            >
-              <Plus className="h-4 w-4" />
-              {accountT.adminRemoteConnect}
-            </Button>
+            canIssueTokens ? (
+              <Button
+                onClick={() => setConnectOpen(true)}
+                className="mt-2 gap-2 rounded-full"
+              >
+                <Plus className="h-4 w-4" />
+                {accountT.adminRemoteConnect}
+              </Button>
+            ) : null
           }
         />
       ) : (
@@ -121,6 +131,7 @@ export function RemoteAccessContent() {
             <AccessTokenRow
               key={`${token.kind}:${token.id}`}
               token={token}
+              canRotateToken={canIssueTokens}
               onRotateToken={() => setRotateId(token.id)}
               onRevoke={() => setRevokeId(token.id)}
             />

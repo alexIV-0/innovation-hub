@@ -105,18 +105,21 @@ async function ensureAdmin() {
   const id = randomUUID()
   const email = adminEmail.toLowerCase()
 
+  // SUPERADMIN, а не ADMIN: на чистой базе это единственный аккаунт, и с него
+  // раздаются роли и права остальным. Заведись он обычным админом — раздать
+  // доступ было бы некому, а починить это можно было бы только руками в базе.
   await client.query(
     `INSERT INTO users (id, full_name, email, password_hash, role, is_active)
-       VALUES ($1, $2, $3, $4, 'ADMIN', TRUE)
+       VALUES ($1, $2, $3, $4, 'SUPERADMIN', TRUE)
      ON CONFLICT (email) DO UPDATE
        SET full_name     = EXCLUDED.full_name,
            password_hash = EXCLUDED.password_hash,
-           role          = 'ADMIN',
+           role          = 'SUPERADMIN',
            is_active     = TRUE,
            updated_at    = NOW()`,
     [id, adminFullName, email, passwordHash],
   )
-  console.log(`Admin upserted: ${email}`)
+  console.log(`Superadmin upserted: ${email}`)
 }
 
 async function seedVideos() {

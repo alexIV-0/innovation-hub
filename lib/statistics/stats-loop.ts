@@ -1,10 +1,12 @@
+import { refreshRatesFromCbr } from "@/lib/billing/rates"
+import { closeExpiredGrants, settleUnbilled } from "@/lib/billing/settle"
 import { exportMonthlyStats } from "@/lib/statistics/export-archive"
 import { importProcessingArchive } from "@/lib/statistics/import-archive"
 import { takeStorageSnapshot } from "@/lib/statistics/snapshots"
 
 /**
- * Часовой тик статистики: снимок состояний, импорт архива обработок и месячный
- * экспорт копии архива в служебный префикс бакета.
+ * Часовой тик статистики: снимок состояний, импорт архива обработок, месячный
+ * экспорт копии архива в служебный префикс бакета и обновление курсов валют.
  *
  * Почему в процессе, а не только в cron-роуте: `/api/cron/storage-purge`
  * существует, но кто его дёргает — из репозитория не видно, `CRON_SECRET` нигде
@@ -50,6 +52,39 @@ export function startStatsLoop() {
       }
     } catch (error) {
       console.error("[stats] archive import failed", error)
+    }
+
+    try {
+      // Списание идёт по строкам архива: только в них есть и хронометраж
+      // результата, и себестоимость, и связь с задачей. Поэтому проход стоит
+      // ПОСЛЕ импорта — иначе списывать было бы нечего, — но отдельным шагом:
+      // упавшее списание не должно мешать импорту, а пропущенное подхватится
+      // следующим часом.
+      const settled = await settleUnbilled()
+      if (settled.charged > 0 || settled.errors > 0) {
+        console.log(
+          `[billing] settle: ${settled.charged} charged, ${settled.exempt} exempt, ` +
+            `${settled.skipped} skipped, ${settled.errors} errors`,
+        )
+      }
+      const expired = await closeExpiredGrants()
+      if (expired > 0) console.log(`[billing] подарков просрочено: ${expired}`)
+    } catch (error) {
+      console.error("[billing] settle failed", error)
+    }
+
+    try {
+      // Курс нужен биллингу: себестоимость внешних сервисов приезжает в
+      // долларах, а списываем мы рубли. Раз в час — с запасом: ЦБ обновляет
+      // курс раз в сутки, а повторная запись за тот же день безвредна.
+      const rates = await refreshRatesFromCbr()
+      if (rates.saved > 0) {
+        console.log(`[billing] rates ${rates.rateDay}: ${rates.saved} saved`)
+      }
+    } catch (error) {
+      // Таблицы может ещё не быть (миграция не применена). Останавливать тик
+      // из-за курсов нельзя: биллинг обходится последним известным значением.
+      console.error("[billing] rates refresh failed", error)
     }
 
     try {

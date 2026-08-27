@@ -1,3 +1,5 @@
+import type { UserRole } from "@/lib/domain-types"
+
 export type ContentKind = "video" | "idea"
 
 export type AdminVideo = {
@@ -30,7 +32,7 @@ export type AdminUser = {
   id: string
   fullName: string
   email: string
-  role: "USER" | "ADMIN"
+  role: UserRole
   isActive: boolean
   createdAt: string
 }

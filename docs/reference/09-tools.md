@@ -3,6 +3,10 @@
 Два независимых блока: раздел «Инструменты» — редактор титров и озвучка — и
 система markdown-описаний проекта.
 
+Это описание того, что есть. Рядом, в `docs/`: как сделать новый инструмент —
+[TOOLS_DEV_GUIDE.md](../TOOLS_DEV_GUIDE.md); каждый существующий инструмент
+подробно — [SRT_EDITOR.md](../SRT_EDITOR.md) и [VOICE_OVER.md](../VOICE_OVER.md).
+
 ---
 
 # Часть I. Раздел «Инструменты»
@@ -27,8 +31,10 @@ type ToolDefinition = {
 }
 ```
 
-Имена и описания — не здесь, а в словаре `components/account/i18n.tsx` по ключам
-`tool_<key>_name`, `tool_<key>_short`, `tool_<key>_long`.
+Имена и описания — не здесь, а в словаре `components/account/i18n.tsx`. Связь
+«ключ инструмента → три ключа словаря» держит `TEXT` в
+`components/account/tools/registry-ui.ts` (`toolSrtEditorName` / `…Short` / `…Long`),
+там же иконки — реестр читают серверные роуты, и React-компонентам в нём места нет.
 
 | Ключ | Виды | Статус | Настройки по умолчанию |
 | --- | --- | --- | --- |
@@ -309,7 +315,8 @@ OUT/{задача}/
 
 # Часть III. Озвучка
 
-План и решения — `docs/TOOLS_VOICEOVER_PLAN.md`. Здесь — карта.
+Инструмент целиком — [VOICE_OVER.md](../VOICE_OVER.md), решения и статус —
+`docs/TOOLS_VOICEOVER_PLAN.md`. Здесь — карта.
 
 ## 15. Что это
 

@@ -4,6 +4,7 @@ import Link from "next/link"
 import { ArrowRight, Film, Lightbulb, UserCog } from "lucide-react"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { useAdminI18n } from "@/components/admin/admin-dict"
+import { hasCapability } from "@/lib/admin-capabilities"
 import { cn } from "@/lib/utils"
 
 type Action = {
@@ -28,32 +29,48 @@ const iconStyles: Record<Action["accent"], string> = {
 }
 
 export function OverviewQuickActions() {
-  const { openCreate } = useAdminData()
+  const { openCreate, currentUserRole, currentUserCapabilities } = useAdminData()
   const t = useAdminI18n()
 
+  // Быстрое действие ведёт в раздел или открывает его диалог, поэтому без тега
+  // оно упирается в тот же отказ, что и сам раздел. Показывать кнопку, которая
+  // гарантированно не сработает, — хуже, чем не показывать её вовсе.
+  const can = (capability: Parameters<typeof hasCapability>[2]) =>
+    hasCapability(currentUserRole, currentUserCapabilities, capability)
+
   const actions: Action[] = [
-    {
-      title: t.qaAddVideo,
-      description: t.qaAddVideoDesc,
-      onClick: () => openCreate("video"),
-      icon: Film,
-      accent: "primary",
-    },
-    {
-      title: t.qaCaptureIdea,
-      description: t.qaCaptureIdeaDesc,
-      onClick: () => openCreate("idea"),
-      icon: Lightbulb,
-      accent: "amber",
-    },
-    {
-      title: t.qaManagePeople,
-      description: t.qaManagePeopleDesc,
-      href: "/admin/users",
-      icon: UserCog,
-      accent: "emerald",
-    },
+    ...(can("content.manage")
+      ? ([
+          {
+            title: t.qaAddVideo,
+            description: t.qaAddVideoDesc,
+            onClick: () => openCreate("video"),
+            icon: Film,
+            accent: "primary",
+          },
+          {
+            title: t.qaCaptureIdea,
+            description: t.qaCaptureIdeaDesc,
+            onClick: () => openCreate("idea"),
+            icon: Lightbulb,
+            accent: "amber",
+          },
+        ] as Action[])
+      : []),
+    ...(can("users.read")
+      ? ([
+          {
+            title: t.qaManagePeople,
+            description: t.qaManagePeopleDesc,
+            href: "/admin/users",
+            icon: UserCog,
+            accent: "emerald",
+          },
+        ] as Action[])
+      : []),
   ]
+
+  if (actions.length === 0) return null
 
   return (
     <div className="grid gap-3 md:grid-cols-3">

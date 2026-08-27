@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import type { PipelineState } from "@/lib/pipeline/state"
 import type { TaskCounts } from "@/lib/pipeline/tasks"
 import { TasksDialog } from "./tasks-dialog"
+import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { SettingsDialog } from "./settings-dialog"
 
 /** Пока слежение включено, состояние подтягиваем чаще — видно, что цикл живой. */
@@ -51,6 +52,7 @@ export function PipelineRunBar() {
   const [busy, setBusy] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const { can } = useAdminData()
   /**
    * Ошибка опроса состояния. Показывается в строке статуса, а не тостом: опрос
    * идёт по таймеру, и тост на каждом круге был бы невыносим. Но и молчать
@@ -223,14 +225,18 @@ export function PipelineRunBar() {
           {/* Словари общие на всю установку, а не на проект или пользователя,
               поэтому кнопка стоит здесь — рядом с очередью, которая тоже
               относится ко всей установке. */}
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            className="flex h-[52px] shrink-0 items-center gap-2.5 rounded-[11px] border border-white/[0.14] px-5 text-[14px] text-ws-2 hover:bg-white/5"
-          >
-            <Sliders className="h-[18px] w-[18px]" />
-            {t.pipelineSettings}
-          </button>
+          {/* Правка словарей — отдельный тег: они разъезжаются на весь парк
+              машин, и работать с конвейером можно, не имея права их менять. */}
+          {can("settings.write") ? (
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="flex h-[52px] shrink-0 items-center gap-2.5 rounded-[11px] border border-white/[0.14] px-5 text-[14px] text-ws-2 hover:bg-white/5"
+            >
+              <Sliders className="h-[18px] w-[18px]" />
+              {t.pipelineSettings}
+            </button>
+          ) : null}
         </div>
       </div>
 

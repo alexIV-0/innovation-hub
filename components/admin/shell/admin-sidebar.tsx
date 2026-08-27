@@ -6,7 +6,7 @@ import { useI18n } from "@/components/account/i18n"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminSidebarLink } from "./admin-sidebar-link"
 import { AdminSidebarUser } from "./admin-sidebar-user"
-import { adminAllNavItems } from "./nav-config"
+import { adminAllNavItems, visibleNavItems } from "./nav-config"
 
 type Props = {
   email: string
@@ -16,7 +16,20 @@ type Props = {
 
 export function AdminSidebar({ email, fullName, onNavigate }: Props) {
   const { t } = useI18n()
-  const { videos, ideas, users, signOut } = useAdminData()
+  const {
+    videos,
+    ideas,
+    users,
+    signOut,
+    currentUserRole,
+    currentUserCapabilities,
+  } = useAdminData()
+
+  const items = visibleNavItems(
+    adminAllNavItems,
+    currentUserRole,
+    currentUserCapabilities,
+  )
 
   const counts: Record<string, number> = {
     "/admin/content": videos.length + ideas.length,
@@ -46,7 +59,7 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
         <p className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
           {t.workspaceSection}
         </p>
-        {adminAllNavItems.map((item) => (
+        {items.map((item) => (
           <AdminSidebarLink
             key={item.href}
             item={item}

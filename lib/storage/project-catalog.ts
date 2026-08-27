@@ -12,6 +12,7 @@ import {
 } from "@/lib/repositories/projects"
 import { findUserById, listUsersByIds } from "@/lib/repositories/users"
 import type { StorageApiAuth } from "@/lib/storage/auth"
+import { canReachAnyProject } from "@/lib/storage/auth"
 
 export type StorageProjectJson = {
   id: string
@@ -102,7 +103,7 @@ export async function loadStorageProjectCatalog(
     if (!project) {
       return { error: "Project not found.", status: 404 as const }
     }
-    if (auth.role !== "ADMIN" && project.userId !== auth.userId) {
+    if (!canReachAnyProject(auth) && project.userId !== auth.userId) {
       return { error: "Project not found.", status: 404 as const }
     }
     const [clients, owners] = await Promise.all([
@@ -118,13 +119,13 @@ export async function loadStorageProjectCatalog(
   }
 
   const projects =
-    auth.role === "ADMIN"
+    canReachAnyProject(auth)
       ? await listAllProjects()
       : await listProjectsByUserId(auth.userId)
 
   const ownerIds = [...new Set(projects.map((p) => p.userId))]
   const [clients, owners] = await Promise.all([
-    auth.role === "ADMIN"
+    canReachAnyProject(auth)
       ? listAllClients()
       : listClientsByUserId(auth.userId),
     listUsersByIds(ownerIds),

@@ -1,4 +1,5 @@
 "use client"
+import { isElevated } from "@/lib/admin-roles"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
@@ -56,7 +57,7 @@ export function VideoGridInfinite({
     void fetch("/api/auth/session", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { authenticated?: boolean; role?: string } | null) => {
-        if (!cancelled && data?.authenticated && data.role === "ADMIN") {
+        if (!cancelled && data?.authenticated && isElevated(data.role)) {
           setIsAdmin(true)
         }
       })

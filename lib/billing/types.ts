@@ -1,0 +1,227 @@
+/**
+ * Типы и константы биллинга. Без `pg`: этот файл импортируют и клиентские
+ * компоненты, а из репозиториев в бандл уехал бы драйвер базы.
+ *
+ * Разбор решений — docs/BILLING_AND_TRIAL_PLAN.md.
+ */
+
+// ─── Кошельки ────────────────────────────────────────────────────────────────
+
+export const WALLETS = ["own", "gift"] as const
+export type Wallet = (typeof WALLETS)[number]
+
+// ─── Оси тарификации (П6) ────────────────────────────────────────────────────
+
+/** От чего отталкиваемся при расчёте. */
+export const PAY_BASES = ["output", "source", "render", "fixed"] as const
+export type PayBase = (typeof PAY_BASES)[number]
+
+/** В чём считаем. */
+export const PAY_METERS = ["sec", "count", "bytes"] as const
+export type PayMeter = (typeof PAY_METERS)[number]
+
+/**
+ * Ключ пары. У `fixed` меры нет — платим за сам прогон, и вторая ось не
+ * участвует. Отдельное значение честнее, чем `fixed:sec`, которое пришлось бы
+ * везде игнорировать.
+ */
+export type PayPair = "fixed" | `${Exclude<PayBase, "fixed">}:${PayMeter}`
+
+export function payPair(base: PayBase, meter: PayMeter | null): PayPair {
+  return base === "fixed" ? "fixed" : (`${base}:${meter ?? "sec"}` as PayPair)
+}
+
+/**
+ * Пары, которые сайт умеет считать сегодня.
+ *
+ * Проверяется пара целиком, а не каждая ось отдельно: новая ось иначе молча
+ * создаёт сочетания, которых никто не считал. Чего здесь нет и почему:
+ *
+ * - `source:sec` — нужен `srcSec`, поле схемы v2 архива (правка в десктопе);
+ * - `output:bytes` — размеров выходных файлов в архиве нет.
+ */
+export const SUPPORTED_PAY_PAIRS = [
+  "output:sec",
+  "output:count",
+  "source:count",
+  "source:bytes",
+  "render:sec",
+  "fixed",
+] as const satisfies readonly PayPair[]
+
+export function isSupportedPair(pair: string): pair is PayPair {
+  return (SUPPORTED_PAY_PAIRS as readonly string[]).includes(pair)
+}
+
+export function isPayBase(raw: unknown): raw is PayBase {
+  return typeof raw === "string" && (PAY_BASES as readonly string[]).includes(raw)
+}
+
+export function isPayMeter(raw: unknown): raw is PayMeter {
+  return typeof raw === "string" && (PAY_METERS as readonly string[]).includes(raw)
+}
+
+// ─── Лента (П2) ──────────────────────────────────────────────────────────────
+
+/**
+ * Виды движений. Резерва среди них нет намеренно: лента — это состоявшиеся
+ * движения, а резерв живёт на самой задаче и снимается тем, что задача уходит
+ * из живых статусов (lib/billing/funds.ts).
+ */
+export const TX_KINDS = [
+  "topup",
+  "grant",
+  "charge",
+  "refund",
+  "writeoff",
+  "exempt",
+  "adjust",
+] as const
+export type TxKind = (typeof TX_KINDS)[number]
+
+/** Раскладка списания: из чего сложилась сумма (П5). Всё в копейках. */
+export type ChargeBreakdown = {
+  /** Наша цена за результат: количество × ставка. */
+  ourCents: number
+  /**
+   * Себестоимость внешних сервисов, приведённая к рублям. Показывается
+   * пользователю именно в этом виде — по себестоимости, без наценки.
+   */
+  vendorCents: number
+  /** Наценка на себестоимость. Показывается внутри нашей строки, не чужой. */
+  marginCents: number
+}
+
+export function breakdownTotal(b: ChargeBreakdown): number {
+  return b.ourCents + b.vendorCents + b.marginCents
+}
+
+/** Как считали — уезжает в транзакцию, чтобы прошлое не пересчитывалось. */
+export type ChargeTerms = {
+  base: PayBase
+  meter: PayMeter | null
+  units: number
+  unitRateCents: number
+  marginPct: number
+  /** Валюта себестоимости до пересчёта и применённый курс. */
+  vendorCurrency: string | null
+  vendorRate: number | null
+  vendorRateSource: string | null
+}
+
+// ─── Настройки (П12) ─────────────────────────────────────────────────────────
+
+export type TrialSettings = {
+  /** Включена ли кнопка «Попробовать бесплатно». */
+  enabled: boolean
+  amountCents: number
+  /** null — подарок бессрочный. */
+  lifetimeDays: number | null
+}
+
+export type BillingSettings = {
+  /**
+   * Ставка в копейках за единицу, по паре осей. Пары без ставки не
+   * тарифицируются — и обработка по ним не берётся. Нуль как «бесплатно» здесь
+   * недопустим: тогда забытая ставка выглядела бы как осознанное решение.
+   */
+  rates: Partial<Record<PayPair, number>>
+  /** Наценка на себестоимость внешних сервисов, проценты. */
+  marginPct: number
+  /**
+   * Порог допуска: минимум единиц, ради которых стоит начинать обработку.
+   * В единицах, а не в деньгах — «10 секунд» понятно при любой ставке, «40 ₽»
+   * устаревает с первой правкой тарифа.
+   */
+  minAdmitUnits: Record<PayMeter, number>
+  /** Оценка, когда истории по проекту ещё нет. */
+  defaultEstimateUnits: Record<PayMeter, number>
+  /** Общий лимит овердрафта своего кошелька. У пользователя может быть свой. */
+  overdraftLimitCents: number
+  trial: TrialSettings
+  /**
+   * Проверять ли деньги в обычных проектах. По умолчанию выключено: иначе
+   * первое же включение остановит обработку у всех — балансы нулевые, тарифа
+   * ещё нет. Пробные проекты работают независимо от флага, у них есть грант.
+   */
+  enforceForOwnProjects: boolean
+  /** В какой валюте плагины сообщают себестоимость. Контракт — доллар США. */
+  vendorCurrency: string
+  /**
+   * Поправка к биржевому курсу, проценты. Не «наш курс», а компенсация того, что
+   * реальная конвертация по карте дороже биржевой.
+   */
+  fxAdjustPct: number
+}
+
+export const DEFAULT_BILLING_SETTINGS: BillingSettings = {
+  rates: {},
+  marginPct: 0,
+  minAdmitUnits: { sec: 10, count: 1, bytes: 1 },
+  defaultEstimateUnits: { sec: 60, count: 1, bytes: 0 },
+  // Ноль, а не «немного»: овердрафт — это кредит, и выдаваться он должен
+  // осознанным решением, а не значением по умолчанию.
+  overdraftLimitCents: 0,
+  trial: { enabled: false, amountCents: 600_000, lifetimeDays: null },
+  enforceForOwnProjects: false,
+  vendorCurrency: "USD",
+  fxAdjustPct: 0,
+}
+
+// ─── Подарки (П7, П8) ────────────────────────────────────────────────────────
+
+export const GRANT_KINDS = ["trial", "targeted"] as const
+export type GrantKind = (typeof GRANT_KINDS)[number]
+
+export const GRANT_STATUSES = [
+  "provisioning",
+  "active",
+  "exhausted",
+  "expired",
+  "revoked",
+] as const
+export type GrantStatus = (typeof GRANT_STATUSES)[number]
+
+export type GrantRecord = {
+  id: string
+  userId: string
+  kind: GrantKind
+  amountCents: number
+  status: GrantStatus
+  expiresAt: Date | null
+  grantedBy: string | null
+  comment: string
+  provisionJobId: string | null
+  closedAt: Date | null
+  createdAt: Date
+}
+
+// ─── Форматирование ──────────────────────────────────────────────────────────
+
+/** Копейки → «1 234,50 ₽». Показ, а не расчёт. */
+export function formatCents(cents: number, lang: "ru" | "en" = "ru"): string {
+  const value = cents / 100
+  return new Intl.NumberFormat(lang === "ru" ? "ru-RU" : "en-US", {
+    style: "currency",
+    currency: "RUB",
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+/**
+ * Секунды → `ЧЧ:ММ:СС`, а после суток — `10 д 15:25:12`.
+ *
+ * Переключателя формата нет: настройка, которую надо найти и понять, дороже
+ * правила, которое просто работает. Кадры не участвуют — хронометраж приходит
+ * целыми секундами.
+ */
+export function formatRuntime(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec))
+  const pad = (n: number) => String(n).padStart(2, "0")
+  const days = Math.floor(s / 86_400)
+  const hours = Math.floor((s % 86_400) / 3600)
+  const minutes = Math.floor((s % 3600) / 60)
+  const seconds = s % 60
+  const clock = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+  return days > 0 ? `${days} д ${clock}` : clock
+}

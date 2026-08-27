@@ -1,9 +1,12 @@
+import { requireCapabilityPage } from "@/lib/admin-page-guard"
 import { RemoteApiDocs } from "@/components/admin/remote-access/remote-api-docs"
 import { RemoteApiPageHeader } from "@/components/admin/remote-access/remote-api-page-header"
 
 export const dynamic = "force-dynamic"
 
-export default function AdminRemoteApiPage() {
+export default async function AdminRemoteApiPage() {
+  await requireCapabilityPage("pipeline.operate")
+
   return (
     <div className="space-y-8">
       <RemoteApiPageHeader />

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { auditFrom } from "@/lib/audit"
 import {
   findRemoteComputerById,
   generateRemoteComputerToken,
@@ -12,7 +13,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 /** Rotate computer token. Raw token returned once. */
 export async function POST(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "machines.manage")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
@@ -26,6 +27,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (!ok) {
     return NextResponse.json({ message: "Computer not found." }, { status: 404 })
   }
+
+  await auditFrom(request, auth)({
+    action: "computer.token_rotated",
+    targetType: "computer",
+    targetId: id,
+    targetLabel: existing.name,
+  })
 
   return NextResponse.json({
     id,

@@ -6,6 +6,7 @@ import {
   type SettingsDomain,
 } from "@/lib/repositories/automation-settings"
 import type { SettingsWriteInput } from "@/lib/settings-schemas"
+import { isElevated } from "@/lib/admin-roles"
 
 /**
  * Общая логика всех трёх поверхностей общих словарей (docs/SETTINGS_SYNC.md §7):
@@ -30,7 +31,7 @@ export type SettingsCaller = {
  * показать его на выбор. Писать — админ или машина.
  */
 export function canWriteSettings(caller: SettingsCaller): boolean {
-  return caller.role === "ADMIN" || caller.isMachine
+  return isElevated(caller.role) || caller.isMachine
 }
 
 export async function respondWithSettings(

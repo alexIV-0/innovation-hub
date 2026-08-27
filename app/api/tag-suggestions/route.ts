@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   const payload = await request.json().catch(() => null)
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   const payload = await request.json().catch(() => null)

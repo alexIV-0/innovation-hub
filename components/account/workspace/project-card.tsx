@@ -4,6 +4,7 @@ import {
   Archive,
   Folder,
   MessageCircle,
+  AlertTriangle,
   Pause,
   Play,
   Users,
@@ -37,6 +38,13 @@ export function ProjectCard({
   const selected = project.id === selectedId
   const isTool = groupName === "tools"
   const paused = project.isPaused
+  /**
+   * Проект остановлен биллингом. Тумблер в этом случае показывается, но
+   * включиться не даст: API ответит отказом, потому что платить нечем.
+   * Показываем причину рядом, иначе человек будет жать на кнопку и не понимать,
+   * почему ничего не происходит.
+   */
+  const billingStop = paused ? (project.pausedReason ?? null) : null
   const unread = project.unreadCount > 0
   /**
    * Архив показываем пометкой только там, где список не разделён по разделам:
@@ -156,6 +164,16 @@ export function ProjectCard({
               )}
               {paused ? t.statusPaused : t.statusActive}
             </button>
+            {billingStop ? (
+              <span
+                className="flex shrink-0 items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-[3px] text-[11px] text-destructive"
+              >
+                <AlertTriangle className="h-3 w-3" />
+                {billingStop === "trial-over"
+                  ? t.projectPausedTrialOver
+                  : t.projectPausedNoFunds}
+              </span>
+            ) : null}
             {showArchivedBadge ? (
               <span
                 title={t.archiveProject}

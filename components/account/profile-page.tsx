@@ -1,4 +1,5 @@
 "use client"
+import { isElevated } from "@/lib/admin-roles"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -178,7 +179,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <span className="rounded-full bg-white/5 px-3 py-1 text-[12.5px] text-[#c3c8d2]">
-                    {current.role === "ADMIN" ? t.adminBadge : t.memberBadge}
+                    {isElevated(current.role) ? t.adminBadge : t.memberBadge}
                   </span>
                   <span className="rounded-full border border-[rgba(38,165,108,0.5)] px-3 py-1 text-[12.5px] text-[#3ecf8e]">
                     {t.activeBadge}

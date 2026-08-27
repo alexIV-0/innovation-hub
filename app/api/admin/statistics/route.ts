@@ -7,7 +7,7 @@ export const runtime = "nodejs"
 
 /** Статистика без скоупа: все пользователи, все проекты, все машины. */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "statistics.view")
   if (auth instanceof NextResponse) return auth
 
   const q = parseStatisticsQuery(request.nextUrl.searchParams)

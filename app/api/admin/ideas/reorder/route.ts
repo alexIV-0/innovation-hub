@@ -4,7 +4,7 @@ import { reorderSchema } from "@/lib/admin-schemas"
 import { reorderIdea } from "@/lib/repositories/ideas"
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   const payload = await request.json()

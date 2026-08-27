@@ -4,9 +4,11 @@ import { SESSION_COOKIE_NAME, verifyPassword } from "@/lib/auth"
 import { getCurrentUser } from "@/lib/admin-auth"
 import {
   countActiveAdmins,
+  countActiveSuperAdmins,
   deleteUser,
   findUserByEmail,
 } from "@/lib/repositories/users"
+import { isElevated, isSuperAdmin } from "@/lib/admin-roles"
 
 export async function DELETE(request: Request) {
   const current = await getCurrentUser()
@@ -54,7 +56,22 @@ export async function DELETE(request: Request) {
 
   // Refuse to leave the platform without an active admin — otherwise the
   // /admin surface becomes unreachable until someone touches the database.
-  if (current.role === "ADMIN") {
+  // Суперадмина стережём отдельно: без него некому раздать роли обратно, и
+  // одних оставшихся админов для этого недостаточно.
+  if (isSuperAdmin(current.role)) {
+    const remaining = await countActiveSuperAdmins(current.id)
+    if (remaining === 0) {
+      return NextResponse.json(
+        {
+          message:
+            "You are the last active superadmin. Promote another superadmin before deleting your account.",
+        },
+        { status: 409 },
+      )
+    }
+  }
+
+  if (isElevated(current.role)) {
     const remaining = await countActiveAdmins(current.id)
     if (remaining === 0) {
       return NextResponse.json(

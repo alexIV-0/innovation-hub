@@ -22,7 +22,7 @@ const patchSchema = z.object({
 })
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params

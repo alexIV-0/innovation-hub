@@ -1,4 +1,9 @@
-export type UserRole = "USER" | "ADMIN"
+/**
+ * Лестница: USER < ADMIN < SUPERADMIN. Сравнивать роли — через
+ * lib/admin-roles.ts (`isElevated`, `roleAtLeast`), а не литералами: проверка
+ * `role === "ADMIN"` отсекает суперадмина и ломает машины под его токеном.
+ */
+export type UserRole = "USER" | "ADMIN" | "SUPERADMIN"
 
 export type AuthProvider = "local" | "google"
 
@@ -43,6 +48,11 @@ export type ProjectRecord = {
   /** Проект в архиве: скрыт из рабочего списка, обработки по нему не запускаются. */
   isArchived: boolean
   archivedAt: Date | null
+  /**
+   * Почему проект стоит. NULL — остановил человек; иначе биллинг, и тумблер
+   * обратно не включится, пока платить нечем (lib/billing/admission.ts).
+   */
+  pausedReason: "no-funds" | "trial-over" | null
   /** Soft-deleted into project trash; purged after retention. */
   deletedAt: Date | null
   /** Optional client grouping (UI hierarchy; not part of R2 keys). */

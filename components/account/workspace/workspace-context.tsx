@@ -762,6 +762,19 @@ export function WorkspaceProvider({
         body: JSON.stringify(body),
       })
       if (!res.ok) {
+        // Отказ биллинга — не «что-то сломалось», а объяснимое «платить нечем».
+        // Общее «Failed» отправило бы человека искать ошибку там, где её нет.
+        if (res.status === 409) {
+          const body = (await res.json().catch(() => ({}))) as { code?: string }
+          if (body.code === "trial-over" || body.code === "no-funds") {
+            toast.error(
+              body.code === "trial-over"
+                ? t.trialBannerOver
+                : t.trialBannerNoFunds,
+            )
+            return
+          }
+        }
         toast.error("Failed")
         return
       }
@@ -773,7 +786,7 @@ export function WorkspaceProvider({
       )
       notifyProjectsChanged()
     },
-    [],
+    [t],
   )
 
   const createProject = useCallback(() => {

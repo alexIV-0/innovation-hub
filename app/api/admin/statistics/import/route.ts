@@ -14,7 +14,7 @@ export const maxDuration = 300
  * угодно: строки дедуплицируются по `item_id`, снимок за сутки перезаписывается.
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "statistics.import")
   if (auth instanceof NextResponse) return auth
 
   const snapshot = await takeStorageSnapshot().catch((error) => {

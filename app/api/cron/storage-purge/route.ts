@@ -5,6 +5,7 @@ import { purgeExpiredTrash } from "@/lib/storage/trash"
 import { exportMonthlyStats } from "@/lib/statistics/export-archive"
 import { importProcessingArchive } from "@/lib/statistics/import-archive"
 import { takeStorageSnapshot } from "@/lib/statistics/snapshots"
+import { isElevated } from "@/lib/admin-roles"
 
 export const runtime = "nodejs"
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
 
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
-  if (auth.role !== "ADMIN") {
+  if (!isElevated(auth.role)) {
     return NextResponse.json({ message: "Forbidden." }, { status: 403 })
   }
 

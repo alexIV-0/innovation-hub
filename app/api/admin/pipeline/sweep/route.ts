@@ -19,7 +19,7 @@ export const maxDuration = 120
  * а не идёт вдобавок к нему через минуту.
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   // Обход подчинён тумблеру слежения так же, как событийная сборка: пока стоит

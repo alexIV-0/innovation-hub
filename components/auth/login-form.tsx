@@ -1,4 +1,5 @@
 "use client"
+import type { UserRole } from "@/lib/domain-types"
 
 import Link from "next/link"
 import { useState } from "react"
@@ -65,7 +66,7 @@ export function LoginForm({
       const raw = await response.text()
       let data: {
         message?: string
-        role?: "USER" | "ADMIN"
+        role?: UserRole
         mustChangePassword?: boolean
       } = {}
       try {

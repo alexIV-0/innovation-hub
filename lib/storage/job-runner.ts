@@ -1,5 +1,9 @@
-import { findProjectById } from "@/lib/repositories/projects"
-import { buildCopyPlan, copyPlanItem } from "@/lib/storage/copy"
+import { activateGrant } from "@/lib/billing/grants"
+import { query } from "@/lib/db"
+import { sweepInFolders } from "@/lib/pipeline/sweep"
+import { setProjectPaused } from "@/lib/project-automation"
+import { createProject, findProjectById } from "@/lib/repositories/projects"
+import { buildCopyPlan, copyPlanItem, type CopyPlanItem } from "@/lib/storage/copy"
 import {
   claimJob,
   finishJob,
@@ -77,6 +81,147 @@ async function runCopyJob(job: StorageJobRecord): Promise<void> {
   })
 }
 
+/**
+ * Что из шаблона НЕ переезжает пользователю.
+ *
+ * `OUT` — результаты админских прогонов: человек открыл бы пробный проект и
+ * увидел чужие ролики как свои. `options/_stats` — чужая статистика: приёмник
+ * архива засчитал бы её как работу пользователя и съел бы подарок до первого
+ * запуска. `folderState.json` — пишется заново при включении обработки.
+ *
+ * Исключения списком, а не маской: «не скопировалось» никогда не должно быть
+ * тихим.
+ */
+const TEMPLATE_SKIP_ROOTS = new Set(["out"])
+
+function isSkippedTemplateItem(item: CopyPlanItem): boolean {
+  const rel = item.relativeFolder.toLowerCase()
+  const name = item.source.name.toLowerCase()
+  const full = rel ? `${rel}/${name}` : name
+  if (full === "options/_stats" || rel.startsWith("options/_stats")) return true
+  if (full === "options/folderstate.json") return true
+  return false
+}
+
+async function listTemplateRoots(
+  projectId: string,
+): Promise<{ id: string; name: string }[]> {
+  const result = await query<{ id: string; name: string }>(
+    `SELECT id, name
+       FROM project_files
+      WHERE project_id = $1
+        AND folder_path = ''
+        AND deleted_at IS NULL
+      ORDER BY is_folder DESC, lower(name)`,
+    [projectId],
+  )
+  return result.rows.filter(
+    (row) => !TEMPLATE_SKIP_ROOTS.has(row.name.toLowerCase()),
+  )
+}
+
+/**
+ * Выдача тестового периода: копии подготовленных проектов пользователю.
+ *
+ * Одной работой, а не тремя `copy`-джобами: включать обработку можно только
+ * когда копия доехала ЦЕЛИКОМ, иначе конвейер увидит наполовину скопированную
+ * папку и соберёт задачу по неполному манифесту. Одна работа знает, когда
+ * «всё»; три отдельные — нет, за ними пришлось бы кому-то следить.
+ */
+async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
+  const payload = job.payload as { grantId?: string; templateIds?: string[] }
+  const grantId = payload.grantId
+  const templateIds = payload.templateIds ?? []
+
+  if (!grantId || templateIds.length === 0) {
+    await finishJob(job.id, {
+      state: "failed",
+      error: "Invalid trial provision payload.",
+    })
+    return
+  }
+
+  const createdIds: string[] = []
+  let done = 0
+
+  for (const templateId of templateIds) {
+    const template = await findProjectById(templateId)
+    if (!template) continue
+
+    // Проект создаётся на паузе: копирование пишет обычные put-события в
+    // журнал, и под слежением сканер начал бы делать задачи прямо в процессе.
+    const project = await createProject({
+      ownerId: job.userId,
+      name: template.name,
+      description: template.description,
+      groupName: "personal",
+    })
+    await setProjectPaused({
+      projectId: project.id,
+      ownerId: job.userId,
+      paused: true,
+      updatedBy: "trial",
+    })
+    createdIds.push(project.id)
+
+    const roots = await listTemplateRoots(templateId)
+    if (roots.length > 0) {
+      const { items } = await buildCopyPlan({
+        projectId: templateId,
+        fileIds: roots.map((r) => r.id),
+      })
+      const folderPathMap = new Map<string, string>()
+      for (const item of items) {
+        if (isSkippedTemplateItem(item)) continue
+        await copyPlanItem({
+          destProjectId: project.id,
+          destOwnerId: job.userId,
+          destFolderPath: "",
+          item,
+          folderPathMap,
+          // Заливщиком становится тот, кто активировал период: отсюда конвейер
+          // возьмёт contact, и работа подпишется им, а не автором шаблона.
+          actor: { userId: job.userId, isUploader: true },
+        })
+      }
+    }
+
+    done++
+    await setJobProgress(job.id, done, templateIds.length, {
+      projectIds: createdIds,
+    })
+  }
+
+  // Копии доехали — включаем обработку и открываем подарок к тратам.
+  for (const projectId of createdIds) {
+    await setProjectPaused({
+      projectId,
+      ownerId: job.userId,
+      paused: false,
+      updatedBy: "trial",
+    })
+  }
+
+  await activateGrant({ grantId, projectIds: createdIds })
+
+  // События копирования проехали мимо курсора конвейера, пока проекты стояли на
+  // паузе, и второго `put` по этим файлам не будет. Обход берёт элементы IN, по
+  // которым задачи никогда не было, — иначе первый виток ждал бы расписания.
+  try {
+    await sweepInFolders({ projectIds: createdIds })
+  } catch (error) {
+    // Не сумели обойти сейчас — обойдётся по расписанию. Ронять из-за этого
+    // выдачу периода незачем: проекты уже у человека и уже под слежением.
+    console.error("[trial] sweep after provisioning failed", error)
+  }
+
+  await finishJob(job.id, {
+    state: "done",
+    done: createdIds.length,
+    payload: { projectIds: createdIds },
+  })
+}
+
 async function runRecatalogJob(job: StorageJobRecord): Promise<void> {
   if (!job.projectId) {
     await finishJob(job.id, { state: "failed", error: "Missing projectId." })
@@ -119,6 +264,9 @@ export async function executeJob(jobId: string): Promise<StorageJobRecord | null
         break
       case "recatalog":
         await runRecatalogJob(claimed)
+        break
+      case "trial-provision":
+        await runTrialProvisionJob(claimed)
         break
       case "purge":
         await runPurgeJob(claimed)

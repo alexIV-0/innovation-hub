@@ -25,7 +25,7 @@ type RouteContext = { params: Promise<{ id: string }> }
  * отдельно — оно подпись на карточке в списке.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
@@ -47,7 +47,7 @@ const putSchema = z.object({
 })
 
 export async function PUT(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params

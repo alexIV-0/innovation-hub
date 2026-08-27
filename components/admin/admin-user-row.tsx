@@ -1,6 +1,9 @@
 "use client"
+import { cn } from "@/lib/utils"
+import { isElevated } from "@/lib/admin-roles"
 
 import {
+  KeyRound,
   MoreHorizontal,
   Pencil,
   ShieldCheck,
@@ -25,7 +28,12 @@ import type { AdminUser } from "./admin-types"
 type Props = {
   user: AdminUser
   isCurrent: boolean
+  /** Актор — суперадмин: только он раздаёт роли и трогает других админов. */
+  canManageRoles: boolean
+  /** Тег users.manage: без него раздел доступен только на чтение. */
+  canManageUsers: boolean
   onEdit: () => void
+  onOpenCapabilities: () => void
   onToggleRole: () => void
   onToggleActive: () => void
   onDelete: () => void
@@ -53,12 +61,23 @@ function formatDate(value: string) {
 export function AdminUserRow({
   user,
   isCurrent,
+  canManageRoles,
+  canManageUsers,
   onEdit,
+  onOpenCapabilities,
   onToggleRole,
   onToggleActive,
   onDelete,
 }: Props) {
   const t = useAdminI18n()
+
+  // Админ управляет только теми, кто ниже него. Себя — можно: правка своего
+  // имени и пароля к управлению чужими аккаунтами не относится. Сервер отвечает
+  // тем же (app/api/admin/users/[id]), здесь мы лишь не показываем кнопку,
+  // которая всё равно вернёт 403.
+  const canManage =
+    (canManageUsers || isCurrent) &&
+    (canManageRoles || isCurrent || !isElevated(user.role))
 
   return (
     <div
@@ -98,10 +117,17 @@ export function AdminUserRow({
       </div>
 
       <div className="hidden items-center gap-2 sm:flex">
-        {user.role === "ADMIN" ? (
-          <Badge className="gap-1 border-transparent bg-primary/15 text-primary hover:bg-primary/15">
+        {isElevated(user.role) ? (
+          <Badge
+            className={cn(
+              "gap-1 border-transparent",
+              user.role === "SUPERADMIN"
+                ? "bg-amber-500/15 text-amber-300 hover:bg-amber-500/15"
+                : "bg-primary/15 text-primary hover:bg-primary/15",
+            )}
+          >
             <ShieldCheck className="h-3 w-3" />
-            {t.admin}
+            {user.role === "SUPERADMIN" ? t.superadmin : t.admin}
           </Badge>
         ) : (
           <Badge variant="secondary" className="gap-1">
@@ -137,19 +163,25 @@ export function AdminUserRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onClick={onEdit}>
+          <DropdownMenuItem onClick={onEdit} disabled={!canManage}>
             <Pencil className="h-4 w-4" />
             {t.editProfile}
           </DropdownMenuItem>
+          {canManageRoles && user.role === "ADMIN" ? (
+            <DropdownMenuItem onClick={onOpenCapabilities}>
+              <KeyRound className="h-4 w-4" />
+              {t.capsMenuItem}
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={onToggleRole}
-            disabled={isCurrent && user.role === "ADMIN"}
+            disabled={isCurrent || !canManageRoles}
           >
-            {user.role === "ADMIN" ? (
+            {isElevated(user.role) ? (
               <>
                 <ShieldOff className="h-4 w-4" />
-                {t.removeAdmin}
+                {user.role === "SUPERADMIN" ? t.demoteToAdmin : t.removeAdmin}
               </>
             ) : (
               <>
@@ -158,7 +190,10 @@ export function AdminUserRow({
               </>
             )}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onToggleActive} disabled={isCurrent}>
+          <DropdownMenuItem
+            onClick={onToggleActive}
+            disabled={isCurrent || !canManage}
+          >
             {user.isActive ? (
               <>
                 <UserX className="h-4 w-4" />
@@ -174,7 +209,7 @@ export function AdminUserRow({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={onDelete}
-            disabled={isCurrent}
+            disabled={isCurrent || !canManage}
             className="text-destructive focus:text-destructive"
           >
             <Trash2 className="h-4 w-4" />

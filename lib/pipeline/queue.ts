@@ -1,4 +1,5 @@
 import { query, withTransaction } from "@/lib/db"
+import { isElevated } from "@/lib/admin-roles"
 
 /**
  * Выдача задач машинам.
@@ -46,7 +47,7 @@ export type QueueCaller = {
 }
 
 function isAdmin(caller: QueueCaller): boolean {
-  return caller.role === "ADMIN"
+  return isElevated(caller.role)
 }
 
 type ClaimRow = {

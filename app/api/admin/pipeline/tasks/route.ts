@@ -26,7 +26,7 @@ async function queueSnapshot() {
 
 /** Очередь задач: что нашлось, кто взял, в каком состоянии. */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   return NextResponse.json(await queueSnapshot())
@@ -42,7 +42,7 @@ const taskIdSchema = z.object({ taskId: z.string().min(1) })
  * есть отдельный DELETE ниже — там это осознанный выбор.
  */
 export async function PATCH(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const body = await request.json().catch(() => null)
@@ -73,7 +73,7 @@ export async function PATCH(request: NextRequest) {
  * заново. Это и есть смысл удаления — «забудь и найди с нуля».
  */
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const taskId = request.nextUrl.searchParams.get("taskId")

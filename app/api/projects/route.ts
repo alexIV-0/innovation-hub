@@ -69,6 +69,7 @@ function serializeProject(
     groupName: string
     isActive: boolean
     isArchived: boolean
+    pausedReason?: "no-funds" | "trial-over" | null
     archivedAt: Date | string | null
     deletedAt?: Date | string | null
     clientId: string | null
@@ -93,6 +94,9 @@ function serializeProject(
     groupName: p.groupName,
     isPaused: !p.isActive,
     isActive: p.isActive,
+    // Почему проект стоит. NULL — остановил человек; иначе биллинг, и обратно
+    // тумблер не включится, пока платить нечем (lib/billing/admission.ts).
+    pausedReason: p.pausedReason ?? null,
     isArchived: p.isArchived,
     archivedAt: toIso(p.archivedAt),
     deletedAt: extra.deletedAt,

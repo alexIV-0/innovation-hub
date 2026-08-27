@@ -85,10 +85,12 @@ function WorkerDot({ state, hint }: { state: WorkerState; hint: string }) {
 
 export function AccessTokenRow({
   token,
+  canRotateToken,
   onRotateToken,
   onRevoke,
 }: {
   token: AccessTokenDto
+  canRotateToken: boolean
   onRotateToken: () => void
   onRevoke: () => void
 }) {
@@ -134,7 +136,10 @@ export function AccessTokenRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem onClick={onRotateToken}>
+              <DropdownMenuItem
+                onClick={onRotateToken}
+                disabled={!canRotateToken}
+              >
                 <Rotate className="h-4 w-4" />
                 {t.remoteRotateToken}
               </DropdownMenuItem>

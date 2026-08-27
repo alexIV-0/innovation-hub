@@ -18,7 +18,7 @@ export const maxDuration = 120
  * POST /api/v1 (claimTask и далее).
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   try {

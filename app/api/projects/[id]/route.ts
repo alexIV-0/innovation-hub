@@ -4,6 +4,7 @@ import {
   requireProjectAccess,
   type ProjectAccessRole,
 } from "@/lib/project-access"
+import { canResume, setPausedReason } from "@/lib/billing/admission"
 import { setProjectPaused } from "@/lib/project-automation"
 import { ProjectStorageError, siteUpdatedBy } from "@/lib/project-storage"
 import { updateProjectSchema } from "@/lib/project-schemas"
@@ -85,6 +86,28 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   // options/folderState.json на R2, иначе локальная машина не узнает, что
   // пользователь поставил проект на паузу. Записью владеет setProjectPaused.
   if (isPaused !== undefined) {
+    // Проект, остановленный биллингом, обратно не включается, пока платить
+    // нечем. Правило живёт здесь, а не в кнопке: интерфейс — не место для
+    // ограничения, которое обходится одним запросом.
+    if (isPaused === false) {
+      const resume = await canResume({ projectId: access.project.id, ownerId })
+      if (!resume.allowed) {
+        return NextResponse.json(
+          {
+            message:
+              resume.reason === "trial-over"
+                ? "Trial period is over. Top up the balance to continue."
+                : "Not enough funds to resume processing.",
+            code: resume.reason,
+          },
+          { status: 409 },
+        )
+      }
+      // Деньги появились — причину снимаем сами. Заставлять человека нажимать
+      // что-то ещё после пополнения незачем.
+      if (resume.reason) await setPausedReason(access.project.id, null)
+    }
+
     try {
       await setProjectPaused({
         projectId: access.project.id,
@@ -135,6 +158,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     machineTokenId: null,
     computerId: null,
     scopedProjectId: null,
+    capabilities: auth.capabilities,
   }
   const result = await softDeleteOwnedProject(storageAuth, { projectId: id })
   if (result instanceof NextResponse) return result

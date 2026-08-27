@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireStorageApi } from "@/lib/storage/auth"
 import { getJob, serializeJob } from "@/lib/storage/jobs"
+import { canReachAnyProject } from "@/lib/storage/auth"
 
 export const runtime = "nodejs"
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   if (!job) {
     return NextResponse.json({ message: "Job not found." }, { status: 404 })
   }
-  if (auth.role !== "ADMIN" && job.userId !== auth.userId) {
+  if (!canReachAnyProject(auth) && job.userId !== auth.userId) {
     return NextResponse.json({ message: "Job not found." }, { status: 404 })
   }
   return NextResponse.json({ job: serializeJob(job) })

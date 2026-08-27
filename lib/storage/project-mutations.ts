@@ -20,6 +20,8 @@ import {
   softDeleteProject,
 } from "@/lib/storage/project-trash"
 import { NextResponse } from "next/server"
+import { canReachAnyProject } from "@/lib/storage/auth"
+import { recordAuditEvent } from "@/lib/repositories/admin-audit"
 
 export type MutationError = { error: string; status: number }
 export type MutationOk<T> = { data: T }
@@ -38,7 +40,7 @@ async function resolveClientId(
   if (clientId == null) return { data: null }
   const client = await findClientById(clientId)
   if (!client) return { error: "Client not found.", status: 400 }
-  if (auth.role !== "ADMIN" && client.userId !== auth.userId) {
+  if (!canReachAnyProject(auth) && client.userId !== auth.userId) {
     return { error: "Client not found.", status: 400 }
   }
   return { data: client.id }
@@ -168,6 +170,28 @@ export async function softDeleteOwnedProject(
 
   const project = await softDeleteProject(access.projectId, access.ownerId)
   if (!project) return { error: "Project not found.", status: 404 }
+
+  // Через эту функцию удаляют проект и сайт, и парк машин — обе поверхности
+  // сходятся здесь, поэтому запись одна. Машину мы в правах не ограничиваем
+  // (docs/ADMIN_ROLES_PLAN.md §7), и удаление ей положено по работе; вопрос к
+  // нему всегда «когда и по чьей задаче», а не «кто разрешил». Отсюда `via`.
+  await recordAuditEvent({
+    actorId: auth.userId,
+    actorEmail: auth.email,
+    action: "project.deleted",
+    targetType: "project",
+    targetId: project.id,
+    targetLabel: project.name,
+    meta: {
+      ownerId: access.ownerId,
+      via: auth.computerId
+        ? "computer"
+        : auth.machineTokenId
+          ? "machine"
+          : "session",
+    },
+  })
+
   return { data: { ok: true } }
 }
 
@@ -183,7 +207,7 @@ export async function restoreOwnedProject(
   }
 
   const existing =
-    auth.role === "ADMIN"
+    canReachAnyProject(auth)
       ? await findProjectById(input.projectId, { includeDeleted: true })
       : await findOwnedProject(input.projectId, auth.userId, {
           includeDeleted: true,

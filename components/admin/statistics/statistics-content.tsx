@@ -5,6 +5,7 @@ import { Loader2, RefreshCcw } from "lucide-react"
 import { toast } from "sonner"
 import { tf, useI18n } from "@/components/account/i18n"
 import { StatsReadiness } from "@/components/account/stats-readiness"
+import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { StatisticsExplorer } from "@/components/statistics/statistics-explorer"
 
@@ -15,6 +16,7 @@ import { StatisticsExplorer } from "@/components/statistics/statistics-explorer"
  */
 export function AdminStatisticsContent() {
   const { t } = useI18n()
+  const { can } = useAdminData()
   const [importing, setImporting] = useState(false)
 
   /**
@@ -56,6 +58,9 @@ export function AdminStatisticsContent() {
           <h2 className="text-[15px] font-semibold text-ws-1">
             {t.adminStatsSoonTitle}
           </h2>
+          {/* Просмотр и загрузка пачкой — разные теги: импорт перезаписывает
+              чужие данные, просмотр нет. */}
+          {can("statistics.import") ? (
           <button
             type="button"
             onClick={runImport}
@@ -69,6 +74,7 @@ export function AdminStatisticsContent() {
             )}
             {importing ? t.statImportRunning : t.statImportRun}
           </button>
+          ) : null}
         </div>
         <p className="mt-1.5 max-w-[760px] text-[13px] leading-relaxed text-ws-4">
           {t.adminStatsSoonDesc}

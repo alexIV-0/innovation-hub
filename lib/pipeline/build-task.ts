@@ -1,3 +1,9 @@
+import { exactUnits } from "@/lib/billing/estimate"
+import {
+  resolvePayUnitForGraph,
+  type PayAxes,
+  type PayUnitResolution,
+} from "@/lib/billing/pay-unit"
 import {
   createProcessQueue,
   nodeProps,
@@ -84,7 +90,18 @@ export type BuildTaskFailure =
   | "no-search-exts"
 
 export type BuildTaskOutcome =
-  | { ok: true; payload: TaskPayload; searchExts: string[] }
+  | {
+      ok: true
+      payload: TaskPayload
+      searchExts: string[]
+      /**
+       * Чем тарифицируется этот виток. Сборку НЕ останавливает: пока гейт денег
+       * выключен, проект без осей обрабатывается как раньше, а неразрешённая
+       * единица становится видимой проблемой, а не тихой остановкой конвейера.
+       * Отказ по ней включается вместе с допуском (П13).
+       */
+      payUnit: PayUnitResolution
+    }
   | { ok: false; reason: BuildTaskFailure }
 
 /** Расширения — без ведущей точки и в нижнем регистре. */
@@ -238,9 +255,17 @@ export function readSearchExts(
 function buildDescription(nodes: FlowNode[]): Record<string, unknown> {
   const descriptionNode = nodes.find((n) => n.id.toLowerCase() === "description")
 
-  const projectContact = descriptionNode?.data?.properties?.find(
-    (p) => p.id.toLowerCase() === "contact",
-  )?.controlProps?.value
+  const prop = (id: string): unknown =>
+    descriptionNode?.data?.properties?.find((p) => p.id.toLowerCase() === id)
+      ?.controlProps?.value
+
+  const projectContact = prop("contact")
+
+  // Оси тарификации объявляет автор графа — он один знает, что получится на
+  // выходе. Значение может приехать массивом: `ddm` с multiSelect отдаёт список,
+  // и в старых графах свойство могло быть настроено иначе.
+  const first = (raw: unknown): unknown =>
+    Array.isArray(raw) ? raw[0] : raw
 
   // Ноды раскраски main/helpers — это не шаги обработки, в тип автоматизации
   // они не входят.
@@ -256,6 +281,8 @@ function buildDescription(nodes: FlowNode[]): Record<string, unknown> {
 
   return {
     projectContact,
+    payBase: first(prop("paybase")),
+    payMeter: first(prop("paymeter")),
     automationType,
     discription: descriptionNode?.data?.comment,
   }
@@ -278,6 +305,17 @@ function normalizeContactName(value: unknown): string | null {
 
 export function buildTaskPayload(input: {
   optionsJson: unknown
+  /**
+   * Идентификатор задачи, назначенный сайтом. Уезжает в `description.dbItemId`,
+   * машина использует его вместо своего (`db_register_found`), и строка архива
+   * получает `itemId = tasks.id`.
+   *
+   * Поэтому id генерируется ДО сборки payload, а не внутри вставки: иначе связать
+   * задачу с её обработкой можно было бы только гаданием «проект + имя + время».
+   * Разбор — docs/PIPELINE.md §15,
+   * fs.manager.tauri/ideasAndTest/SITE_STATS_LINK_PLAN.md.
+   */
+  taskId: string
   projectId: string
   projectName: string
   ownerEmail: string
@@ -296,6 +334,11 @@ export function buildTaskPayload(input: {
   ownerContact?: TaskContact | null
   /** Все заливщики папки, если их было больше одного. */
   uploaders?: { name: string; email: string; files: number }[]
+  /**
+   * Оси тарификации из настройки проекта — запасной путь для графов, в которых
+   * свойства ещё нет. Граф главнее (lib/billing/pay-unit.ts).
+   */
+  projectPayAxes?: PayAxes
   onWarn?: (message: string) => void
 }): BuildTaskOutcome {
   const root = input.optionsJson
@@ -346,6 +389,10 @@ export function buildTaskPayload(input: {
     description.uploaders = input.uploaders
   }
 
+  // Сквозной идентификатор: поле уже существует в объекте обработки и означает
+  // ровно это — «id этой работы в базе». Машина читает его на входе и кладёт в
+  // строку архива, поэтому processing_stats.item_id = tasks.id.
+  description.dbItemId = input.taskId
   description.projectId = input.projectId
   description.projectName = input.projectName
   description.ownerEmail = input.ownerEmail
@@ -369,6 +416,33 @@ export function buildTaskPayload(input: {
   description.typeOfFile = exts.fileTypes
   description.searchType = exts.searchType
 
+  // Чем тарифицируется виток. Сверяется с типом входа прямо здесь: «считаем
+  // хронометраж исходника, а ищем картинки» — ошибка настройки, и увидеть её
+  // надо до обработки, а не по пустому srcSec после неё.
+  const payUnit = resolvePayUnitForGraph({
+    graph: { base: description.payBase, meter: description.payMeter },
+    project: input.projectPayAxes ?? { base: null, meter: null },
+    searchType: exts.searchType?.[0] ?? null,
+  })
+  if (payUnit.ok) {
+    description.payBase = payUnit.base
+    description.payMeter = payUnit.meter
+    // Количество исходников считаем СЕЙЧАС и кладём в задачу. После обработки
+    // пересчитать его нечем: postProcess уносит файлы из IN, и папки на месте
+    // уже нет, а списание идёт часом позже, по строке архива.
+    const units = exactUnits(payUnit.base, payUnit.meter, {
+      isFolder,
+      sizeBytes: isFolder ? 0 : source.sizeBytes,
+      children: isFolder ? source.children : undefined,
+    })
+    if (units != null) description.sourceUnits = units
+  } else {
+    // Пустые поля честнее унаследованных: машина не должна видеть оси, которые
+    // сайт не признал.
+    delete description.payBase
+    delete description.payMeter
+  }
+
   const payload: Record<string, unknown> = {
     schemaVersion: 1,
     processingQueue: steps.map((s) => s.id),
@@ -383,7 +457,7 @@ export function buildTaskPayload(input: {
   const mainStep = (payload.mainSearch ?? {}) as Record<string, unknown>
   payload.mainSearch = { ...mainStep, output: [source] }
 
-  return { ok: true, payload: payload as TaskPayload, searchExts }
+  return { ok: true, payload: payload as TaskPayload, searchExts, payUnit }
 }
 
 /** Подходит ли файл под типы, которые ищет граф. */

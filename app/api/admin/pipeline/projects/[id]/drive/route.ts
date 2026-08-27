@@ -17,7 +17,7 @@ type RouteContext = { params: Promise<{ id: string }> }
  * поэтому findProjectById, а не findProjectForUser.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params

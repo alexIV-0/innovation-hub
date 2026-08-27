@@ -1,4 +1,5 @@
 "use client"
+import { isElevated } from "@/lib/admin-roles"
 
 import { Activity, Film, Lightbulb, Users } from "lucide-react"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
@@ -21,7 +22,7 @@ export function OverviewStats() {
   const publishedVideos = videos.filter((v) => v.isPublished).length
   const publishedIdeas = ideas.filter((i) => i.isPublished).length
   const activeUsers = users.filter((u) => u.isActive).length
-  const admins = users.filter((u) => u.role === "ADMIN").length
+  const admins = users.filter((u) => isElevated(u.role)).length
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

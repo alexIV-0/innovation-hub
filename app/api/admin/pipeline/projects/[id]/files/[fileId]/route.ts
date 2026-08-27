@@ -28,7 +28,7 @@ type RouteContext = {
  * Без проверки это был бы чтение любого объекта бакета по произвольному пути.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const { id, fileId } = await context.params

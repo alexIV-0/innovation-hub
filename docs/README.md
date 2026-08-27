@@ -7,6 +7,12 @@
 права, хранилище, конвейер, инструменты, статистика, интеграции, правила
 интерфейса, эксплуатация. Плюс разбор дублирований и того, что стоит улучшить.
 
+**[TOOLS_DEV_GUIDE.md](./TOOLS_DEV_GUIDE.md) — как разработать инструмент для сайта.**
+Что добавить, чтобы инструмент появился в каталоге; чем он имеет право дотянуться до
+данных пользователя (проекты, файлы, описание, параметры обработки, чат, статистика);
+дизайнерская база и каркас; свои серверные роуты; отдельно — что нужно решить для
+админских инструментов, которым положен доступ к проектам любого пользователя.
+
 **[CLEANUP_PLAN.md](./CLEANUP_PLAN.md) — задание на чистку.**
 Четыре задачи: свести две поверхности storage API, убрать «Идеи», убрать старую
 генерацию экранов кабинета, убрать наследие Google Drive. С доказательствами,
@@ -32,6 +38,7 @@
 | [DESCRIPTION_FORMAT.md](./DESCRIPTION_FORMAT.md) | формат `options/description.md`, палитра, схема санитайза |
 | [DIALOG_FORMAT.md](./DIALOG_FORMAT.md) | формат `dialog.json` для редактора титров |
 | [SRT_EDITOR.md](./SRT_EDITOR.md) | устройство редактора титров + контракт папки задачи в `OUT` |
+| [VOICE_OVER.md](./VOICE_OVER.md) | устройство инструмента озвучки: тейки, генерация, подгонка, экспорт |
 | [PIPELINE.md](./PIPELINE.md) | конвейер: контракт с машинами, статусы, прогресс |
 
 Эталоны для сверки: [description.example.md](./description.example.md),
@@ -58,7 +65,10 @@
 | [STATISTICS_PLAN.md](./STATISTICS_PLAN.md) | статистика — выполнен частично 🟡 |
 | [PROJECT_OPTIONS_PANEL.md](./PROJECT_OPTIONS_PANEL.md) | что клиент правит сам — выполнен |
 | [TOOLS_SRT_EDITOR_PLAN.md](./TOOLS_SRT_EDITOR_PLAN.md) | раздел «Инструменты» — выполнен частично |
+| [TOOLS_VOICEOVER_PLAN.md](./TOOLS_VOICEOVER_PLAN.md) | инструмент озвучки — выполнен, кроме провайдера синтеза 🟡 |
 | [SOCIAL_POSTING_PLAN.md](./SOCIAL_POSTING_PLAN.md) | автопостинг — не реализовано ⬜ |
+| [BILLING_AND_TRIAL_PLAN.md](./BILLING_AND_TRIAL_PLAN.md) | баланс, тарификация, тестовый период — общий план к обсуждению ⬜ |
+| [ADMIN_ROLES_PLAN.md](./ADMIN_ROLES_PLAN.md) | суперадмин, теги прав, журнал действий — код готов, миграции не применены 🟡 |
 | [FOLDER_STATE_SSOT_PLAN.md](./FOLDER_STATE_SSOT_PLAN.md) | источник правды для тумблера — решение принято и реализовано |
 | [PROJECT_STATE_DB_S3_PROPOSAL.md](./PROJECT_STATE_DB_S3_PROPOSAL.md) | Postgres + S3 вместо файла на Drive — реализовано |
 

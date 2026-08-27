@@ -2,10 +2,19 @@ import { cache } from "react"
 import { cookies } from "next/headers"
 import { NextResponse, type NextRequest } from "next/server"
 import { findUserById } from "@/lib/repositories/users"
+import { listCapabilitiesFor } from "@/lib/repositories/admin-capabilities"
+import {
+  hasCapability,
+  type AdminCapability,
+} from "@/lib/admin-capabilities"
+import type { UserRecord, UserRole } from "@/lib/domain-types"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
+import { isElevated, isSuperAdmin } from "@/lib/admin-roles"
 
 // React.cache dedupes the JWT verify + DB lookup within a single render
 // pass, so layout + page calling getCurrentUser costs one query, not two.
+export type CurrentUser = UserRecord & { capabilities: AdminCapability[] }
+
 export const getCurrentUser = cache(async () => {
   const cookieStore = await cookies()
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value
@@ -14,13 +23,26 @@ export const getCurrentUser = cache(async () => {
   const session = await verifySessionToken(token)
   if (!session?.userId) return null
 
-  return findUserById(session.userId)
+  const user = await findUserById(session.userId)
+  if (!user) return null
+
+  // Теги спрашиваем только у тех, у кого они вообще что-то значат: у обычного
+  // пользователя их нет, суперадмину они не проверяются. Лишний запрос на
+  // каждый рендер кабинета — не то, за что стоит платить.
+  const capabilities =
+    isElevated(user.role) && !isSuperAdmin(user.role)
+      ? await listCapabilitiesFor(user.id)
+      : []
+
+  return { ...user, capabilities }
 })
 
 export type AuthenticatedApiUser = {
   userId: string
   email: string
-  role: import("@/lib/domain-types").UserRole
+  role: UserRole
+  /** Пусто у всех, кроме админа: суперадмину теги не проверяются. */
+  capabilities: AdminCapability[]
 }
 
 /** Any signed-in active user (not admin-only). */
@@ -51,10 +73,37 @@ export async function requireUserApi(
     )
   }
 
-  return { userId: user.id, email: user.email, role: user.role }
+  const capabilities =
+    isElevated(user.role) && !isSuperAdmin(user.role)
+      ? await listCapabilitiesFor(user.id)
+      : []
+
+  return { userId: user.id, email: user.email, role: user.role, capabilities }
 }
 
-export async function requireAdminApi(request: NextRequest) {
+export type AuthenticatedAdmin = {
+  userId: string
+  email: string
+  role: UserRole
+  capabilities: AdminCapability[]
+}
+
+/**
+ * Гвард админских роутов.
+ *
+ * Второй аргумент обязателен намеренно, без умолчания. Это единственное, что
+ * защищает модель прав от гниения: новый роут в /api/admin/* без решения о теге
+ * просто не соберётся, и автору придётся выбрать. С умолчанием через полгода
+ * половина роутов оказалась бы в категории «доступно всем», и никто бы этого не
+ * заметил.
+ *
+ * Машинные поверхности сюда не ходят и тегов не имеют — они авторизуются
+ * протоколом (lib/storage/auth.ts). См. docs/ADMIN_ROLES_PLAN.md §7.
+ */
+export async function requireAdminApi(
+  request: NextRequest,
+  capability: AdminCapability,
+): Promise<AuthenticatedAdmin | NextResponse> {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value
   if (!token) {
     return NextResponse.json({ message: "Unauthorized." }, { status: 401 })
@@ -70,11 +119,27 @@ export async function requireAdminApi(request: NextRequest) {
     return NextResponse.json({ message: "Account is inactive." }, { status: 403 })
   }
 
-  if (user.role !== "ADMIN") {
+  if (!isElevated(user.role)) {
     return NextResponse.json({ message: "Admin access required." }, { status: 403 })
+  }
+
+  const capabilities = isSuperAdmin(user.role)
+    ? []
+    : await listCapabilitiesFor(user.id)
+
+  if (!hasCapability(user.role, capabilities, capability)) {
+    return NextResponse.json(
+      { message: "You don't have access to this section." },
+      { status: 403 },
+    )
   }
 
   // email нужен там, где запись помечается автором — siteUpdatedBy() в сайдкарах
   // проекта пишет, кто именно менял состояние.
-  return { userId: user.id, email: user.email }
+  return {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    capabilities,
+  }
 }

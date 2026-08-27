@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { USER_ROLES } from "@/lib/admin-roles"
 
 /**
  * Admin payloads can carry either:
@@ -90,7 +91,7 @@ export const userCreateSchema = z.object({
     .string()
     .min(8, "Password must be at least 8 characters.")
     .max(72, "Password must be at most 72 characters."),
-  role: z.enum(["USER", "ADMIN"]).default("USER"),
+  role: z.enum(USER_ROLES).default("USER"),
   isActive: z.boolean().default(true),
 })
 
@@ -100,6 +101,6 @@ export const userUpdateSchema = z.object({
   fullName: z.string().min(2).max(120).optional(),
   email: z.string().email().max(254).optional(),
   password: z.string().min(8).max(72).optional(),
-  role: z.enum(["USER", "ADMIN"]).optional(),
+  role: z.enum(USER_ROLES).optional(),
   isActive: z.boolean().optional(),
 })

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
+import { isElevated } from "@/lib/admin-roles"
 
 /**
  * Disable HTML caching ONLY for the admin surface — the public marketing
@@ -29,7 +30,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const session = await verifySessionToken(token)
-  if (!session?.userId || session.role !== "ADMIN") {
+  if (!session?.userId || !isElevated(session.role)) {
     return redirectTo(request, "/")
   }
 

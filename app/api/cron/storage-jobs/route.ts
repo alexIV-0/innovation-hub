@@ -3,6 +3,7 @@ import { requireUserApi } from "@/lib/admin-auth"
 import { processQueuedJobs } from "@/lib/storage/job-runner"
 import { purgeDeletedProjects } from "@/lib/storage/project-trash"
 import { purgeExpiredTrash } from "@/lib/storage/trash"
+import { isElevated } from "@/lib/admin-roles"
 
 export const runtime = "nodejs"
 
@@ -13,7 +14,7 @@ async function authorize(request: NextRequest): Promise<NextResponse | null> {
 
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
-  if (auth.role !== "ADMIN") {
+  if (!isElevated(auth.role)) {
     return NextResponse.json({ message: "Forbidden." }, { status: 403 })
   }
   return null

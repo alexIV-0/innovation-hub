@@ -109,13 +109,21 @@ export async function listUsersByIds(ids: string[]): Promise<UserRecord[]> {
   return result.rows
 }
 
-/** Counts active admins, optionally excluding a given user id. */
+/**
+ * Сколько активных аккаунтов с доступом в админку, кроме указанного.
+ *
+ * Считает ОБЕ верхние ступени: инвариант этапа 1 — «админка не должна стать
+ * недостижимой», а для этого годится любой из них. На этапе 3, когда роли
+ * начнёт раздавать только суперадмин, рядом появится отдельный
+ * countActiveSuperAdmins с более узким условием: последний суперадмин не
+ * должен уходить, даже если обычные админы в системе остаются.
+ */
 export async function countActiveAdmins(excludeUserId?: string): Promise<number> {
   if (excludeUserId) {
     const result = await query<{ count: number }>(
       `SELECT COUNT(*)::int AS count
          FROM users
-        WHERE role = 'ADMIN' AND is_active = TRUE AND id <> $1`,
+        WHERE role IN ('ADMIN', 'SUPERADMIN') AND is_active = TRUE AND id <> $1`,
       [excludeUserId],
     )
     return result.rows[0]?.count ?? 0
@@ -123,7 +131,35 @@ export async function countActiveAdmins(excludeUserId?: string): Promise<number>
   const result = await query<{ count: number }>(
     `SELECT COUNT(*)::int AS count
        FROM users
-      WHERE role = 'ADMIN' AND is_active = TRUE`,
+      WHERE role IN ('ADMIN', 'SUPERADMIN') AND is_active = TRUE`,
+  )
+  return result.rows[0]?.count ?? 0
+}
+
+/**
+ * Сколько активных суперадминов, кроме указанного.
+ *
+ * Отдельно от countActiveAdmins, потому что инварианты разные и первый второго
+ * не заменяет. «Админка достижима» выполняется и одними админами; «роли и права
+ * есть кому раздать» — только суперадмином. Уйди последний, и понизить кого-то
+ * обратно будет некому: изнутри система в таком состоянии не разблокируется.
+ */
+export async function countActiveSuperAdmins(
+  excludeUserId?: string,
+): Promise<number> {
+  if (excludeUserId) {
+    const result = await query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count
+         FROM users
+        WHERE role = 'SUPERADMIN' AND is_active = TRUE AND id <> $1`,
+      [excludeUserId],
+    )
+    return result.rows[0]?.count ?? 0
+  }
+  const result = await query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count
+       FROM users
+      WHERE role = 'SUPERADMIN' AND is_active = TRUE`,
   )
   return result.rows[0]?.count ?? 0
 }

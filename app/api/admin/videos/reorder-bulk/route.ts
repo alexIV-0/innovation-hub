@@ -5,7 +5,7 @@ import { reorderBulkSchema } from "@/lib/admin-schemas"
 import { reorderVideosBulk } from "@/lib/repositories/videos"
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "content.manage")
   if (auth instanceof NextResponse) return auth
 
   const payload = await request.json().catch(() => null)

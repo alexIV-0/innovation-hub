@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { auditFrom } from "@/lib/audit"
+import { isElevated, isSuperAdmin } from "@/lib/admin-roles"
 import { userCreateSchema } from "@/lib/admin-schemas"
 import { hashPassword } from "@/lib/auth"
 import {
@@ -11,7 +13,7 @@ import {
 import { syncUserMeta } from "@/lib/project-storage"
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "users.read")
   if (auth instanceof NextResponse) return auth
 
   const users = await listUsers()
@@ -19,7 +21,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "users.manage")
   if (auth instanceof NextResponse) return auth
 
   const payload = await request.json()
@@ -29,6 +31,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { message: "Invalid user payload.", errors: parsed.error.flatten() },
       { status: 400 },
+    )
+  }
+
+  // Завести админа — та же раздача доступа, что и повышение существующего.
+  // Без этой проверки запрет на повышение обходился бы созданием нового.
+  if (isElevated(parsed.data.role) && !isSuperAdmin(auth.role)) {
+    return NextResponse.json(
+      { message: "Only a superadmin can create an admin." },
+      { status: 403 },
     )
   }
 
@@ -53,6 +64,14 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       email: user.email,
       createdAt: user.createdAt.toISOString(),
+    })
+
+    await auditFrom(request, auth)({
+      action: "user.created",
+      targetType: "user",
+      targetId: user.id,
+      targetLabel: user.email,
+      meta: { role: user.role, isActive: parsed.data.isActive },
     })
 
     // createUser doesn't take isActive (DB default = TRUE) — branch into a

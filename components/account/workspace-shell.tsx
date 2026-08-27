@@ -1,4 +1,5 @@
 "use client"
+import { isElevated } from "@/lib/admin-roles"
 
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
@@ -36,7 +37,9 @@ import {
   adminNavItems,
   adminStandaloneItems,
   isItemActive,
+  visibleNavItems,
 } from "@/components/admin/shell/nav-config"
+import type { AdminCapability } from "@/lib/admin-capabilities"
 
 /** Ширины боковой панели: свёрнутая, развёрнутая по умолчанию и минимум развёрнутой. */
 const SIDEBAR_COLLAPSED = 72
@@ -65,6 +68,8 @@ export type WorkspaceUser = {
   email: string
   fullName: string
   role: UserRole
+  /** Теги админа: по ним фильтруется свёртка «Админка» в боковом меню. */
+  capabilities: AdminCapability[]
   balanceCents: number
 }
 
@@ -297,7 +302,7 @@ function SidebarContent({
       <div className="flex-1" />
 
       <nav className="flex shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-2">
-        {user.role === "ADMIN" && (
+        {isElevated(user.role) && (
           <div className="flex flex-col gap-0.5">
             {/* Отбивка: админская зона отделена от рабочего места */}
             <div
@@ -306,7 +311,7 @@ function SidebarContent({
                 collapsed ? "mx-1" : "mx-2.5",
               )}
             />
-            {adminStandaloneItems.map((item) => {
+            {visibleNavItems(adminStandaloneItems, user.role, user.capabilities).map((item) => {
               const Icon = item.icon
               return (
                 <div key={item.href} onClick={onNavigate}>
@@ -364,7 +369,7 @@ function SidebarContent({
                 </button>
                 {adminOpen && (
                   <div className="ml-4 flex flex-col gap-0.5 border-l border-white/10 pl-2">
-                    {adminNavItems.map((item) => {
+                    {visibleNavItems(adminNavItems, user.role, user.capabilities).map((item) => {
                       const Icon = item.icon
                       return (
                         <div key={item.href} onClick={onNavigate}>
@@ -466,11 +471,18 @@ function WorkspaceShellInner({
   email,
   fullName,
   role,
+  capabilities,
   balanceCents,
   children,
 }: ShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const user: WorkspaceUser = { email, fullName, role, balanceCents }
+  const user: WorkspaceUser = {
+    email,
+    fullName,
+    role,
+    capabilities,
+    balanceCents,
+  }
   const { t } = useI18n()
   const pathname = usePathname()
   const searchParams = useSearchParams()

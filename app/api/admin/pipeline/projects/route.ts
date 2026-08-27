@@ -12,7 +12,7 @@ export const runtime = "nodejs"
  * проект принадлежит владельцу, а кто ещё с ним работает — не вопрос конвейера.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   const userId = request.nextUrl.searchParams.get("userId")

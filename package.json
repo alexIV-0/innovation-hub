@@ -15,6 +15,7 @@
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:migrate:status": "node scripts/db-migrate.mjs --status",
     "db:check": "node scripts/db-check.mjs",
+    "billing:templates-account": "node scripts/billing-templates-account.mjs",
     "db:restore": "node scripts/db-restore.mjs",
     "drive:oauth": "node scripts/google-drive-oauth.mjs",
     "drive:provision-users": "node scripts/drive-provision-users.mjs",

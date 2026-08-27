@@ -12,7 +12,7 @@ export const runtime = "nodejs"
  * машину», и разделять их в интерфейсе значило бы навязывать ему устройство бэкенда.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request)
+  const auth = await requireAdminApi(request, "pipeline.operate")
   if (auth instanceof NextResponse) return auth
 
   return NextResponse.json({ tokens: await listAccessTokens() })

@@ -339,8 +339,11 @@ export type AccessToken = {
   projectId: string | null
   createdAt: string
   machines: TokenMachine[]
-  /** Обновить и отозвать можно только выданный нами токен компьютера. */
-  canManage: boolean
+  /**
+   * Выпустить новое значение взамен старого умеет только токен компьютера: у
+   * `mch_` мы храним один хеш и показать замену нам нечем. Отзыв есть у обоих.
+   */
+  canRotate: boolean
 }
 
 function deriveWorkerState(input: {
@@ -452,7 +455,7 @@ export async function listAccessTokens(): Promise<AccessToken[]> {
     projectId: token.projectId,
     createdAt: token.createdAt.toISOString(),
     machines: byToken.get(token.id) ?? [],
-    canManage: false,
+    canRotate: false,
   }))
 
   // Токены rc_: сам компьютер и есть единственная машина под своим токеном.
@@ -466,7 +469,7 @@ export async function listAccessTokens(): Promise<AccessToken[]> {
       projectId: null,
       createdAt: row.createdAt.toISOString(),
       machines: [toMachine(row)],
-      canManage: true,
+      canRotate: true,
     }))
 
   return [...computerTokens, ...machineTokens]

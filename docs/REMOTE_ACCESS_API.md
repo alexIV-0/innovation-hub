@@ -41,6 +41,7 @@
 | `PATCH` | `/api/admin/computers/:id` | Имя / описание |
 | `DELETE` | `/api/admin/computers/:id` | Отозвать |
 | `POST` | `/api/admin/computers/:id/rotate-token` | Новый токен once |
+| `DELETE` | `/api/admin/machines/:id` | Отозвать `mch_`-токен пользователя вместе с машинами под ним. Ротации у него нет: значение показывалось один раз при выпуске |
 
 ---
 

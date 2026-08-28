@@ -1,6 +1,12 @@
 import { query } from "@/lib/db"
 import { rateForPair } from "@/lib/billing/settings"
-import type { BillingSettings, PayBase, PayMeter, PayPair } from "@/lib/billing/types"
+import {
+  BYTES_PER_UNIT,
+  type BillingSettings,
+  type PayBase,
+  type PayMeter,
+  type PayPair,
+} from "@/lib/billing/types"
 
 /**
  * Во что обойдётся элемент — до того, как его обработали.
@@ -50,9 +56,12 @@ export function exactUnits(
     return item.isFolder ? (item.children?.length ?? 0) : 1
   }
   if (meter === "bytes") {
-    return item.isFolder
+    // Ставка задаётся за мегабайт: в копейках за байт она округлилась бы до
+    // нуля, и объём стал бы бесплатным.
+    const bytes = item.isFolder
       ? (item.children ?? []).reduce((sum, c) => sum + c.sizeBytes, 0)
       : item.sizeBytes
+    return bytes / BYTES_PER_UNIT
   }
   // source × sec — нужен srcSec, поле схемы v2 архива. Заранее не знаем.
   return null

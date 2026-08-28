@@ -61,10 +61,11 @@ export function startStatsLoop() {
       // упавшее списание не должно мешать импорту, а пропущенное подхватится
       // следующим часом.
       const settled = await settleUnbilled()
-      if (settled.charged > 0 || settled.errors > 0) {
+      if (settled.charged > 0 || settled.errors > 0 || settled.awaitingSrcSec > 0) {
         console.log(
           `[billing] settle: ${settled.charged} charged, ${settled.exempt} exempt, ` +
-            `${settled.skipped} skipped, ${settled.errors} errors`,
+            `${settled.skipped} skipped, ${settled.awaitingSrcSec} awaiting srcSec, ` +
+            `${settled.errors} errors`,
         )
       }
       const expired = await closeExpiredGrants()

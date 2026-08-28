@@ -7,6 +7,7 @@ import { readLatestRate } from "@/lib/billing/rates"
 import { rateForPair } from "@/lib/billing/settings"
 import { readBillingSettings } from "@/lib/billing/settings"
 import {
+  BYTES_PER_UNIT,
   breakdownTotal,
   isPayBase,
   isPayMeter,
@@ -37,6 +38,8 @@ export type SettleResult = {
   charged: number
   exempt: number
   skipped: number
+  /** Ждут поля `srcSec` от машины — не ошибка, но и не «бесплатно». */
+  awaitingSrcSec: number
   errors: number
 }
 
@@ -49,12 +52,15 @@ type UnbilledRow = {
   payGrantId: string | null
   status: string
   outSec: number | null
+  srcSec: number | null
   renderSec: number | null
   outCount: number
   totalCost: string | null
   payBase: string | null
   payMeter: string | null
   sourceUnits: string | null
+  /** Логические пути результата, присланные машиной в taskDone. */
+  outFiles: string[] | null
 }
 
 /**
@@ -75,12 +81,14 @@ async function listUnbilled(limit: number): Promise<UnbilledRow[]> {
             t.pay_grant_id           AS "payGrantId",
             ps.status,
             ps.out_sec               AS "outSec",
+            ps.src_sec               AS "srcSec",
             ps.render_sec            AS "renderSec",
             COALESCE(jsonb_array_length(ps.out_paths), 0) AS "outCount",
             ps.total_cost::text      AS "totalCost",
             t.payload #>> '{description,payBase}'  AS "payBase",
             t.payload #>> '{description,payMeter}' AS "payMeter",
-            t.payload #>> '{description,sourceUnits}' AS "sourceUnits"
+            t.payload #>> '{description,sourceUnits}' AS "sourceUnits",
+            t.payload -> 'outFiles' AS "outFiles"
        FROM processing_stats ps
        JOIN tasks t    ON t.id = ps.item_id
        JOIN projects p ON p.id = t.project_id
@@ -99,15 +107,62 @@ async function listUnbilled(limit: number): Promise<UnbilledRow[]> {
 /**
  * Количество единиц по факту.
  *
- * `source × sec` здесь отсутствует намеренно: `srcSec` — поле схемы v2, и пока
- * машина его не шлёт, такая пара до списания не доходит (её отсекает белый
- * список в lib/billing/pay-unit.ts).
+ * `source × sec` берётся из `srcSec` — поля схемы v2. Пока машина его не шлёт,
+ * значение приходит пустым: тогда возвращаем `null`, и обработка остаётся
+ * несписанной до появления поля. Списать её нулём было бы хуже — забытая
+ * правка в программе выглядела бы как решение раздавать бесплатно.
  */
+/**
+ * Объём результата — из КАТАЛОГА, а не из архива.
+ *
+ * В строке архива размеров выходных файлов нет, зато `taskDone` присылает их
+ * логические пути (`OUT/08 August/clip.mp4`), а сами файлы машина заливает в
+ * хранилище — значит размеры лежат в `project_files`. Сопоставляем по пути.
+ *
+ * Недостающая строка (файл удалили) в сумму не попадает: считать по тому, чего
+ * уже нет, мы всё равно не можем, а выдумывать размер — хуже, чем недосчитать.
+ */
+async function outputBytes(
+  projectId: string,
+  outFiles: string[] | null,
+): Promise<number | null> {
+  if (!outFiles || outFiles.length === 0) return null
+
+  const folders: string[] = []
+  const names: string[] = []
+  for (const path of outFiles) {
+    const clean = String(path).replace(/^\/+/, "")
+    const cut = clean.lastIndexOf("/")
+    folders.push(cut < 0 ? "" : clean.slice(0, cut))
+    names.push(cut < 0 ? clean : clean.slice(cut + 1))
+  }
+
+  const result = await query<{ bytes: string }>(
+    `SELECT COALESCE(SUM(f.size_bytes), 0)::text AS bytes
+       FROM project_files f
+       JOIN unnest($2::text[], $3::text[]) AS want(folder, name)
+         ON lower(f.folder_path) = lower(want.folder)
+        AND lower(f.name) = lower(want.name)
+      WHERE f.project_id = $1
+        AND f.is_folder = FALSE
+        AND f.deleted_at IS NULL`,
+    [projectId, folders, names],
+  )
+  const bytes = Number(result.rows[0]?.bytes ?? 0)
+  return bytes > 0 ? bytes : null
+}
+
 function unitsFor(row: UnbilledRow, base: PayBase, meter: PayMeter | null): number | null {
   if (base === "fixed") return 1
   if (base === "output" && meter === "sec") return row.outSec ?? null
   if (base === "output" && meter === "count") return row.outCount
   if (base === "render" && meter === "sec") return row.renderSec ?? null
+  if (base === "source" && meter === "sec") return row.srcSec ?? null
+  if (base === "source" && meter === "bytes") {
+    // sourceUnits для объёма сборка уже посчитала в мегабайтах.
+    const raw = row.sourceUnits == null ? null : Number(row.sourceUnits)
+    return raw != null && Number.isFinite(raw) ? raw : null
+  }
   if (base === "source") {
     // Количество исходников сборка задачи посчитала заранее и положила в
     // description: после обработки папки в каталоге уже может не быть тех
@@ -124,6 +179,7 @@ export async function settleUnbilled(limit = SETTLE_LIMIT): Promise<SettleResult
     charged: 0,
     exempt: 0,
     skipped: 0,
+    awaitingSrcSec: 0,
     errors: 0,
   }
 
@@ -155,9 +211,20 @@ export async function settleUnbilled(limit = SETTLE_LIMIT): Promise<SettleResult
         continue
       }
 
-      const units = unitsFor(row, base, meter)
+      // Объём выхода — единственная мера, которой нет в самой строке архива:
+      // за ней надо сходить в каталог по путям из отчёта машины.
+      const units =
+        base === "output" && meter === "bytes"
+          ? await outputBytes(row.projectId, row.outFiles).then((bytes) =>
+              bytes == null ? null : bytes / BYTES_PER_UNIT,
+            )
+          : unitsFor(row, base, meter)
       if (units == null) {
-        out.skipped++
+        // Отдельный счётчик, а не общий «пропущено»: «нечем тарифицировать» и
+        // «ждём поле из программы» — разные состояния, и второе чинится не
+        // здесь.
+        if (base === "source" && meter === "sec") out.awaitingSrcSec++
+        else out.skipped++
         continue
       }
 

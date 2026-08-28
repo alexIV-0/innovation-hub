@@ -222,3 +222,111 @@ export async function closeGrant(input: {
     }
   })
 }
+
+/**
+ * Акции глазами того, кому они достались.
+ *
+ * Отдельно от `listGrantsFor`: там строка гранта как она лежит в базе, здесь —
+ * ответ на вопросы, которые задаёт человек в кабинете: сколько дали, сколько
+ * съедено, до какого числа и где этим можно платить. Считается по ленте, а не
+ * счётчиком: у каждой транзакции есть `grant_id`, и разъехаться сумме не с чем.
+ */
+export type AccountPromo = {
+  grantId: string
+  kind: GrantKind
+  status: GrantStatus
+  amountCents: number
+  /**
+   * Потрачено по подарку — только списания. Погашенный при закрытии хвост сюда
+   * не входит: человек его не тратил, и записать это в «потрачено» значило бы
+   * соврать ему в лицо.
+   */
+  spentCents: number
+  /** Остаток по ленте. У закрытого подарка — ноль. */
+  remainingCents: number
+  /** Хвост, сгоревший при закрытии: не успели потратить. */
+  burnedCents: number
+  createdAt: Date
+  expiresAt: Date | null
+  comment: string
+  /**
+   * Привязан ли подарок к проектам вообще. Отдельно от списка ниже: проект
+   * могли удалить, и тогда список пуст, а подарок всё равно НЕ «в любом
+   * проекте» — сказать обратное значило бы пообещать деньги, которыми нигде не
+   * заплатишь.
+   */
+  scoped: boolean
+  /** Где действует. Пусто при `scoped: false` — в любом проекте владельца. */
+  projects: { id: string; name: string }[]
+}
+
+export async function listAccountPromos(userId: string): Promise<AccountPromo[]> {
+  const result = await query<{
+    grantId: string
+    kind: GrantKind
+    status: GrantStatus
+    amountCents: string
+    spentCents: string
+    remainingCents: string
+    createdAt: Date
+    expiresAt: Date | null
+    comment: string
+    scoped: boolean
+    projects: { id: string; name: string }[] | null
+  }>(
+    `SELECT g.id AS "grantId",
+            g.kind,
+            g.status,
+            g.amount_cents::text AS "amountCents",
+            COALESCE((
+              SELECT -SUM(b.amount_cents) FROM billing_transactions b
+               WHERE b.grant_id = g.id AND b.kind = 'charge'
+            ), 0)::text AS "spentCents",
+            COALESCE((
+              SELECT SUM(b.amount_cents) FROM billing_transactions b
+               WHERE b.grant_id = g.id
+            ), 0)::text AS "remainingCents",
+            g.created_at AS "createdAt",
+            g.expires_at AS "expiresAt",
+            g.comment,
+            EXISTS (
+              SELECT 1 FROM billing_grant_projects gp WHERE gp.grant_id = g.id
+            ) AS "scoped",
+            COALESCE((
+              SELECT json_agg(json_build_object('id', p.id, 'name', p.name)
+                              ORDER BY p.name)
+                FROM billing_grant_projects gp
+                JOIN projects p ON p.id = gp.project_id
+               WHERE gp.grant_id = g.id
+                 AND p.deleted_at IS NULL
+            ), '[]'::json) AS projects
+       FROM billing_grants g
+      WHERE g.user_id = $1
+      -- Действующие сверху: закрытые остаются историей, а не поводом искать
+      -- живой подарок в конце списка.
+      ORDER BY (g.status = 'active') DESC, g.created_at DESC`,
+    [userId],
+  )
+
+  return result.rows.map((row) => {
+    const amountCents = Number(row.amountCents)
+    const spentCents = Number(row.spentCents)
+    const remainingCents = Number(row.remainingCents)
+    return {
+      grantId: row.grantId,
+      kind: row.kind,
+      status: row.status,
+      amountCents,
+      spentCents,
+      remainingCents,
+      // Ноль, а не отрицательное: пока грант не активирован, начисления ещё нет,
+      // и «сгоревшим» его хвост назвать нельзя.
+      burnedCents: Math.max(0, amountCents - spentCents - remainingCents),
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt,
+      comment: row.comment,
+      scoped: row.scoped,
+      projects: row.projects ?? [],
+    }
+  })
+}

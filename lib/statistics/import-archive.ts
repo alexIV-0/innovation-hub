@@ -49,6 +49,8 @@ type StatsRowInput = {
   startedAt: string | null
   endedAt: string | null
   outSec: number | null
+  /** Хронометраж исходника — поле схемы v2. У строк v1 отсутствует. */
+  srcSec: number | null
   renderSec: number | null
   outPaths: string
   totalCost: number | null
@@ -174,6 +176,7 @@ function parseLine(
     startedAt: asTimestamp(d.startedAt),
     endedAt: asTimestamp(d.endedAt),
     outSec: asInt4(d.outSec),
+    srcSec: asInt4(d.srcSec),
     renderSec: asInt4(d.renderSec),
     outPaths: JSON.stringify(outPaths),
     totalCost: asCost(d.totalCost),
@@ -234,6 +237,7 @@ async function insertBatch(rows: StatsRowInput[]): Promise<number> {
       r.startedAt,
       r.endedAt,
       r.outSec,
+      r.srcSec,
       r.renderSec,
       r.outPaths,
       r.totalCost,
@@ -242,14 +246,15 @@ async function insertBatch(rows: StatsRowInput[]): Promise<number> {
     const p = (offset: number) => `$${start + offset}`
     return `(${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)}, ${p(6)}, ${p(7)}, ${p(8)}, ${p(9)},
              ${p(10)}::timestamptz, ${p(11)}::timestamptz, ${p(12)}::timestamptz,
-             ${p(13)}::int, ${p(14)}::int, ${p(15)}::jsonb, ${p(16)}::numeric, ${p(17)})`
+             ${p(13)}::int, ${p(14)}::int, ${p(15)}::int, ${p(16)}::jsonb,
+             ${p(17)}::numeric, ${p(18)})`
   })
 
   const result = await query(
     `INSERT INTO processing_stats (
        item_id, project_id, schema_version, status, project_name, main_folder,
        cur_item, in_type, out_type, registered_at, started_at, ended_at,
-       out_sec, render_sec, out_paths, total_cost, machine
+       out_sec, src_sec, render_sec, out_paths, total_cost, machine
      ) VALUES ${tuples.join(", ")}
      ON CONFLICT (item_id) DO NOTHING`,
     params,

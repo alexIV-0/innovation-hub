@@ -23,6 +23,7 @@ export const AUDIT_ACTIONS = [
   "computer.created",
   "computer.token_rotated",
   "computer.revoked",
+  "machine_token.revoked",
   "settings.updated",
   "project.deleted",
 ] as const

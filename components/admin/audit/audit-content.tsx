@@ -103,6 +103,11 @@ const ACTION_META: Record<
     icon: Monitor,
     tone: "neutral",
   },
+  "machine_token.revoked": {
+    labelKey: "auditMachineTokenRevoked",
+    icon: KeyRound,
+    tone: "access",
+  },
   "settings.updated": {
     labelKey: "auditSettingsUpdated",
     icon: Settings2,

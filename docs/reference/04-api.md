@@ -42,6 +42,10 @@
 | `/api/account/statistics` | GET | user | Полная статистика со скоупом «только своё». Оси — в query (`breakdown`, `period`, `userId`, `projectId`). |
 | `/api/account/machine-tokens` | GET, POST, DELETE | user | Токены `mch_…`. Сырой токен показывается один раз. Отзыв токена отзывает и машины, ходившие под ним. |
 | `/api/account/push-subscription` | POST, DELETE | user | Регистрация / снятие подписки Web Push. |
+| `/api/account/balance` | GET | user | Кошельки, доступное с учётом резерва и «на что ещё хватит» по мерам (видео, файлы, объём, запуски). Питает виджет баланса и разбор на кошельке. |
+| `/api/account/spending` | GET | user | Расход за период: итоги, лента по дням, разрез по проектам и по заливщикам. `?period=day\|week\|month\|year`, `?projectId=`. |
+| `/api/account/trial` | GET, POST | user | Состояние тестового периода и его активация. POST отвечает `202`: пробные проекты ещё копируются. |
+| `/api/account/promos` | GET | user | Акции этого человека: начислено, потрачено, остаток, срок, проекты. Плюс не взятое предложение тестового периода. |
 
 ⚠️ `stats` и `statistics` — разные вещи с почти одинаковыми именами
 (см. [14](./14-improvements.md#12-именование-путающее-эндпоинты)).
@@ -116,6 +120,7 @@
 | `/api/admin/statistics` | GET | Статистика без скоупа. |
 | `/api/admin/statistics/import` | POST | Разовый импорт архива обработок из R2. Долгий — `maxDuration` поднят. |
 | `/api/admin/machines` | GET | Токены доступа вместе с машинами под ними — один список для страницы. |
+| `/api/admin/machines/[id]` | DELETE | Отзыв `mch_`-токена админом, без проверки владельца: список общий, значит и стоп-кран общий. Машины под токеном отзываются вместе с ним. |
 | `/api/admin/computers` | GET, POST | Парк машин: список активных, регистрация. |
 | `/api/admin/computers/[id]` | PATCH, DELETE | Имя/описание; DELETE — отзыв. |
 | `/api/admin/computers/[id]/rotate-token` | POST | Ротация токена, сырой возвращается один раз. |

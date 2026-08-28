@@ -1,27 +1,34 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import { Loader2, Plus, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { formatBalance, useI18n } from "@/components/account/i18n"
+import {
+  NumberField,
+  Section,
+  centsToRubles,
+  rublesToCents,
+} from "@/components/admin/billing/fields"
+import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { cn } from "@/lib/utils"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import type { TrialSettings } from "@/lib/billing/types"
 
 /**
- * Наблюдение в «Тарифах»: пробный набор, активации, проекты без единицы.
+ * «Тестовый период» — отдельный инструмент со своим тегом `billing.trial`.
  *
- * Отдельным компонентом от формы тарифов: та про распоряжения, эта про
- * состояние. Смешав их, получим экран, где кнопка «Сохранить» относится к
- * половине содержимого.
+ * Решение «дарим ли мы новым пользователям и сколько» маркетинговое, а прайс —
+ * коммерческое, и доверять их можно разным людям. Поэтому здесь только четыре
+ * вещи: включение кнопки, сумма, срок и состав набора. Ставки — в «Тарифах», и
+ * сохранение отсюда их не трогает.
  */
 
 type TemplateRow = {
   projectId: string
   name: string
-  templateOrder: number | null
-  payBase: string | null
-  payMeter: string | null
   cost: { centsPerSec: number | null; charges: number } | null
 }
 
@@ -34,15 +41,6 @@ type ActivationRow = {
   remainingCents: number
   activatedAt: string
   registeredAt: string
-  projectCount: number
-}
-
-type UnpricedRow = { projectId: string; name: string }
-
-type Overview = {
-  templates: TemplateRow[]
-  activations: ActivationRow[]
-  unpriced: UnpricedRow[]
 }
 
 type PickRow = {
@@ -52,44 +50,31 @@ type PickRow = {
   isTemplate: boolean
 }
 
-function Panel({
-  title,
-  description,
-  children,
-}: {
-  title: string
-  description?: string
-  children: React.ReactNode
-}) {
-  return (
-    <section className="rounded-2xl border border-border/60 bg-card p-6">
-      <h2 className="text-base font-semibold text-foreground">{title}</h2>
-      {description ? (
-        <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      ) : null}
-      <div className="mt-5">{children}</div>
-    </section>
-  )
-}
-
-function Empty({ text }: { text: string }) {
-  return <p className="text-sm text-muted-foreground/80">{text}</p>
-}
-
-export function AdminBillingOverview({ className }: { className?: string }) {
+export function AdminBillingTrial() {
   const { t, lang } = useI18n()
-  const [data, setData] = useState<Overview | null>(null)
+  const [trial, setTrial] = useState<TrialSettings | null>(null)
+  const [revision, setRevision] = useState(0)
+  const [templates, setTemplates] = useState<TemplateRow[]>([])
+  const [activations, setActivations] = useState<ActivationRow[]>([])
   const [q, setQ] = useState("")
   const [picks, setPicks] = useState<PickRow[]>([])
   const [busy, setBusy] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/billing/overview", { cache: "no-store" })
+      const res = await fetch("/api/admin/billing/trial", { cache: "no-store" })
       if (!res.ok) throw new Error(String(res.status))
-      setData((await res.json()) as Overview)
+      const data = (await res.json()) as {
+        trial: TrialSettings
+        revision: number
+        templates: TemplateRow[]
+        activations: ActivationRow[]
+      }
+      setTrial(data.trial)
+      setRevision(data.revision)
+      setTemplates(data.templates)
+      setActivations(data.activations)
     } catch {
       toast.error(t.billingLoadError)
     }
@@ -99,8 +84,7 @@ export function AdminBillingOverview({ className }: { className?: string }) {
     void load()
   }, [load])
 
-  // Поиск с задержкой: экран открывают, чтобы посмотреть набор, а не искать, и
-  // запрос на каждую букву тут был бы платой ни за что.
+  // Поиск с задержкой: экран открывают, чтобы посмотреть набор, а не искать.
   useEffect(() => {
     if (q.trim().length < 2) {
       setPicks([])
@@ -121,6 +105,31 @@ export function AdminBillingOverview({ className }: { className?: string }) {
     }, 300)
     return () => clearTimeout(timer)
   }, [q])
+
+  const save = async () => {
+    if (!trial) return
+    setSaving(true)
+    try {
+      const res = await fetch("/api/admin/billing/trial", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trial, baseRevision: revision }),
+      })
+      if (res.status === 409) {
+        toast.error(t.billingConflict)
+        await load()
+        return
+      }
+      if (!res.ok) throw new Error(String(res.status))
+      const data = (await res.json()) as { revision: number }
+      setRevision(data.revision)
+      toast.success(t.billingSaved)
+    } catch {
+      toast.error(t.billingSaveError)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const setTemplate = async (projectId: string, isTemplate: boolean) => {
     setBusy(projectId)
@@ -149,22 +158,86 @@ export function AdminBillingOverview({ className }: { className?: string }) {
       day: "numeric",
     })
 
-  if (!data) {
+  if (!trial) {
     return (
-      <div className="flex min-h-[20vh] items-center justify-center text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
+      <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className={cn("space-y-8", className)}>
-      <Panel title={t.billingTemplatesTitle} description={t.billingTemplatesDesc}>
-        {data.templates.length === 0 ? (
-          <Empty text={t.billingTemplatesEmpty} />
+    <div className="space-y-8">
+      <AdminPageHeader
+        eyebrow={t.billingEyebrow}
+        title={t.adminBillingTrial}
+        description={t.adminBillingTrialDesc}
+        actions={
+          <Button onClick={save} disabled={saving}>
+            {saving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {t.billingSaving}
+              </>
+            ) : (
+              t.billingSave
+            )}
+          </Button>
+        }
+      />
+
+      <Section title={t.billingTrialTitle} description={t.billingTrialDesc}>
+        <div className="flex items-center gap-3">
+          <Switch
+            id="trial-enabled"
+            checked={trial.enabled}
+            onCheckedChange={(checked) =>
+              setTrial({ ...trial, enabled: checked })
+            }
+          />
+          <Label htmlFor="trial-enabled" className="text-sm font-normal">
+            {t.billingTrialEnabled}
+          </Label>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <NumberField
+            id="trial-amount"
+            label={t.billingTrialAmount}
+            value={centsToRubles(trial.amountCents)}
+            onChange={(next) =>
+              setTrial({ ...trial, amountCents: rublesToCents(next) ?? 0 })
+            }
+          />
+          <NumberField
+            id="trial-lifetime"
+            label={t.billingTrialLifetime}
+            hint={t.billingTrialLifetimeHint}
+            value={trial.lifetimeDays == null ? "" : String(trial.lifetimeDays)}
+            onChange={(next) => {
+              const value = Number(next.trim())
+              setTrial({
+                ...trial,
+                lifetimeDays:
+                  next.trim() && Number.isFinite(value) && value > 0
+                    ? Math.round(value)
+                    : null,
+              })
+            }}
+          />
+        </div>
+      </Section>
+
+      <Section
+        title={t.billingTemplatesTitle}
+        description={t.billingTemplatesDesc}
+      >
+        {templates.length === 0 ? (
+          <p className="text-sm text-muted-foreground/80">
+            {t.billingTemplatesEmpty}
+          </p>
         ) : (
           <ul className="divide-y divide-border/50">
-            {data.templates.map((row) => (
+            {templates.map((row) => (
               <li
                 key={row.projectId}
                 className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3"
@@ -192,11 +265,11 @@ export function AdminBillingOverview({ className }: { className?: string }) {
           </ul>
         )}
 
-        <p className="mt-4 text-xs text-muted-foreground/80">
+        <p className="text-xs text-muted-foreground/80">
           {t.billingTemplateCostHint}
         </p>
 
-        <div className="mt-5 space-y-2">
+        <div className="space-y-2">
           <div className="relative max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -209,10 +282,7 @@ export function AdminBillingOverview({ className }: { className?: string }) {
           {picks.length > 0 ? (
             <ul className="max-w-md divide-y divide-border/50 rounded-lg border border-border/60">
               {picks.map((pick) => (
-                <li
-                  key={pick.projectId}
-                  className="flex items-center gap-3 px-3 py-2"
-                >
+                <li key={pick.projectId} className="flex items-center gap-3 px-3 py-2">
                   <span className="min-w-0 flex-1 truncate text-sm">
                     {pick.name}
                     <span className="ml-2 text-xs text-muted-foreground">
@@ -235,14 +305,16 @@ export function AdminBillingOverview({ className }: { className?: string }) {
             </ul>
           ) : null}
         </div>
-      </Panel>
+      </Section>
 
-      <Panel
+      <Section
         title={t.billingActivationsTitle}
         description={t.billingActivationsDesc}
       >
-        {data.activations.length === 0 ? (
-          <Empty text={t.billingActivationsEmpty} />
+        {activations.length === 0 ? (
+          <p className="text-sm text-muted-foreground/80">
+            {t.billingActivationsEmpty}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
@@ -256,13 +328,11 @@ export function AdminBillingOverview({ className }: { className?: string }) {
                     {t.billingActivationActivated}
                   </th>
                   <th className="pb-2 font-medium">{t.billingActivationLeft}</th>
-                  <th className="pb-2 font-medium">
-                    {t.billingActivationStatus}
-                  </th>
+                  <th className="pb-2 font-medium">{t.billingActivationStatus}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {data.activations.map((row) => (
+                {activations.map((row) => (
                   <tr key={row.grantId}>
                     <td className="py-2.5 pr-4">
                       <div className="truncate text-foreground">{row.email}</div>
@@ -291,30 +361,7 @@ export function AdminBillingOverview({ className }: { className?: string }) {
             </table>
           </div>
         )}
-      </Panel>
-
-      <Panel title={t.billingUnpricedTitle} description={t.billingUnpricedDesc}>
-        {data.unpriced.length === 0 ? (
-          <Empty text={t.billingUnpricedEmpty} />
-        ) : (
-          <ul className="divide-y divide-border/50">
-            {data.unpriced.slice(0, 50).map((row) => (
-              <li
-                key={row.projectId}
-                className="flex items-center justify-between gap-4 py-2.5"
-              >
-                <span className="min-w-0 flex-1 truncate text-sm">{row.name}</span>
-                <Link
-                  href="/admin/pipeline"
-                  className="shrink-0 text-xs text-primary hover:underline"
-                >
-                  {t.billingUnpricedOpen}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
+      </Section>
     </div>
   )
 }

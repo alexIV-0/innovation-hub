@@ -1,12 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
-import { billingSettingsWriteSchema } from "@/lib/billing/schemas"
+import { billingRulesWriteSchema } from "@/lib/billing/schemas"
+import { readLatestRate } from "@/lib/billing/rates"
 import { readBillingSettings, writeBillingSettings } from "@/lib/billing/settings"
 
 export const runtime = "nodejs"
 
 /**
- * Тарифы: ставки, маржа, пороги, овердрафт, тестовый период, рубильник.
+ * Тарифы: ставки, маржа, курс, пороги, овердрафт, рубильник.
+ *
+ * Тестовый период сюда НЕ входит — у него свой тег и свой роут
+ * (`/api/admin/billing/trial`). Запись здесь его поля не трогает: документ
+ * настроек один, но распоряжаются им двое.
  *
  * Один документ, а не таблица ставок: это одно распоряжение, и меняется оно
  * целиком. Ревизия — оптимистическая блокировка, тот же приём, что у общих
@@ -18,14 +23,17 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth
 
   const { settings, revision } = await readBillingSettings()
-  return NextResponse.json({ settings, revision })
+  // Курс отдаём вместе с настройками: увидеть, по какому именно числу сейчас
+  // пересчитывается себестоимость, важнее, чем знать, что он «где-то есть».
+  const rate = await readLatestRate(settings.vendorCurrency)
+  return NextResponse.json({ settings, revision, rate })
 }
 
 export async function PUT(request: NextRequest) {
   const auth = await requireAdminApi(request, "billing.manage")
   if (auth instanceof NextResponse) return auth
 
-  const parsed = billingSettingsWriteSchema.safeParse(await request.json())
+  const parsed = billingRulesWriteSchema.safeParse(await request.json())
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Invalid settings.", issues: parsed.error.issues },
@@ -33,8 +41,11 @@ export async function PUT(request: NextRequest) {
     )
   }
 
+  // Читаем текущее и подставляем чужую половину: тариф не должен уметь
+  // переписать период, даже случайно.
+  const current = await readBillingSettings()
   const result = await writeBillingSettings({
-    settings: parsed.data.settings,
+    settings: { ...parsed.data.settings, trial: current.settings.trial },
     baseRevision: parsed.data.baseRevision,
     actorUserId: auth.userId,
   })

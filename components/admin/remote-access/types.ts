@@ -27,6 +27,6 @@ export type AccessTokenDto = {
   projectId: string | null
   createdAt: string
   machines: TokenMachineDto[]
-  /** Обновить и отозвать можно только выданный нами токен компьютера. */
-  canManage: boolean
+  /** Обновить токен умеет только компьютер: у `mch_` замены нам взять негде. */
+  canRotate: boolean
 }

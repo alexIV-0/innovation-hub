@@ -18,6 +18,16 @@ export type PayBase = (typeof PAY_BASES)[number]
 
 /** В чём считаем. */
 export const PAY_METERS = ["sec", "count", "bytes"] as const
+
+/**
+ * Сколько байтов в одной тарифной единице объёма.
+ *
+ * Внутри всё меряется байтами, а ставка задаётся за МЕГАБАЙТ — иначе цена в
+ * копейках за байт округлилась бы до нуля и объём стал бы бесплатным. Перевод
+ * живёт здесь, в одном месте: разойдись он между оценкой и списанием, резерв
+ * никогда не сошёлся бы с фактом.
+ */
+export const BYTES_PER_UNIT = 1024 * 1024
 export type PayMeter = (typeof PAY_METERS)[number]
 
 /**
@@ -40,11 +50,52 @@ export function payPair(base: PayBase, meter: PayMeter | null): PayPair {
  * - `source:sec` — нужен `srcSec`, поле схемы v2 архива (правка в десктопе);
  * - `output:bytes` — размеров выходных файлов в архиве нет.
  */
+/**
+ * Все сочетания осей — полная решётка, а не только считаемое сегодня.
+ *
+ * Нужна интерфейсу: тариф удобнее читать таблицей «вход/выход × секунда/штуки/
+ * объём», и пустая клетка в ней должна быть видна вместе с причиной, а не
+ * молча отсутствовать. Что из этого сайт умеет считать — ниже.
+ */
+export const ALL_PAY_PAIRS = [
+  "source:sec",
+  "source:count",
+  "source:bytes",
+  "output:sec",
+  "output:count",
+  "output:bytes",
+  "render:sec",
+  "fixed",
+] as const satisfies readonly PayPair[]
+
+/**
+ * Почему пара пока не считается. Ключ словаря подставляет интерфейс — здесь
+ * только сама причина, потому что она про данные, а не про язык.
+ */
+/** Пар, которые нечем посчитать в принципе, не осталось. */
+export const PAIR_BLOCKERS: Partial<Record<PayPair, "not-in-archive">> = {}
+
+/**
+ * Пары, готовые на сайте, но ждущие данных от машины.
+ *
+ * Ставку задать можно, проект настроить можно — списание пойдёт, как только
+ * программа начнёт слать поле. До тех пор такие обработки видны отдельным
+ * счётчиком в проходе списания, а не пропадают молча.
+ */
+export const PAIR_PENDING_DATA: Partial<Record<PayPair, "src-sec">> = {
+  "source:sec": "src-sec",
+}
+
+/** Валюты, в которых внешние сервисы выставляют счёт. Курс берём у ЦБ. */
+export const VENDOR_CURRENCIES = ["USD", "EUR", "CNY", "GBP", "JPY"] as const
+
 export const SUPPORTED_PAY_PAIRS = [
+  "source:sec",
   "output:sec",
   "output:count",
   "source:count",
   "source:bytes",
+  "output:bytes",
   "render:sec",
   "fixed",
 ] as const satisfies readonly PayPair[]

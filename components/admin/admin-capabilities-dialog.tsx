@@ -37,6 +37,8 @@ const LABEL_KEY: Record<AdminCapability, keyof Dict> = {
   "statistics.import": "capStatisticsImport",
   "visitors.view": "capVisitorsView",
   "billing.manage": "capBillingManage",
+  "billing.trial": "capBillingTrial",
+  "billing.promo": "capBillingPromo",
   "audit.view": "capAuditView",
 }
 

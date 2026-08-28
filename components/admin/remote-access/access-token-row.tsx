@@ -123,37 +123,44 @@ export function AccessTokenRow({
           </Badge>
         ) : null}
 
-        {token.canManage ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="ml-auto h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">{t.actions}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuItem
-                onClick={onRotateToken}
-                disabled={!canRotateToken}
-              >
-                <Rotate className="h-4 w-4" />
-                {t.remoteRotateToken}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={onRevoke}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" />
-                {t.remoteRevokeConfirm}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="ml-auto h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="sr-only">{t.actions}</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {/* Обновление токена — только у компьютеров: значение `mch_` мы
+                видели один раз при выпуске и заменить его нечем. Отзыв есть у
+                обоих, иначе брошенный токен убрать со страницы нельзя. */}
+            {token.canRotate ? (
+              <>
+                <DropdownMenuItem
+                  onClick={onRotateToken}
+                  disabled={!canRotateToken}
+                >
+                  <Rotate className="h-4 w-4" />
+                  {t.remoteRotateToken}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            ) : null}
+            <DropdownMenuItem
+              onClick={onRevoke}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+              {token.kind === "computer"
+                ? t.remoteRevokeConfirm
+                : t.tokenRevokeConfirm}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="border-t border-border/50">

@@ -1,3 +1,4 @@
+import { VENDOR_CURRENCIES } from "@/lib/billing/types"
 import { query } from "@/lib/db"
 
 /**
@@ -124,7 +125,7 @@ export type RefreshResult = {
  * бы хуже, чем посчитать по вчерашнему курсу.
  */
 export async function refreshRatesFromCbr(
-  currencies: string[] = ["USD", "EUR"],
+  currencies: readonly string[] = VENDOR_CURRENCIES,
 ): Promise<RefreshResult> {
   const wanted = new Set(currencies.map((c) => c.toUpperCase()))
   try {

@@ -65,7 +65,7 @@ export const presignAction = defineAction(
     const ttl = data.ttlSec ?? 3600
     const client = getS3Client()
     const bucket = getS3Bucket()
-    const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
+    const expectedPrefix = projectPrefix(access.storageOwnerId, access.projectId)
 
     if (data.method === "GET") {
       if (!data.s3Key || !data.s3Key.startsWith(expectedPrefix)) {
@@ -89,7 +89,7 @@ export const presignAction = defineAction(
       data.s3Key && data.s3Key.startsWith(expectedPrefix)
         ? data.s3Key
         : projectUploadObjectKey(
-            access.ownerId,
+            access.storageOwnerId,
             access.projectId,
             data.folderPath,
             `${randomUUID()}-${fileName}`,
@@ -133,14 +133,14 @@ export const notifyAction = defineAction(
     const access = await requireEditableProjectAccess(auth, data.projectId)
     if (access instanceof NextResponse) return access
 
-    const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
+    const expectedPrefix = projectPrefix(access.storageOwnerId, access.projectId)
     if (!data.s3Key.startsWith(expectedPrefix)) {
       return apiError("Invalid key.", 400)
     }
 
     try {
       const file = await writeNotifyUpload({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         s3Key: data.s3Key,
         folderPath: data.folderPath,
@@ -186,7 +186,7 @@ export const mkdirAction = defineAction(
 
     try {
       const file = await writeFolderCreate({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         folderPath: data.folderPath,
         name: data.name,
@@ -230,7 +230,7 @@ export const renameAction = defineAction(
 
     try {
       const file = await writeRename({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         fileId: data.fileId,
         name: data.name,
@@ -269,7 +269,7 @@ export const deleteObjectAction = defineAction(
     }
     try {
       const result = await writeFileDelete({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         fileId: data.fileId,
         deletedBy: auth.userId,
@@ -297,7 +297,7 @@ export const reindexAction = defineAction(
     if (access instanceof NextResponse) return access
 
     try {
-      const stats = await reindexProject(access.ownerId, access.projectId)
+      const stats = await reindexProject(access.storageOwnerId, access.projectId)
       return apiOk({ ok: true, ...stats })
     } catch (error) {
       if (error instanceof StorageWriteError) {
@@ -342,6 +342,7 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
       const { folderState } = await setProjectPaused({
         projectId: access.projectId,
         ownerId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         paused: !data.enabled,
         updatedBy: siteUpdatedBy(auth.email),
         actorUserId: auth.userId,
@@ -351,14 +352,14 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
 
     if (data.kind === "options") {
       const { options, etag } = await updateProjectExposedOptions({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         changes: data.changes,
       })
       await writeSidecarSync({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
-        key: projectOptionsKey(access.ownerId, access.projectId),
+        key: projectOptionsKey(access.storageOwnerId, access.projectId),
         name: OPTIONS_FILE_NAME,
         actor: actorFromAuth(auth),
       })
@@ -367,12 +368,12 @@ export const putSidecarAction = defineAction(putSidecarSchema, async (auth, data
 
     const key =
       data.sidecar === "folder-state"
-        ? projectFolderStateKey(access.ownerId, access.projectId)
+        ? projectFolderStateKey(access.storageOwnerId, access.projectId)
         : data.sidecar === "description"
-          ? projectDescriptionKey(access.ownerId, access.projectId)
-          : projectOptionsKey(access.ownerId, access.projectId)
+          ? projectDescriptionKey(access.storageOwnerId, access.projectId)
+          : projectOptionsKey(access.storageOwnerId, access.projectId)
     const { etag, file } = await writeSidecarPut({
-      userId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       key,
       body: data.body,
@@ -426,7 +427,7 @@ export const copyAction = defineAction(
         const file = await copySingleFile({
           sourceProjectId: data.projectId,
           destProjectId: destAccess.projectId,
-          destOwnerId: destAccess.ownerId,
+          destStorageOwnerId: destAccess.storageOwnerId,
           destFolderPath: data.destFolderPath,
           source: syncSingle,
           eventId: data.eventId ?? null,
@@ -448,7 +449,7 @@ export const copyAction = defineAction(
         payload: {
           sourceProjectId: data.projectId,
           destProjectId: destAccess.projectId,
-          destOwnerId: destAccess.ownerId,
+          destStorageOwnerId: destAccess.storageOwnerId,
           destFolderPath: data.destFolderPath,
           fileIds: data.fileIds,
           eventId: data.eventId,

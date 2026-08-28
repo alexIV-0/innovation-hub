@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await startMultipartUpload({
-      ownerId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       folderPath: parsed.data.folderPath,
       fileName: parsed.data.fileName,

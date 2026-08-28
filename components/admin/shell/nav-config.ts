@@ -3,10 +3,12 @@ import {
   BarChart3,
   Coins,
   FileQuestion,
+  FolderTree,
   Gift,
   LayoutDashboard,
   LayoutGrid,
   Monitor,
+  Plug,
   ScrollText,
   ShieldCheck,
   Ticket,
@@ -47,6 +49,7 @@ export type AdminArea =
   | "billing"
   | "access"
   | "pipeline"
+  | "workspaces"
 
 export type AdminAreaInfo = {
   key: AdminArea
@@ -66,6 +69,16 @@ export const ADMIN_AREAS: AdminAreaInfo[] = [
     descriptionKey: "adminPipelineDesc",
     href: "/admin/pipeline",
     icon: Workflow,
+  },
+  {
+    // Второй рабочий инструмент на каждый день, рядом с конвейером: там смотрят,
+    // как идёт обработка, здесь — чьи это папки. Остальные области — документы,
+    // в них заходят по поводу.
+    key: "workspaces",
+    labelKey: "adminGroupWorkspaces",
+    descriptionKey: "adminGroupWorkspacesDesc",
+    href: "/admin/workspaces",
+    icon: FolderTree,
   },
   {
     key: "main",
@@ -240,6 +253,18 @@ export const ADMIN_TOOLS: AdminTool[] = [
     capability: "billing.manage",
   },
   {
+    // Две области, как у «Проектов без единицы», и по той же причине: сервис —
+    // это и деньги (из него складывается себестоимость обработки), и конвейер
+    // (без ключа машина не сделает шаг). Искать будут в обеих.
+    key: "services",
+    labelKey: "adminServices",
+    descriptionKey: "adminServicesDesc",
+    href: "/admin/services",
+    icon: Plug,
+    areas: ["billing", "pipeline"],
+    capability: "services.manage",
+  },
+  {
     key: "pipeline",
     labelKey: "adminPipeline",
     descriptionKey: "adminPipelineDesc",
@@ -247,6 +272,24 @@ export const ADMIN_TOOLS: AdminTool[] = [
     icon: Workflow,
     areas: ["pipeline"],
     capability: "pipeline.operate",
+    isAreaHub: true,
+  },
+  {
+    // Две области намеренно. Своя — потому что это рабочее место, а не справка;
+    // «Доступ» — потому что «чей это проект и кому он открыт» ищут там, рядом с
+    // людьми и их правами.
+    //
+    // Тег — `projects.access`, ступень 1: страница открыта и тому, кто только
+    // помогает с файлами. Распоряжение проектом (создать, удалить, передать,
+    // расшарить) гасится внутри по `projects.manage`, как «Завести человека» на
+    // странице людей. Разбор — docs/ADMIN_WORKSPACE_PLAN.md §3.
+    key: "workspaces",
+    labelKey: "adminWorkspaces",
+    descriptionKey: "adminWorkspacesDesc",
+    href: "/admin/workspaces",
+    icon: FolderTree,
+    areas: ["workspaces", "access"],
+    capability: "projects.access",
     isAreaHub: true,
   },
 ]

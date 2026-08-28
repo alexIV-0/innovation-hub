@@ -24,7 +24,15 @@ export const ADMIN_CAPABILITIES = [
   "pipeline.operate",
   "settings.write",
   "machines.manage",
+  // Две ступени работы в чужой папке, а не одна. `projects.access` — помощь:
+  // открыть, скачать, положить файл, забрать файл. `projects.manage` —
+  // распоряжение: создать, удалить, передать другому человеку, расшарить.
+  // Разница не в силе, а в обратимости: положить файл не туда правится за
+  // минуту, передать проект не тому — это чужие деньги и чужой доступ. Оператору
+  // поддержки нужна первая и не нужна вторая. Разбор —
+  // docs/ADMIN_WORKSPACE_PLAN.md §3.
   "projects.access",
+  "projects.manage",
   "statistics.view",
   "statistics.import",
   "visitors.view",
@@ -36,6 +44,9 @@ export const ADMIN_CAPABILITIES = [
   "billing.manage",
   "billing.trial",
   "billing.promo",
+  // Ключи от чужих кошельков — не то же самое, что прайс. Человеку, которому
+  // доверили тариф, незачем доставать ключ ElevenLabs, и наоборот.
+  "services.manage",
   "audit.view",
 ] as const
 
@@ -74,7 +85,23 @@ export function hasCapability(
  */
 export const CAPABILITY_PRESETS = {
   content: ["content.manage", "visitors.view"],
-  support: ["users.read", "projects.access"],
+  // Ступень 1: всё, чем помогают клиенту, и ничего, что меняет принадлежность.
+  support: [
+    "users.read",
+    "users.manage",
+    "projects.access",
+    "pipeline.operate",
+  ],
+  // Ступень 2: то же плюс распоряжение чужими проектами. Отдельным пресетом, а
+  // не галочкой поверх «Поддержки»: разница между ними — это ровно тот вопрос,
+  // который человек должен задать себе осознанно.
+  manager: [
+    "users.read",
+    "users.manage",
+    "projects.access",
+    "projects.manage",
+    "pipeline.operate",
+  ],
   pipeline: ["pipeline.operate", "settings.write", "statistics.view"],
   full: [...ADMIN_CAPABILITIES],
 } as const satisfies Record<string, readonly AdminCapability[]>

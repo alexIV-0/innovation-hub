@@ -305,6 +305,7 @@ WorkspacePageClient
 | `/admin/visitors` | Посещения: события с путями, отпечатками, IP, referer. |
 | `/admin/statistics` | `StatisticsExplorer` с `/api/admin/statistics` — без скоупа. |
 | `/admin/billing` | Тарифы, баланс, начисления. |
+| `/admin/services` | Внешние сервисы: ключи (шифрованные, наружу не отдаются), прайс, расход за 30 дней. Тег `services.manage`. |
 | `/admin/access` | Хаб группы «Доступ». |
 | `/admin/users` | Люди: список, роль, активность, сброс пароля (с флагом `must_change_password`), удаление. |
 | `/admin/access/roles` | **Права доступа.** Только админы и суперадмины: роль селектом, теги чипами, кнопка выдачи. Правит суперадмин, смотрит любой с `users.read`. |

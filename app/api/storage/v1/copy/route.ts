@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       const file = await copySingleFile({
         sourceProjectId: data.projectId,
         destProjectId: destAccess.projectId,
-        destOwnerId: destAccess.ownerId,
+        destStorageOwnerId: destAccess.storageOwnerId,
         destFolderPath: data.destFolderPath,
         source: syncSingle,
         eventId: data.eventId ?? null,
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     // без неё скопированное поддерево не покажется в дереве проекта.
     if (data.destFolderPath.replace(/^\/+|\/+$/g, "")) {
       await writeEnsureFolderPath({
-        userId: destAccess.ownerId,
+        storageOwnerId: destAccess.storageOwnerId,
         projectId: destAccess.projectId,
         folderPath: data.destFolderPath,
         actor: actorFromAuth(auth),
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       payload: {
         sourceProjectId: data.projectId,
         destProjectId: destAccess.projectId,
-        destOwnerId: destAccess.ownerId,
+        destStorageOwnerId: destAccess.storageOwnerId,
         destFolderPath: data.destFolderPath,
         fileIds: data.fileIds,
         eventId: data.eventId,

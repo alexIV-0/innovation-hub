@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   const ttl = data.ttlSec ?? 3600
   const client = getS3Client()
   const bucket = getS3Bucket()
-  const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
+  const expectedPrefix = projectPrefix(access.storageOwnerId, access.projectId)
 
   if (data.method === "GET") {
     if (!data.s3Key || !data.s3Key.startsWith(expectedPrefix)) {
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     data.s3Key && data.s3Key.startsWith(expectedPrefix)
       ? data.s3Key
       : projectUploadObjectKey(
-          access.ownerId,
+          access.storageOwnerId,
           access.projectId,
           data.folderPath,
           `${randomUUID()}-${fileName}`,

@@ -654,8 +654,8 @@ export async function POST(request: NextRequest, { params }: Params) {
 
 | что | где | годится для |
 | --- | --- | --- |
-| выбор «пользователь → проект → дерево» | `/api/admin/pipeline/users`, `/api/admin/pipeline/projects?userId=`, `/api/admin/pipeline/projects/[id]/drive` | источник админского инструмента, ровно как в «Конвейере» |
-| чтение любого файла любого проекта | `/api/admin/pipeline/projects/[id]/files/[fileId]` | открыть документ на чтение |
+| выбор «пользователь → проект → дерево» | `/api/admin/workspaces/users`, `/api/admin/workspaces/projects?userId=`, `/api/admin/workspaces/projects/[id]/drive` | источник админского инструмента, ровно как в «Конвейере» |
+| чтение любого файла любого проекта | `/api/admin/workspaces/projects/[id]/files/[fileId]` | открыть документ на чтение |
 | служебная папка `options`, скрытая у пользователя | тот же listing с `includeServiceFiles` | инструменты, которые правят параметры обработки |
 | **полный доступ ADMIN к `/api/storage/v1/*`** | `requireProjectAccess` в [lib/storage/auth.ts](../lib/storage/auth.ts): для роли `ADMIN` возвращается `accessRole: "owner"` на любой проект | и чтение, и запись — включая `presign PUT` + `notify` |
 | авторство правки в документе | `stampForSave(… updatedBy: auth.email)` | видно, кто правил, даже если это админ |

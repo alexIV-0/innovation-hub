@@ -72,7 +72,9 @@
 | [TOOLS_VOICEOVER_PLAN.md](./TOOLS_VOICEOVER_PLAN.md) | инструмент озвучки — выполнен, кроме провайдера синтеза 🟡 |
 | [SOCIAL_POSTING_PLAN.md](./SOCIAL_POSTING_PLAN.md) | автопостинг — не реализовано ⬜ |
 | [BILLING_AND_TRIAL_PLAN.md](./BILLING_AND_TRIAL_PLAN.md) | баланс, тарификация, тестовый период — общий план к обсуждению ⬜ |
+| [VENDOR_SERVICES_PLAN.md](./VENDOR_SERVICES_PLAN.md) | внешние сервисы: ключи на сайте, валюты, себестоимость по потреблению — замысел ⬜ |
 | [ADMIN_ROLES_PLAN.md](./ADMIN_ROLES_PLAN.md) | суперадмин, теги прав, журнал действий — код готов, миграции не применены 🟡 |
+| [ADMIN_WORKSPACE_PLAN.md](./ADMIN_WORKSPACE_PLAN.md) | разделение конвейера и администрирования папок: перенос проектов, две ступени прав — этап 1 в коде, миграция не применена 🟡 |
 | [FOLDER_STATE_SSOT_PLAN.md](./FOLDER_STATE_SSOT_PLAN.md) | источник правды для тумблера — решение принято и реализовано |
 | [PROJECT_STATE_DB_S3_PROPOSAL.md](./PROJECT_STATE_DB_S3_PROPOSAL.md) | Postgres + S3 вместо файла на Drive — реализовано |
 

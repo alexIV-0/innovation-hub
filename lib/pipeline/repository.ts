@@ -85,6 +85,7 @@ export async function listPipelineProjectsByOwner(
     `SELECT p.id,
             p.user_id AS "ownerId",
             p.user_id AS "userId",
+            COALESCE(p.storage_owner_id, p.user_id) AS "storageOwnerId",
             p.name,
             COALESCE(p.description, '') AS description,
             COALESCE(p.group_name, 'personal') AS "groupName",
@@ -134,6 +135,8 @@ export async function listPipelineProjectsByOwner(
 export type WatchedProject = {
   projectId: string
   ownerId: string
+  /** Префикс проекта в R2. У переданного проекта не равен `ownerId` — см. ProjectRecord. */
+  storageOwnerId: string
   ownerEmail: string
   name: string
   /**
@@ -166,6 +169,7 @@ export async function listWatchedProjects(): Promise<WatchedProject[]> {
   const result = await query<WatchedProject>(
     `SELECT p.id AS "projectId",
             p.user_id AS "ownerId",
+            COALESCE(p.storage_owner_id, p.user_id) AS "storageOwnerId",
             u.email AS "ownerEmail",
             p.name,
             p.pay_base  AS "payBase",

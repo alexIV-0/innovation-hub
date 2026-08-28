@@ -15,6 +15,7 @@ import {
   type QueueMutationResult,
 } from "@/lib/pipeline/queue"
 import type { StorageApiAuth } from "@/lib/storage/auth"
+import { readVaultRevision } from "@/lib/vault/services"
 
 /**
  * Общая логика очереди для обеих поверхностей: экшены на `POST /api/v1` (токен
@@ -143,7 +144,11 @@ export async function handlePing(
   const caller = await resolveQueueCaller(auth, props)
   if (caller instanceof NextResponse) return caller
   await touchMachineContact({ computerId: caller.computerId })
-  return NextResponse.json({ ok: true })
+  // Ревизия сейфа едет в каждом ударе сердца: машина сравнивает её со своей и,
+  // если разошлось, идёт за ключами. Так отзыв доезжает за полминуты, а не по
+  // истечении TTL копии (docs/VENDOR_SERVICES_PLAN.md, С4). Одно число из
+  // синглтон-строки — дешевле, чем отдельный опрос сейфа по расписанию.
+  return NextResponse.json({ ok: true, vaultRevision: await readVaultRevision() })
 }
 
 function mutationResponse(result: QueueMutationResult): NextResponse {

@@ -558,7 +558,7 @@ migration only» — после удаления `lib/google-drive.ts` их мо
 
 | Что | Где | Почему трогать нельзя без согласования |
 | --- | --- | --- |
-| Путь `/api/projects/[id]/drive`, `/drive/files/[fileId]`, `/drive/folder-state`, `/drive/options` | 4 роута + `app/api/admin/pipeline/projects/[id]/drive` | адреса зашиты в `WorkspaceSource` двух зон, а сам путь публичный |
+| Путь `/api/projects/[id]/drive`, `/drive/files/[fileId]`, `/drive/folder-state`, `/drive/options` | 4 роута + `app/api/admin/workspaces/projects/[id]/drive` | адреса зашиты в `WorkspaceSource` двух зон, а сам путь публичный |
 | Тип `DriveFile` | **136 вхождений в 13 файлах** рабочей области | механическое переименование, но большое; лучше отдельным коммитом «только rename», чтобы диff читался |
 | `driveUrl` в `WorkspaceSource` | `types.ts`, `source.ts`, `pipeline-source.ts` | вместе с путями |
 

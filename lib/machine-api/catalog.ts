@@ -7,7 +7,7 @@ export type ActionPropDoc = {
   notes: LocaleText
 }
 
-export type ActionGroup = "computer" | "storage" | "settings" | "queue"
+export type ActionGroup = "computer" | "storage" | "settings" | "queue" | "vault"
 
 export type ActionDoc = {
   action: string
@@ -1582,6 +1582,113 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
           },
         ],
       },
+    },
+  },
+  {
+    action: "vendorKeys",
+    group: "vault",
+    summary: {
+      ru: "Ключи внешних сервисов для этой машины.",
+      en: "External service keys for this machine.",
+    },
+    description: {
+      ru:
+        "Спрашивайте ПЕРЕД задачей и только по тем сервисам, которые ей нужны. " +
+        "В known передайте версии, которые уже лежат в локальном сейфе: совпало — " +
+        "сервис попадёт в fresh, и ключ не поедет по сети. Копию храните " +
+        "шифрованной и не дольше ttlSec. Сверяйте vaultRevision с тем, что " +
+        "приходит в ответе на heartbeat: разошлось — спросите ключи заново.",
+      en:
+        "Ask BEFORE a task and only for the services it needs. Pass the versions " +
+        "already in your local vault via known: on a match the service comes back " +
+        "in fresh and no key travels. Store the copy encrypted and no longer than " +
+        "ttlSec. Compare vaultRevision with the one returned by heartbeat: if they " +
+        "differ, ask for keys again.",
+    },
+    props: [
+      {
+        name: "services",
+        type: "string[]",
+        required: true,
+        notes: {
+          ru: "Слаги сервисов текущих задач, до 50. Весь сейф не запрашивается.",
+          en: "Slugs for the current tasks’ services, up to 50. Never the whole vault.",
+        },
+      },
+      {
+        name: "known",
+        type: "Record<string, number>",
+        required: false,
+        notes: {
+          ru: "Версии в локальном сейфе: { \"eleven-labs\": 7 }.",
+          en: "Versions in the local vault: { \"eleven-labs\": 7 }.",
+        },
+      },
+    ],
+    exampleProps: { services: ["eleven-labs"], known: { "eleven-labs": 6 } },
+    exampleResponse: {
+      keys: [
+        {
+          slug: "eleven-labs",
+          version: 7,
+          secret: "sk_…",
+          ttlSec: 21600,
+        },
+      ],
+      fresh: [],
+      unavailable: [],
+      vaultRevision: 42,
+    },
+  },
+  {
+    action: "vendorUsage",
+    group: "vault",
+    summary: {
+      ru: "Потребление внешнего сервиса по задаче. Единицы, не деньги.",
+      en: "External service usage for a task. Units, not money.",
+    },
+    description: {
+      ru:
+        "Шлите СРАЗУ после ответа вендора, не дожидаясь taskDone: деньги у вендора " +
+        "уже списаны, и упади машина следом — расход всё равно должен быть учтён. " +
+        "Цену не присылайте: её знает сайт, и считает он сам. Повтор по той же " +
+        "тройке (задача, сервис, мера) расход не удваивает. Ответ разбирайте: " +
+        "unpriced и noRate означают, что строка НЕ записана.",
+      en:
+        "Send RIGHT AFTER the vendor responds, without waiting for taskDone: the " +
+        "vendor has already been paid, and if the machine dies next the spending " +
+        "must still be accounted for. Do not send a price: the site knows it and " +
+        "computes the money itself. Repeating the same (task, service, unit) does " +
+        "not double the spending. Read the response: unpriced and noRate mean the " +
+        "row was NOT recorded.",
+    },
+    props: [
+      {
+        name: "taskId",
+        type: "uuid",
+        required: true,
+        notes: { ru: "Задача из claimTask.", en: "The task from claimTask." },
+      },
+      {
+        name: "entries",
+        type: "{ service, unit, units }[]",
+        required: true,
+        notes: {
+          ru: "unit: token | char | sec | image | run. units — сколько израсходовано.",
+          en: "unit: token | char | sec | image | run. units — how much was consumed.",
+        },
+      },
+    ],
+    exampleProps: {
+      taskId: "0f5c…",
+      entries: [{ service: "eleven-labs", unit: "char", units: 8140 }],
+    },
+    exampleResponse: {
+      recorded: 1,
+      duplicate: 0,
+      unknown: [],
+      unpriced: [],
+      noRate: [],
     },
   },
 ]

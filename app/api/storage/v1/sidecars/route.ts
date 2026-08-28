@@ -28,12 +28,16 @@ export const runtime = "nodejs"
 /** Имя сайдкара → ключ в объектном хранилище. null — имя неизвестно. */
 function sidecarKey(
   name: string,
-  ownerId: string,
+  storageOwnerId: string,
   projectId: string,
 ): string | null {
-  if (name === "folder-state") return projectFolderStateKey(ownerId, projectId)
-  if (name === "options") return projectOptionsKey(ownerId, projectId)
-  if (name === "description") return projectDescriptionKey(ownerId, projectId)
+  if (name === "folder-state") {
+    return projectFolderStateKey(storageOwnerId, projectId)
+  }
+  if (name === "options") return projectOptionsKey(storageOwnerId, projectId)
+  if (name === "description") {
+    return projectDescriptionKey(storageOwnerId, projectId)
+  }
   return null
 }
 
@@ -76,7 +80,7 @@ export async function GET(request: NextRequest) {
   const access = await requireProjectAccess(auth, projectId)
   if (access instanceof NextResponse) return access
 
-  const key = sidecarKey(name, access.ownerId, access.projectId)
+  const key = sidecarKey(name, access.storageOwnerId, access.projectId)
   if (!key) {
     return NextResponse.json({ message: "Unknown sidecar." }, { status: 400 })
   }
@@ -126,6 +130,7 @@ export async function PUT(request: NextRequest) {
       const { folderState } = await setProjectPaused({
         projectId: access.projectId,
         ownerId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         paused: !data.enabled,
         updatedBy: siteUpdatedBy(auth.email),
         actorUserId: auth.userId,
@@ -135,26 +140,26 @@ export async function PUT(request: NextRequest) {
 
     if (data.kind === "options") {
       const { options, etag } = await updateProjectExposedOptions({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         changes: data.changes,
       })
       await writeSidecarSync({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
-        key: projectOptionsKey(access.ownerId, access.projectId),
+        key: projectOptionsKey(access.storageOwnerId, access.projectId),
         name: OPTIONS_FILE_NAME,
         actor: { userId: auth.userId },
       })
       return NextResponse.json({ options, etag })
     }
 
-    const key = sidecarKey(data.sidecar, access.ownerId, access.projectId)
+    const key = sidecarKey(data.sidecar, access.storageOwnerId, access.projectId)
     if (!key) {
       return NextResponse.json({ message: "Unknown sidecar." }, { status: 400 })
     }
     const { etag, file } = await writeSidecarPut({
-      userId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       key,
       body: data.body,

@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { auditFrom } from "@/lib/audit"
 import { listPipelineUsers } from "@/lib/pipeline/repository"
-import { setUserAutomationEnabled } from "@/lib/repositories/users"
+import { findUserById, setUserAutomationEnabled } from "@/lib/repositories/users"
 
 export const runtime = "nodejs"
 
@@ -14,7 +15,7 @@ export const runtime = "nodejs"
  * паузе, все в архиве или ни в одном нет options.json.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminApi(request, "pipeline.operate")
+  const auth = await requireAdminApi(request, "projects.access")
   if (auth instanceof NextResponse) return auth
 
   const users = await listPipelineUsers()
@@ -44,12 +45,31 @@ export async function PATCH(request: NextRequest) {
     )
   }
 
+  // Снимок до записи: журналу нужно «из чего во что», а нажатие на уже
+  // включённый тумблер записью быть не должно — иначе лента заполнится
+  // строками, за которыми ничего не произошло.
+  const before = await findUserById(parsed.data.userId)
+  if (!before) {
+    return NextResponse.json({ message: "User not found." }, { status: 404 })
+  }
+
   const user = await setUserAutomationEnabled(
     parsed.data.userId,
     parsed.data.automationEnabled,
   )
   if (!user) {
     return NextResponse.json({ message: "User not found." }, { status: 404 })
+  }
+
+  if (before.automationEnabled !== user.automationEnabled) {
+    await auditFrom(request, auth)({
+      action: user.automationEnabled
+        ? "user.automation_enabled"
+        : "user.automation_disabled",
+      targetType: "user",
+      targetId: user.id,
+      targetLabel: user.email,
+    })
   }
 
   return NextResponse.json({

@@ -5,6 +5,11 @@ import { findFileById } from "@/lib/repositories/project-files"
 import { findProjectById } from "@/lib/repositories/projects"
 import { getS3Bucket, projectObjectPrefix } from "@/lib/s3-config"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
+import {
+  StorageWriteError,
+  writeFileDelete,
+  writeRename,
+} from "@/lib/storage/write-path"
 
 export const runtime = "nodejs"
 
@@ -15,7 +20,8 @@ type RouteContext = {
 /**
  * Отдаёт содержимое файла проекта для колонки 3 и панели превью.
  *
- * Только чтение: писать в чужой проект из «Конвейера» нельзя.
+ * Переименование и удаление — ниже, оба по ступени 1: это работа с файлами, а
+ * не распоряжение проектом (docs/ADMIN_WORKSPACE_PLAN.md §3).
  *
  * fileId бывает двух видов, и это следствие того, что служебных файлов нет в
  * project_files (см. listProjectServiceFiles):
@@ -28,7 +34,7 @@ type RouteContext = {
  * Без проверки это был бы чтение любого объекта бакета по произвольному пути.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request, "pipeline.operate")
+  const auth = await requireAdminApi(request, "projects.access")
   if (auth instanceof NextResponse) return auth
 
   const { id, fileId } = await context.params
@@ -44,7 +50,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   const decodedId = decodeURIComponent(fileId)
-  const optionsPrefix = `${projectObjectPrefix(project.ownerId, project.id)}options/`
+  const optionsPrefix = `${projectObjectPrefix(project.storageOwnerId, project.id)}options/`
 
   let key: string
   let name: string
@@ -102,4 +108,97 @@ export async function GET(request: NextRequest, context: RouteContext) {
       { status: 503 },
     )
   }
+}
+
+/**
+ * Переименовать файл или папку в чужом проекте.
+ *
+ * Тот же `writeRename`, что в кабинете, и по той же причине, что у создания
+ * папки: снятие `-` с папки — это событие готовности витка, и собрать его
+ * вторым путём означало бы получить второй ответ на вопрос «кто автор задачи».
+ *
+ * Служебные файлы этим путём не переименовываются: writeRename защищает
+ * канонические сайдкары сам (lib/storage/keys.ts#isCanonicalSidecar), поэтому
+ * отдельной проверки здесь нет — она была бы вторым списком, который разъедется
+ * с первым.
+ */
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  const auth = await requireAdminApi(request, "projects.access")
+  if (auth instanceof NextResponse) return auth
+
+  const { id, fileId } = await context.params
+  const project = await findProjectById(id)
+  if (!project) {
+    return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  }
+
+  const body = await request.json().catch(() => null)
+  const name =
+    typeof body?.name === "string" ? body.name.trim().slice(0, 180) : undefined
+  const folderPath =
+    typeof body?.folderPath === "string" ? body.folderPath : undefined
+  if (name === undefined && folderPath === undefined) {
+    return NextResponse.json({ message: "Invalid name." }, { status: 400 })
+  }
+  if (name !== undefined && (!name || name.includes("/") || name.includes("\\"))) {
+    return NextResponse.json({ message: "Invalid name." }, { status: 400 })
+  }
+
+  try {
+    const file = await writeRename({
+      storageOwnerId: project.storageOwnerId,
+      projectId: project.id,
+      fileId,
+      name,
+      folderPath,
+      actor: { userId: auth.userId },
+    })
+    if (!file) {
+      return NextResponse.json({ message: "File not found." }, { status: 404 })
+    }
+    return NextResponse.json({ file })
+  } catch (error) {
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+    const msg = error instanceof Error ? error.message : "Rename failed."
+    if (msg.includes("unique") || msg.includes("duplicate")) {
+      return NextResponse.json(
+        { message: "A file or folder with that name already exists." },
+        { status: 409 },
+      )
+    }
+    return NextResponse.json({ message: msg }, { status: 500 })
+  }
+}
+
+/** Удалить файл или папку (с содержимым) в чужом проекте. Ступень 1. */
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  const auth = await requireAdminApi(request, "projects.access")
+  if (auth instanceof NextResponse) return auth
+
+  const { id, fileId } = await context.params
+  const project = await findProjectById(id)
+  if (!project) {
+    return NextResponse.json({ message: "Project not found." }, { status: 404 })
+  }
+
+  try {
+    await writeFileDelete({
+      storageOwnerId: project.storageOwnerId,
+      projectId: project.id,
+      fileId,
+      deletedBy: auth.userId,
+      actor: { userId: auth.userId },
+    })
+  } catch (error) {
+    // Канонический сайдкар и сама папка options защищены от удаления: сайт
+    // читает их по фиксированному ключу.
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+    throw error
+  }
+
+  return NextResponse.json({ ok: true })
 }

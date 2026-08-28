@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react"
 import {
   AlertTriangle,
-  ListOrdered,
   Loader2,
   Play,
   Sliders,
@@ -16,13 +15,8 @@ import { useI18n, type Lang } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
 import type { PipelineState } from "@/lib/pipeline/state"
 import type { TaskCounts } from "@/lib/pipeline/tasks"
-import { TasksDialog } from "./tasks-dialog"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { SettingsDialog } from "./settings-dialog"
-
-/** Пока слежение включено, состояние подтягиваем чаще — видно, что цикл живой. */
-const POLL_RUNNING_MS = 10_000
-const POLL_IDLE_MS = 30_000
 
 function fmtTime(iso: string | null, lang: Lang): string {
   if (!iso) return "—"
@@ -34,23 +28,31 @@ function fmtTime(iso: string | null, lang: Lang): string {
 }
 
 /**
- * Нижняя полоса страницы «Конвейер»: одна кнопка на всю ширину.
+ * Пульт установки: состояние слежения и одна кнопка.
  *
  * Выбирать пользователя или проект для запуска не нужно. Слежение идёт сразу по
  * всем включённым пользователям и всем их проектам, которые не на паузе и не в
- * архиве — то есть кнопка управляет одним состоянием на всю установку, а не тем,
- * что выбрано в колонках выше.
+ * архиве — то есть кнопка управляет одним состоянием на всю установку.
  *
  * Запуск — начать следить за папками IN и собирать объекты для обработки.
  * Стоп — прекратить и слежение, и сборку. Уже созданные задачи остаются в очереди.
+ *
+ * Кнопки «Очередь» здесь больше нет: очередь лежит на той же странице ниже.
  */
-export function PipelineRunBar() {
+export function RunPanel({
+  /** Общий такт опроса страницы — см. TasksPanel. */
+  tick,
+  /** Слежение включено: страница ускоряет собственный такт. */
+  onRunningChange,
+}: {
+  tick: number
+  onRunningChange: (running: boolean) => void
+}) {
   const t = useAdminI18n()
   const { lang } = useI18n()
   const [state, setState] = useState<PipelineState | null>(null)
   const [counts, setCounts] = useState<TaskCounts | null>(null)
   const [busy, setBusy] = useState(false)
-  const [queueOpen, setQueueOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { can } = useAdminData()
   /**
@@ -81,17 +83,16 @@ export function PipelineRunBar() {
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, tick])
 
   const running = state?.isRunning === true
 
+  // Такт страницы зависит от того, идёт ли слежение, а знает об этом только
+  // ответ этого запроса. Поэтому сообщаем наверх, а не заводим здесь второй
+  // таймер: иначе счётчик в пульте и таблица под ним обновлялись бы вразнобой.
   useEffect(() => {
-    const interval = setInterval(
-      () => void load(),
-      running ? POLL_RUNNING_MS : POLL_IDLE_MS,
-    )
-    return () => clearInterval(interval)
-  }, [load, running])
+    onRunningChange(running)
+  }, [running, onRunningChange])
 
   const toggle = async () => {
     setBusy(true)
@@ -124,7 +125,7 @@ export function PipelineRunBar() {
 
   return (
     <>
-      <div className="shrink-0 border-t border-white/[0.08] bg-ws-well px-4 py-3">
+      <section className="rounded-xl border border-white/10 bg-ws-well px-4 py-3">
         <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ws-4">
           <span className="flex items-center gap-1.5">
             <span
@@ -195,33 +196,6 @@ export function PipelineRunBar() {
             {running ? t.pipelineStop : t.pipelineStart}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setQueueOpen(true)}
-            className="flex h-[52px] shrink-0 items-center gap-2.5 rounded-[11px] border border-white/[0.14] px-5 text-[14px] text-ws-2 hover:bg-white/5"
-          >
-            <ListOrdered className="h-[18px] w-[18px]" />
-            {t.pipelineQueue}
-            {/* Только живые задачи, а не все за всё время: с `counts.total` цифра
-                росла с каждой обработанной задачей и ничего не сообщала. Ошибки —
-                вторым числом в скобках и только когда они есть: их не видно в
-                первом числе, а знать о них надо, не открывая окно. */}
-            {counts && (inFlight + counts.queued > 0 || counts.failed > 0) ? (
-              <span
-                title={tf(t.pipelineQueueBadgeTitle, {
-                  live: counts.queued + inFlight,
-                  failed: counts.failed,
-                })}
-                className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-[2px] text-[12px] tabular-nums text-ws-1"
-              >
-                {counts.queued + inFlight}
-                {counts.failed > 0 ? (
-                  <span className="text-destructive">({counts.failed})</span>
-                ) : null}
-              </span>
-            ) : null}
-          </button>
-
           {/* Словари общие на всю установку, а не на проект или пользователя,
               поэтому кнопка стоит здесь — рядом с очередью, которая тоже
               относится ко всей установке. */}
@@ -238,9 +212,8 @@ export function PipelineRunBar() {
             </button>
           ) : null}
         </div>
-      </div>
+      </section>
 
-      {queueOpen ? <TasksDialog onClose={() => setQueueOpen(false)} /> : null}
       {settingsOpen ? (
         <SettingsDialog onClose={() => setSettingsOpen(false)} />
       ) : null}

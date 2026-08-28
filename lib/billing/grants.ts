@@ -48,6 +48,28 @@ export async function findTrialGrant(userId: string): Promise<GrantRecord | null
   return result.rows[0] ?? null
 }
 
+/**
+ * Открытый подарок, в котором участвует проект. null — проект ничем не оплачен.
+ *
+ * Нужен переносу: проект, живущий на чужие подарочные деньги, нельзя молча
+ * отдать другому человеку — вместе с папкой уехал бы и остаток чужого подарка.
+ * Закрытые подарки не мешают: по ним уже не платят.
+ */
+export async function findOpenGrantForProject(
+  projectId: string,
+): Promise<GrantRecord | null> {
+  const result = await query<GrantRecord>(
+    `SELECT ${GRANT_FIELDS}
+       FROM billing_grants g
+       JOIN billing_grant_projects gp ON gp.grant_id = g.id
+      WHERE gp.project_id = $1
+        AND g.status IN ('provisioning', 'active')
+      LIMIT 1`,
+    [projectId],
+  )
+  return result.rows[0] ?? null
+}
+
 export async function listGrantsFor(userId: string): Promise<GrantRecord[]> {
   const result = await query<GrantRecord>(
     `SELECT ${GRANT_FIELDS}

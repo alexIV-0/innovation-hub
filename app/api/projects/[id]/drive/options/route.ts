@@ -45,14 +45,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const { options, etag } = await updateProjectExposedOptions({
-      userId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       projectId: project.id,
       changes: parsed.data.changes,
     })
     await writeSidecarSync({
-      userId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       projectId: project.id,
-      key: projectOptionsKey(project.ownerId, project.id),
+      key: projectOptionsKey(project.storageOwnerId, project.id),
       name: OPTIONS_FILE_NAME,
       actor: { userId: auth.userId },
     })

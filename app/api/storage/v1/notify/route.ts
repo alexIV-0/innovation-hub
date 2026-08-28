@@ -51,14 +51,14 @@ export async function POST(request: NextRequest) {
   const access = await requireEditableProjectAccess(auth, data.projectId)
   if (access instanceof NextResponse) return access
 
-  const expectedPrefix = projectPrefix(access.ownerId, access.projectId)
+  const expectedPrefix = projectPrefix(access.storageOwnerId, access.projectId)
   if (!data.s3Key.startsWith(expectedPrefix)) {
     return NextResponse.json({ message: "Invalid key." }, { status: 400 })
   }
 
   try {
     const file = await writeNotifyUpload({
-      userId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       s3Key: data.s3Key,
       folderPath: data.folderPath,

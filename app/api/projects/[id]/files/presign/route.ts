@@ -52,14 +52,14 @@ export async function POST(request: NextRequest, { params }: Params) {
       )
     }
 
-    const expectedPrefix = projectPrefix(project.ownerId, projectId)
+    const expectedPrefix = projectPrefix(project.storageOwnerId, projectId)
     if (!parsed.data.s3Key.startsWith(expectedPrefix)) {
       return NextResponse.json({ message: "Invalid key." }, { status: 400 })
     }
 
     try {
       const file = await writeNotifyUpload({
-        userId: project.ownerId,
+        storageOwnerId: project.storageOwnerId,
         projectId,
         folderPath: parsed.data.folderPath,
         fileName: safeBaseFileName(parsed.data.fileName),
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   const key = projectUploadObjectKey(
-    project.ownerId,
+    project.storageOwnerId,
     projectId,
     parsed.data.folderPath,
     `${randomUUID()}-${safeBaseFileName(parsed.data.fileName)}`,

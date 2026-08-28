@@ -90,7 +90,8 @@ async function parentFolderLive(
 }
 
 export async function restoreFromTrash(input: {
-  userId: string
+  /** `projects.storage_owner_id` — для ключей восстановленных строк. */
+  storageOwnerId: string
   projectId: string
   fileId: string
   eventId?: string
@@ -186,7 +187,7 @@ export async function restoreFromTrash(input: {
       const key =
         row.s3Key ??
         logicalKeyForFile({
-          userId: input.userId,
+          storageOwnerId: input.storageOwnerId,
           projectId: input.projectId,
           folderPath: row.folderPath,
           name: row.name,

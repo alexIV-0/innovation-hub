@@ -3,6 +3,7 @@
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeftRight,
   ClipboardPaste,
   Copy,
   Download,
@@ -244,6 +245,15 @@ export function WorkspaceContextMenu() {
               } as MenuEntry,
             ]
           : []),
+      ...(can.transferProject && !project.deletedAt
+        ? [
+            {
+              icon: ArrowLeftRight,
+              label: t.mTransfer,
+              onClick: () => ws.transferProject(project),
+            } as MenuEntry,
+          ]
+        : []),
       {
         icon: ExternalLink,
         label: t.mOpenWindow,

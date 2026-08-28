@@ -33,18 +33,21 @@ const LABEL_KEY: Record<AdminCapability, keyof Dict> = {
   "settings.write": "capSettingsWrite",
   "machines.manage": "capMachinesManage",
   "projects.access": "capProjectsAccess",
+  "projects.manage": "capProjectsManage",
   "statistics.view": "capStatisticsView",
   "statistics.import": "capStatisticsImport",
   "visitors.view": "capVisitorsView",
   "billing.manage": "capBillingManage",
   "billing.trial": "capBillingTrial",
   "billing.promo": "capBillingPromo",
+  "services.manage": "capServicesManage",
   "audit.view": "capAuditView",
 }
 
 const PRESET_KEY: Record<CapabilityPreset, keyof Dict> = {
   content: "capsPresetContent",
   support: "capsPresetSupport",
+  manager: "capsPresetManager",
   pipeline: "capsPresetPipeline",
   full: "capsPresetFull",
 }

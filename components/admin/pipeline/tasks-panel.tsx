@@ -9,7 +9,6 @@ import {
   Loader2,
   RefreshCw,
   Trash2,
-  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -46,18 +45,32 @@ function fmtTime(iso: string | null, lang: Lang): string {
 }
 
 /**
- * Окно очереди: что нашлось, какая машина взяла задачу и её текущее состояние.
+ * Очередь: что нашлось, какая машина взяла задачу и её текущее состояние.
  *
- * Модальное окно, а не отдельный раздел меню: очередь смотрят по ходу работы с
- * конвейером, уходить с страницы для этого не нужно.
+ * Раньше это было модальное окно рядом с полосой запуска. Оно и стало причиной
+ * переделки: страницу конвейера открывают именно ради вопроса «что сейчас идёт
+ * и не встало ли», а ответ на него был спрятан за кнопкой — на самой странице от
+ * него оставалась полоска счётчиков. Место под очередь освободилось, когда
+ * колонки с чужими папками уехали в «Папки пользователей»
+ * (docs/ADMIN_WORKSPACE_PLAN.md §1).
  *
  * Внутри две зоны, а не одна таблица со всем подряд. «В работе» — то, ради чего
- * окно открывают; «Завершено» — история, которая иначе за неделю работы вытеснит
- * живую задачу с экрана. Зоны, а не вкладки: пустая зона «в работе» — сама по
- * себе ответ («ничего не идёт»), а на вкладке этого не видно, пока не
+ * страницу открывают; «Завершено» — история, которая иначе за неделю работы
+ * вытеснит живую задачу с экрана. Зоны, а не вкладки: пустая зона «в работе» —
+ * сама по себе ответ («ничего не идёт»), а на вкладке этого не видно, пока не
  * переключишься.
  */
-export function TasksDialog({ onClose }: { onClose: () => void }) {
+export function TasksPanel({
+  /**
+   * Такт опроса снаружи: страница спрашивает состояние и очередь одним
+   * ритмом. Два независимых таймера на одной странице означали бы, что счётчик
+   * в шапке и таблица под ним расходятся на несколько секунд — и именно в тот
+   * момент, когда на них смотрят вместе.
+   */
+  tick,
+}: {
+  tick: number
+}) {
   const t = useAdminI18n()
   const [live, setLive] = useState<PipelineTask[]>([])
   const [finished, setFinished] = useState<PipelineTask[]>([])
@@ -95,7 +108,7 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, tick])
 
   /**
    * Снятие и удаление. Оба ответа приносят свежий список — перезапрашивать
@@ -135,14 +148,6 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [onClose])
-
   const toggleTask = (taskId: string) =>
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -160,111 +165,99 @@ export function TasksDialog({ onClose }: { onClose: () => void }) {
   const nothingAtAll = live.length === 0 && finished.length === 0
 
   return (
-    <div
-      className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <section
+      aria-label={t.pipelineQueueTitle}
+      className="overflow-hidden rounded-xl border border-white/10 bg-ws-panel"
     >
-      <div
-        role="dialog"
-        aria-label={t.pipelineQueueTitle}
-        className="flex max-h-[80vh] w-full max-w-[1000px] flex-col overflow-hidden rounded-xl border border-white/10 bg-ws-panel shadow-ws-menu"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.07] px-5 py-3.5">
-          <h2 className="text-[16px] font-semibold text-ws-1">
-            {t.pipelineQueueTitle}
-          </h2>
-          {counts ? (
-            <span className="text-[12.5px] text-ws-4">
-              {tf(t.pipelineQueueCounts, {
-                queued: counts.queued,
-                inFlight: counts.claimed + counts.running,
-                done: counts.done,
-                failed: counts.failed,
-              })}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void load()}
-            title={t.refresh}
-            className="ml-auto flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={t.close}
-            className="flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-white/[0.07] px-5 py-3.5">
+        <h2 className="text-[16px] font-semibold text-ws-1">
+          {t.pipelineQueueTitle}
+        </h2>
+        {counts ? (
+          <span className="text-[12.5px] text-ws-4">
+            {tf(t.pipelineQueueCounts, {
+              queued: counts.queued,
+              inFlight: counts.claimed + counts.running,
+              done: counts.done,
+              failed: counts.failed,
+            })}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void load()}
+          title={t.refresh}
+          className="ml-auto flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
+        >
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+        </button>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
-          {loading && nothingAtAll ? (
-            <div className="flex justify-center py-12 text-ws-4">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
-          ) : nothingAtAll ? (
-            <p className="px-5 py-12 text-center text-[13.5px] text-ws-4">
-              {t.pipelineQueueEmpty}
-            </p>
-          ) : (
-            <>
-              <ZoneHeader title={t.pipelineZoneLive} count={liveCount} />
-              {live.length === 0 ? (
+      {/* Таблица шире экрана не растягивает страницу: скролл живёт здесь.
+          Высота не ограничена — очередь и есть содержимое страницы, и прятать
+          её во внутренний скролл значило бы вернуть окно, только без рамки. */}
+      <div className="overflow-x-auto">
+        {loading && nothingAtAll ? (
+          <div className="flex justify-center py-12 text-ws-4">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : nothingAtAll ? (
+          <p className="px-5 py-12 text-center text-[13.5px] text-ws-4">
+            {t.pipelineQueueEmpty}
+          </p>
+        ) : (
+          <>
+            <ZoneHeader title={t.pipelineZoneLive} count={liveCount} />
+            {live.length === 0 ? (
+              <p className="px-5 py-6 text-center text-[13px] text-ws-4">
+                {t.pipelineZoneLiveEmpty}
+              </p>
+            ) : (
+              <TaskTable
+                tasks={live}
+                expanded={expanded}
+                onToggle={toggleTask}
+                busyId={busyId}
+                onMutate={mutate}
+              />
+            )}
+
+            <ZoneHeader
+              title={t.pipelineZoneFinished}
+              count={finishedCount}
+              note={
+                finished.length < finishedCount
+                  ? tf(t.pipelineZoneShownLast, { shown: finished.length })
+                  : null
+              }
+              open={historyOpen}
+              onToggle={() => setHistoryOpen((v) => !v)}
+            />
+            {historyOpen ? (
+              finished.length === 0 ? (
                 <p className="px-5 py-6 text-center text-[13px] text-ws-4">
-                  {t.pipelineZoneLiveEmpty}
+                  {t.pipelineZoneFinishedEmpty}
                 </p>
               ) : (
                 <TaskTable
-                  tasks={live}
+                  tasks={finished}
                   expanded={expanded}
                   onToggle={toggleTask}
                   busyId={busyId}
                   onMutate={mutate}
                 />
-              )}
-
-              <ZoneHeader
-                title={t.pipelineZoneFinished}
-                count={finishedCount}
-                note={
-                  finished.length < finishedCount
-                    ? tf(t.pipelineZoneShownLast, { shown: finished.length })
-                    : null
-                }
-                open={historyOpen}
-                onToggle={() => setHistoryOpen((v) => !v)}
-              />
-              {historyOpen ? (
-                finished.length === 0 ? (
-                  <p className="px-5 py-6 text-center text-[13px] text-ws-4">
-                    {t.pipelineZoneFinishedEmpty}
-                  </p>
-                ) : (
-                  <TaskTable
-                    tasks={finished}
-                    expanded={expanded}
-                    onToggle={toggleTask}
-                    busyId={busyId}
-                    onMutate={mutate}
-                  />
-                )
-              ) : null}
-            </>
-          )}
-        </div>
-
-        {/* Что логов не будет — стоит сказать сразу: раскрыв шаг, админ по опыту
-            лог-окна ждёт поток сообщений от плагина, а сюда они не приезжают. */}
-        <p className="shrink-0 border-t border-white/[0.07] px-5 py-2.5 text-[11.5px] text-ws-5">
-          {t.pipelineQueueFootnote}
-        </p>
+              )
+            ) : null}
+          </>
+        )}
       </div>
-    </div>
+
+      {/* Что логов не будет — стоит сказать сразу: раскрыв шаг, админ по опыту
+          лог-окна ждёт поток сообщений от плагина, а сюда они не приезжают. */}
+      <p className="border-t border-white/[0.07] px-5 py-2.5 text-[11.5px] text-ws-5">
+        {t.pipelineQueueFootnote}
+      </p>
+    </section>
   )
 }
 

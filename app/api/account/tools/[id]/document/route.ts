@@ -170,7 +170,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     try {
       await writeNotifyUpload({
-        userId: access.project.ownerId,
+        storageOwnerId: access.project.storageOwnerId,
         projectId,
         s3Key: row.s3Key,
         folderPath,

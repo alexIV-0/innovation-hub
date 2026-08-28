@@ -64,7 +64,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   try {
     const file = await writeFolderCreate({
-      userId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       projectId: id,
       folderPath: parsed.data.folderPath,
       name: parsed.data.name,
@@ -110,7 +110,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
   try {
     const file = await writeRename({
-      userId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       fileId: parsed.data.id,
       projectId: id,
       name: parsed.data.name,
@@ -160,7 +160,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
   try {
     await writeFileDelete({
-      userId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       projectId: id,
       fileId: parsed.data.id,
       deletedBy: auth.userId,

@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react"
+import { formatCents } from "@/lib/billing/types"
 
 export type Lang = "ru" | "en"
 
@@ -550,6 +551,76 @@ export const dict = {
     adminBillingUnpricedDesc:
       "Проекты, у которых не задано, за что списывать средства. Пока гейт денег выключен, они обрабатываются бесплатно.",
     adminBilling: "Тарифы",
+    adminServices: "Внешние сервисы",
+    adminServicesDesc:
+      "Ключи, прайс и расход по сторонним сервисам. Ключ хранится здесь и выдаётся машинам по запросу.",
+    servicesEyebrow: "Сервисы",
+    servicesTitle: "Внешние сервисы",
+    servicesSub:
+      "Сейф: ключ хранится здесь, машина берёт его перед задачей и держит копию ограниченное время. Деньги считает сайт по прайсу — нода присылает потребление.",
+    servicesVaultMissing:
+      "Сейф не настроен: в окружении нет VAULT_MASTER_KEY. Пока его нет, записанный ключ будет нечем прочитать, и завести сервис нельзя.",
+    servicesAdd: "Добавить сервис",
+    servicesAddTitle: "Новый сервис",
+    servicesEmpty: "Сервисов пока нет. Первый заводится кнопкой выше.",
+    servicesLoadError: "Не удалось загрузить сервисы",
+    servicesSaveError: "Не удалось сохранить",
+    servicesFieldName: "Название",
+    servicesFieldSlug: "Слаг",
+    servicesFieldSlugHint: "По нему машина просит ключ. Латиница, цифры и дефис; менять потом нельзя.",
+    servicesFieldAdapter: "Адаптер",
+    servicesFieldAdapterHint: "Какой код в программе умеет с ним разговаривать. Можно оставить пустым.",
+    servicesFieldCurrency: "Валюта прайса",
+    servicesFieldCurrencyHint: "Валюта сервиса, а не кошелька: кошелёк рублёвый всегда.",
+    servicesFieldModel: "Как платим вендору",
+    servicesFieldDelivery: "Как ключ попадает к исполнителю",
+    servicesFieldTtl: "Срок копии на машине, часов",
+    servicesFieldTtlHint: "Копия без срока — это вечная копия, и тогда отзыв ничего не отзывает.",
+    servicesFieldCap: "Дневной потолок расхода, ₽",
+    servicesFieldCapHint: "0 — без потолка. Страховка от зацикленного графа и от утёкшего ключа.",
+    servicesFieldSecret: "Ключ вендора",
+    servicesFieldSecretHint: "Записывается шифрованным. Показать его обратно нельзя — только заменить.",
+    servicesCreate: "Завести",
+    servicesCreated: "Сервис заведён",
+    servicesSlugTaken: "Такой слаг уже занят",
+    servicesVaultError: "Сейф не настроен: нет VAULT_MASTER_KEY",
+    servicesModelPrepaid: "Предоплаченный кошелёк",
+    servicesModelPostpaid: "Постоплата по счёту",
+    servicesModelSubscription: "Подписка или квота",
+    servicesDeliveryKeys: "Ключ едет на машину",
+    servicesDeliveryProxy: "Ключ не покидает сервер",
+    servicesStatusActive: "Работает",
+    servicesStatusPaused: "На паузе",
+    servicesStatusRevoked: "Отозван",
+    servicesKey: "Ключ",
+    servicesKeyVersion: "версия {version}, с {date}",
+    servicesNoKey: "Ключа нет",
+    servicesRotate: "Заменить ключ",
+    servicesRotateTitle: "Новый ключ для {name}",
+    servicesRotateHint:
+      "Прежняя версия останется живой: задачи, которые уже держат её копию, не должны упасть посреди работы. Погасить её можно отдельной кнопкой, когда парк обновится.",
+    servicesRotated: "Ключ заменён, версия {version}",
+    servicesRevokeOld: "Погасить прежние версии",
+    servicesRevokedOld: "Погашено версий: {count}",
+    servicesPause: "На паузу",
+    servicesResume: "Вернуть в работу",
+    servicesRevoke: "Отозвать",
+    servicesRevokeConfirm: "Отозвать сервис? Ключи по нему выдаваться перестанут.",
+    servicesPrices: "Прайс",
+    servicesPricesEmpty: "Цены не назначены — потребление по этому сервису записать будет нечем.",
+    servicesPriceAdd: "Добавить цену",
+    servicesPriceUnit: "Мера",
+    servicesPriceValue: "Цена за единицу",
+    servicesPriceHint: "В валюте сервиса. Дробная часть до шести знаков: токен за 0.000002 иначе округлился бы в ноль.",
+    servicesPriceSaved: "Цена добавлена",
+    servicesSpentMonth: "Расход за 30 дней",
+    servicesUnitToken: "токен",
+    servicesUnitChar: "знак",
+    servicesUnitSec: "секунда",
+    servicesUnitImage: "картинка",
+    servicesUnitRun: "запуск",
+    servicesTtlHours: "{hours} ч",
+    servicesCapNone: "без потолка",
     billingEyebrow: "Деньги",
     billingTitle: "Тарифы и тестовый период",
     billingDesc:
@@ -612,11 +683,33 @@ export const dict = {
     adminGroupBillingDesc: "Тарифы, баланс и начисления.",
     adminGroupAccess: "Доступ",
     adminGroupAccessDesc: "Люди, их права, машины парка и журнал действий.",
+    adminGroupWorkspaces: "Папки",
+    adminGroupWorkspacesDesc:
+      "Проекты пользователей: чьи они, кому открыты и обрабатываются ли.",
+    adminWorkspaces: "Папки пользователей",
+    adminWorkspacesDesc:
+      "Проекты и файлы клиентов: создать, передать другому, расшарить, снять с обработки.",
+    adminWorkspacesEyebrow: "Папки",
+    mTransfer: "Передать другому…",
+    transferTitle: "Передать проект",
+    transferDesc:
+      "Проект уйдёт у нынешнего владельца и появится у выбранного. Списания за обработку пойдут с его кошелька. Чтобы прежний владелец сохранил доступ, расшарьте проект ему после передачи.",
+    transferPickPerson: "Кому передать",
+    transferSearch: "Поиск по имени или почте…",
+    transferCurrentOwner: "Сейчас владелец",
+    transferPaused: "Проект приедет на паузе — новый владелец включит его сам.",
+    transferMembersWarn:
+      "У проекта есть участники: доступ у них сохранится, но владельцем станет другой человек.",
+    transferConfirm: "Передать",
+    transferDone: "Проект передан",
+    transferFailed: "Не удалось передать проект",
+    transferNobody: "Некому передать: других активных пользователей нет.",
     adminRoles: "Права доступа",
     adminRolesDesc:
       "Кто из админов чем занимается: роли и теги разделов.",
     adminPipelineDesc:
       "Очередь задач, машины в работе и общие словари обработки.",
+    adminPipelineEyebrow: "Обработка",
     adminHubTools: "Инструменты",
     adminOverviewEyebrow: "Дашборд",
     adminOverviewTitle: "Обзор студии",
@@ -1601,6 +1694,76 @@ export const dict = {
     adminBillingUnpricedDesc:
       "Projects with no billing unit set. While the funds gate is off they are processed for free.",
     adminBilling: "Pricing",
+    adminServices: "External services",
+    adminServicesDesc:
+      "Keys, price list and spending for external services. The key is stored here and handed to machines on request.",
+    servicesEyebrow: "Services",
+    servicesTitle: "External services",
+    servicesSub:
+      "The vault: the key is stored here, a machine takes it before a task and keeps a copy for a limited time. Money is computed by the site from the price list — the node reports usage.",
+    servicesVaultMissing:
+      "The vault is not configured: VAULT_MASTER_KEY is missing from the environment. Until it is set, a stored key could not be read back, and services cannot be added.",
+    servicesAdd: "Add service",
+    servicesAddTitle: "New service",
+    servicesEmpty: "No services yet. Add the first one with the button above.",
+    servicesLoadError: "Failed to load services",
+    servicesSaveError: "Failed to save",
+    servicesFieldName: "Name",
+    servicesFieldSlug: "Slug",
+    servicesFieldSlugHint: "Machines ask for the key by it. Latin letters, digits and dashes; cannot be changed later.",
+    servicesFieldAdapter: "Adapter",
+    servicesFieldAdapterHint: "Which code in the app knows how to talk to it. May be left empty.",
+    servicesFieldCurrency: "Price currency",
+    servicesFieldCurrencyHint: "The service’s currency, not the wallet’s: the wallet is always in roubles.",
+    servicesFieldModel: "How we pay the vendor",
+    servicesFieldDelivery: "How the key reaches the worker",
+    servicesFieldTtl: "Copy lifetime on the machine, hours",
+    servicesFieldTtlHint: "A copy without a lifetime is a permanent copy, and then revocation revokes nothing.",
+    servicesFieldCap: "Daily spending cap, ₽",
+    servicesFieldCapHint: "0 — no cap. Insurance against a looping graph and against a leaked key.",
+    servicesFieldSecret: "Vendor key",
+    servicesFieldSecretHint: "Stored encrypted. It cannot be shown back — only replaced.",
+    servicesCreate: "Add",
+    servicesCreated: "Service added",
+    servicesSlugTaken: "This slug is already taken",
+    servicesVaultError: "The vault is not configured: VAULT_MASTER_KEY is missing",
+    servicesModelPrepaid: "Prepaid balance",
+    servicesModelPostpaid: "Postpaid invoice",
+    servicesModelSubscription: "Subscription or quota",
+    servicesDeliveryKeys: "Key travels to the machine",
+    servicesDeliveryProxy: "Key never leaves the server",
+    servicesStatusActive: "Active",
+    servicesStatusPaused: "Paused",
+    servicesStatusRevoked: "Revoked",
+    servicesKey: "Key",
+    servicesKeyVersion: "version {version}, since {date}",
+    servicesNoKey: "No key",
+    servicesRotate: "Replace key",
+    servicesRotateTitle: "New key for {name}",
+    servicesRotateHint:
+      "The previous version stays alive: tasks already holding a copy must not fail mid-work. Retire it with a separate button once the fleet has caught up.",
+    servicesRotated: "Key replaced, version {version}",
+    servicesRevokeOld: "Retire previous versions",
+    servicesRevokedOld: "Versions retired: {count}",
+    servicesPause: "Pause",
+    servicesResume: "Resume",
+    servicesRevoke: "Revoke",
+    servicesRevokeConfirm: "Revoke the service? Keys for it will stop being issued.",
+    servicesPrices: "Price list",
+    servicesPricesEmpty: "No prices set — usage for this service could not be recorded.",
+    servicesPriceAdd: "Add price",
+    servicesPriceUnit: "Unit",
+    servicesPriceValue: "Price per unit",
+    servicesPriceHint: "In the service’s currency. Up to six decimals: a token at 0.000002 would otherwise round to zero.",
+    servicesPriceSaved: "Price added",
+    servicesSpentMonth: "Spent in 30 days",
+    servicesUnitToken: "token",
+    servicesUnitChar: "character",
+    servicesUnitSec: "second",
+    servicesUnitImage: "image",
+    servicesUnitRun: "run",
+    servicesTtlHours: "{hours} h",
+    servicesCapNone: "no cap",
     billingEyebrow: "Money",
     billingTitle: "Pricing and trial",
     billingDesc:
@@ -1663,10 +1826,32 @@ export const dict = {
     adminGroupBillingDesc: "Plans, balance and charges.",
     adminGroupAccess: "Access",
     adminGroupAccessDesc: "People, their rights, fleet machines and the audit log.",
+    adminGroupWorkspaces: "Folders",
+    adminGroupWorkspacesDesc:
+      "User projects: who owns them, who they are open to, and whether they run.",
+    adminWorkspaces: "User folders",
+    adminWorkspacesDesc:
+      "Client projects and files: create, hand over, share, take off processing.",
+    adminWorkspacesEyebrow: "Folders",
+    mTransfer: "Hand over…",
+    transferTitle: "Hand over the project",
+    transferDesc:
+      "The project leaves its current owner and appears for the person you pick. Processing will be charged to their wallet. To keep the previous owner's access, share the project with them afterwards.",
+    transferPickPerson: "Hand over to",
+    transferSearch: "Search by name or email…",
+    transferCurrentOwner: "Current owner",
+    transferPaused: "The project arrives paused — the new owner turns it on.",
+    transferMembersWarn:
+      "The project has members: they keep their access, but the owner changes.",
+    transferConfirm: "Hand over",
+    transferDone: "Project handed over",
+    transferFailed: "Could not hand the project over",
+    transferNobody: "Nobody to hand it to: there are no other active users.",
     adminRoles: "Access rights",
     adminRolesDesc: "What each admin works on: roles and section tags.",
     adminPipelineDesc:
       "Task queue, machines at work and the shared processing dictionaries.",
+    adminPipelineEyebrow: "Processing",
     adminHubTools: "Tools",
     adminOverviewEyebrow: "Dashboard",
     adminOverviewTitle: "Studio overview",
@@ -2180,13 +2365,14 @@ export function useI18n() {
   return ctx
 }
 
+/**
+ * Деньги для показа. Валюта берётся из одного места (`ACCOUNT_CURRENCY`), а не
+ * зашивается здесь: второй форматтер с собственной валютой — это ровно тот
+ * случай, из-за которого кабинет рисовал «$» над рублёвыми суммами, пока
+ * админка в тех же копейках показывала «₽».
+ */
 export function formatBalance(cents: number, lang: Lang): string {
-  const value = cents / 100
-  return new Intl.NumberFormat(lang === "ru" ? "ru-RU" : "en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(value)
+  return formatCents(cents, lang)
 }
 
 export function avatarInitials(name: string, email: string): string {

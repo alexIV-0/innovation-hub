@@ -5,6 +5,7 @@ import { Loader2, Search, UserX } from "lucide-react"
 import { toast } from "sonner"
 
 import { tf, useAdminI18n } from "@/components/admin/admin-dict"
+import { UserHistory } from "@/components/admin/shared/user-history"
 import { ResizeGrip } from "@/components/account/resize-grip"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { cn } from "@/lib/utils"
@@ -71,7 +72,7 @@ export function UsersColumn({
   const toggle = async (user: PipelineUserDto) => {
     setPending(user.id)
     try {
-      const res = await fetch("/api/admin/pipeline/users", {
+      const res = await fetch("/api/admin/workspaces/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -213,6 +214,15 @@ export function UsersColumn({
                         ) : null}
                       </span>
                     </button>
+
+                    {/* Вне кнопки выбора намеренно: кнопка внутри кнопки
+                        невалидна, и клик по значку выбирал бы пользователя
+                        вместо того, чтобы показать, что с ним делали. */}
+                    <UserHistory
+                      userId={user.id}
+                      userLabel={user.email}
+                      className="mt-0.5 shrink-0"
+                    />
                   </div>
                 </li>
               )

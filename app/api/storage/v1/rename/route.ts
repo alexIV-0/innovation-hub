@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const file = await writeRename({
-      userId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       fileId: data.fileId,
       name: data.name,

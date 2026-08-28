@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 
-import type { ProjectRecord } from "@/lib/domain-types"
+import {
+  hasCapability,
+  type AdminCapability,
+} from "@/lib/admin-capabilities"
+import type { ProjectRecord, UserRole } from "@/lib/domain-types"
 import {
   isProjectMemberRole,
   permissionsFor,
@@ -25,6 +29,15 @@ export type ProjectAccess = {
   project: ProjectRecord
   role: ProjectAccessRole
   permissions: ProjectPermissions
+  /**
+   * Доступ дан админским тегом, а не владением или участием.
+   *
+   * Нужно роуту, а не проверке: права от этого не меняются, но действие,
+   * совершённое над чужим проектом, положено записать в журнал админских
+   * действий, а такое же действие владельца над своим — нет. Иначе журнал
+   * зальёт обычная работа пользователей, и админские строки в нём утонут.
+   */
+  viaCapability?: boolean
 }
 
 /**
@@ -86,6 +99,48 @@ export async function requireProjectAccess(
     )
   }
   return access
+}
+
+/**
+ * То же самое, но с одной оговоркой: админ с названным тегом проходит как
+ * владелец.
+ *
+ * Отдельная функция, а не флаг внутри `requireProjectAccess`, и тег передаётся
+ * явно на каждом вызове — намеренно. Спрячь эту ветку внутрь общей проверки, и
+ * она молча расширила бы все роуты кабинета разом; здесь же в коде роута прямо
+ * написано, какой тег его открывает, и увидеть это можно грепом по названию
+ * тега, а не чтением всей цепочки.
+ *
+ * Зачем вообще: расшаривание чужого проекта — это тот же самый диалог и тот же
+ * самый список участников, что у владельца. Второй роут «для админов» рядом
+ * означал бы две реализации приглашения, двух отправителей письма и два места,
+ * где чинить. Разбор — docs/ADMIN_WORKSPACE_PLAN.md §7.
+ */
+export async function requireProjectAccessOrCapability(
+  projectId: string,
+  auth: {
+    userId: string
+    role: UserRole
+    capabilities: readonly AdminCapability[]
+  },
+  minimum: ProjectAccessRole,
+  capability: AdminCapability,
+): Promise<ProjectAccess | NextResponse> {
+  if (hasCapability(auth.role, auth.capabilities, capability)) {
+    const project = await findProjectById(projectId)
+    if (!project || project.deletedAt) {
+      return NextResponse.json({ message: "Project not found." }, { status: 404 })
+    }
+    // Владельцем в базе он не становится: `project.userId` не трогаем, меняется
+    // только то, что позволено сделать в этом запросе.
+    return {
+      project,
+      role: "owner",
+      permissions: permissionsFor("owner"),
+      viaCapability: true,
+    }
+  }
+  return requireProjectAccess(projectId, auth.userId, minimum)
 }
 
 function forbiddenMessage(minimum: ProjectAccessRole): string {

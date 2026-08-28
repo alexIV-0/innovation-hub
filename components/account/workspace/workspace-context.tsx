@@ -216,6 +216,17 @@ type WorkspaceValue = {
   triggerFolderUpload: (target: UploadTarget) => void
   shareProject: (project: Project) => void
   shareTarget: Project | null
+  /**
+   * Передача проекта другому человеку. Сам диалог рисует зона: список людей, из
+   * которых выбирают нового владельца, есть только у админского инструмента, и
+   * тащить его в общий компонент значило бы дать кабинету знание о том, чего он
+   * не делает.
+   */
+  transferProject: (project: Project) => void
+  transferTarget: Project | null
+  closeTransferDialog: () => void
+  /** Перенос состоялся: список проектов перечитывается, выбор сбрасывается. */
+  afterTransfer: () => Promise<void>
   closeShareDialog: () => void
   restoreProject: (project: Project) => void
 
@@ -280,9 +291,10 @@ async function uploadViaXhr(
   file: File,
   target: UploadTarget,
 ): Promise<void> {
-  // Кабинет — через storage v1 (presign → PUT → notify). Админский конвейер
-  // и другие источники ходят на свой uploadUrl (прокси байтов через Next).
-  if (source.scopeKey === "cabinet") {
+  // Через storage v1 (presign → PUT → notify) — так заливает кабинет и «Папки
+  // пользователей»: эндпоинт пускает по тегу projects.access, и байты не идут
+  // через Next. Остальные источники ходят на свой uploadUrl.
+  if (source.directUpload) {
     await uploadProjectFileDirect({
       projectId,
       file,
@@ -443,6 +455,7 @@ export function WorkspaceProvider({
   const [clipboard, setClipboard] = useState<Clipboard | null>(null)
   const [moveTargets, setMoveTargets] = useState<DriveFile[] | null>(null)
   const [shareTarget, setShareTarget] = useState<Project | null>(null)
+  const [transferTarget, setTransferTarget] = useState<Project | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState("")
@@ -1233,6 +1246,24 @@ export function WorkspaceProvider({
 
   const closeShareDialog = useCallback(() => setShareTarget(null), [])
 
+  const transferProject = useCallback((project: Project) => {
+    setTransferTarget(project)
+  }, [])
+
+  const closeTransferDialog = useCallback(() => setTransferTarget(null), [])
+
+  /**
+   * После переноса проекта в этой области больше нет: он уехал к другому
+   * человеку. Поэтому не «обновить карточку», а сбросить выбор и перечитать
+   * список — иначе колонка файлов осталась бы открытой на папке, которой здесь
+   * уже не место.
+   */
+  const afterTransfer = useCallback(async () => {
+    setTransferTarget(null)
+    clearSelection()
+    await loadProjects()
+  }, [clearSelection, loadProjects])
+
   const restoreProject = useCallback(
     (project: Project) => {
       void (async () => {
@@ -1464,6 +1495,10 @@ export function WorkspaceProvider({
     triggerFolderUpload,
     shareProject,
     shareTarget,
+    transferProject,
+    transferTarget,
+    closeTransferDialog,
+    afterTransfer,
     closeShareDialog,
     restoreProject,
     moveTargets,

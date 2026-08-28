@@ -295,6 +295,7 @@ export function RemoteApiDocs() {
                 ["storage", t.remoteApiGroupStorage],
                 ["settings", t.remoteApiGroupSettings],
                 ["queue", t.remoteApiGroupQueue],
+                ["vault", t.remoteApiGroupVault],
               ] as const
             ).map(([id, label]) => (
               <button

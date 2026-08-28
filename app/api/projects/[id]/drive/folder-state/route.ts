@@ -41,6 +41,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const { folderState } = await setProjectPaused({
       projectId: project.id,
       ownerId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       paused: !parsed.data.enabled,
       updatedBy: siteUpdatedBy(auth.email),
       actorUserId: auth.userId,

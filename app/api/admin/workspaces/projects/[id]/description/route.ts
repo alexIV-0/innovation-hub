@@ -25,7 +25,7 @@ type RouteContext = { params: Promise<{ id: string }> }
  * отдельно — оно подпись на карточке в списке.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request, "pipeline.operate")
+  const auth = await requireAdminApi(request, "projects.access")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ message: "Project not found." }, { status: 404 })
   }
 
-  const body = await readProjectDescriptionMd(project.ownerId, project.id)
+  const body = await readProjectDescriptionMd(project.storageOwnerId, project.id)
   // null, а не 404: отсутствие описания — обычное состояние проекта, а не ошибка.
   return NextResponse.json({ body })
 }
@@ -47,7 +47,7 @@ const putSchema = z.object({
 })
 
 export async function PUT(request: NextRequest, context: RouteContext) {
-  const auth = await requireAdminApi(request, "pipeline.operate")
+  const auth = await requireAdminApi(request, "projects.access")
   if (auth instanceof NextResponse) return auth
 
   const { id } = await context.params
@@ -73,7 +73,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
   try {
     await writeProjectDescriptionMd({
-      userId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       projectId: project.id,
       body: parsed.data.body,
     })
@@ -81,9 +81,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     // Строка в каталоге плюс событие в журнале: без них файл на R2 поменялся бы
     // незаметно для машин, а сам сайдкар не появился бы в дереве проекта.
     await writeSidecarSync({
-      userId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       projectId: project.id,
-      key: projectDescriptionKey(project.ownerId, project.id),
+      key: projectDescriptionKey(project.storageOwnerId, project.id),
       name: DESCRIPTION_FILE_NAME,
       actor: { userId: auth.userId },
     })

@@ -78,7 +78,8 @@ export async function createOwnedProject(
 
   try {
     await writeProjectMeta({
-      userId: project.userId,
+      storageOwnerId: project.storageOwnerId,
+      ownerId: project.userId,
       projectId: project.id,
       name: project.name,
       description: project.description,

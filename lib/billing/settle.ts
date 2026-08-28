@@ -16,6 +16,7 @@ import {
   type PayMeter,
   type Wallet,
 } from "@/lib/billing/types"
+import { usageCentsForTask } from "@/lib/vault/usage"
 
 /**
  * Списание по факту — из строки архива обработок.
@@ -237,12 +238,19 @@ export async function settleUnbilled(limit = SETTLE_LIMIT): Promise<SettleResult
         continue
       }
 
+      // Себестоимость по строкам потребления, если нода их прислала. Нет строк
+      // — прежний путь через `total_cost` из архива: парк переходит на новый
+      // контракт не одномоментно, и до перехода списание должно работать как
+      // работало (docs/VENDOR_SERVICES_PLAN.md, С5).
+      const vendorCentsFromUsage = await usageCentsForTask(row.taskId)
+
       const priced = priceCharge({
         base,
         meter,
         units,
         unitRateCents,
         marginPct: settings.marginPct,
+        vendorCentsFromUsage,
         vendorAmount: row.totalCost == null ? null : Number(row.totalCost),
         vendorCurrency: settings.vendorCurrency,
         vendorRate: vendorRate?.rate ?? null,

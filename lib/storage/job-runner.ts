@@ -21,6 +21,12 @@ async function runCopyJob(job: StorageJobRecord): Promise<void> {
   const payload = job.payload as {
     sourceProjectId?: string
     destProjectId?: string
+    /**
+     * Куда копировать — адрес в хранилище проекта-получателя. Старое имя
+     * `destOwnerId` читаем тоже: работы, поставленные в очередь до выкатки,
+     * лежат в базе с ним, и уронить их переименованием поля нельзя.
+     */
+    destStorageOwnerId?: string
     destOwnerId?: string
     destFolderPath?: string
     fileIds?: string[]
@@ -32,11 +38,16 @@ async function runCopyJob(job: StorageJobRecord): Promise<void> {
 
   const sourceProjectId = payload.sourceProjectId ?? job.projectId
   const destProjectId = payload.destProjectId ?? job.projectId
-  const destOwnerId = payload.destOwnerId
+  const destStorageOwnerId = payload.destStorageOwnerId ?? payload.destOwnerId
   const destFolderPath = payload.destFolderPath ?? ""
   const fileIds = payload.fileIds ?? []
 
-  if (!sourceProjectId || !destProjectId || !destOwnerId || fileIds.length === 0) {
+  if (
+    !sourceProjectId ||
+    !destProjectId ||
+    !destStorageOwnerId ||
+    fileIds.length === 0
+  ) {
     await finishJob(job.id, {
       state: "failed",
       error: "Invalid copy job payload.",
@@ -57,7 +68,7 @@ async function runCopyJob(job: StorageJobRecord): Promise<void> {
   for (const item of items) {
     const file = await copyPlanItem({
       destProjectId,
-      destOwnerId,
+      destStorageOwnerId,
       destFolderPath,
       item,
       folderPathMap,
@@ -159,6 +170,7 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
     await setProjectPaused({
       projectId: project.id,
       ownerId: job.userId,
+      storageOwnerId: project.storageOwnerId,
       paused: true,
       updatedBy: "trial",
     })
@@ -175,7 +187,7 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
         if (isSkippedTemplateItem(item)) continue
         await copyPlanItem({
           destProjectId: project.id,
-          destOwnerId: job.userId,
+          destStorageOwnerId: job.userId,
           destFolderPath: "",
           item,
           folderPathMap,
@@ -197,6 +209,9 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
     await setProjectPaused({
       projectId,
       ownerId: job.userId,
+      // Проект только что создан на этого же человека, поэтому адрес в
+      // хранилище совпадает с владельцем.
+      storageOwnerId: job.userId,
       paused: false,
       updatedBy: "trial",
     })
@@ -232,7 +247,10 @@ async function runRecatalogJob(job: StorageJobRecord): Promise<void> {
     await finishJob(job.id, { state: "failed", error: "Project not found." })
     return
   }
-  const cursor = await rebuildCatalogSnapshot(project.userId, project.id)
+  const cursor = await rebuildCatalogSnapshot(
+    project.storageOwnerId,
+    project.id,
+  )
   await finishJob(job.id, {
     state: "done",
     done: 1,

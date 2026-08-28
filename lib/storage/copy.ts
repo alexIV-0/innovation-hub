@@ -92,7 +92,7 @@ async function insertCopiedRow(
   client: PoolClient,
   input: {
     destProjectId: string
-    destOwnerId: string
+    destStorageOwnerId: string
     folderPath: string
     name: string
     isFolder: boolean
@@ -141,7 +141,7 @@ async function insertCopiedRow(
   const key =
     file.s3Key ??
     logicalKeyForFile({
-      userId: input.destOwnerId,
+      storageOwnerId: input.destStorageOwnerId,
       projectId: input.destProjectId,
       folderPath: file.folderPath,
       name: file.name,
@@ -221,7 +221,7 @@ export async function buildCopyPlan(input: {
 export async function copySingleFile(input: {
   sourceProjectId: string
   destProjectId: string
-  destOwnerId: string
+  destStorageOwnerId: string
   destFolderPath: string
   source: SourceRow
   eventId?: string | null
@@ -240,14 +240,14 @@ export async function copySingleFile(input: {
   // по которой заливка заводит папки по пути (writeNotifyUpload).
   if (destFolder) {
     await writeEnsureFolderPath({
-      userId: input.destOwnerId,
+      storageOwnerId: input.destStorageOwnerId,
       projectId: input.destProjectId,
       folderPath: destFolder,
       actor: input.actor,
     })
   }
   const destKey = projectUploadObjectKey(
-    input.destOwnerId,
+    input.destStorageOwnerId,
     input.destProjectId,
     destFolder,
     `${randomUUID()}-${input.source.name}`,
@@ -257,7 +257,7 @@ export async function copySingleFile(input: {
   return withTransaction(async (client) =>
     insertCopiedRow(client, {
       destProjectId: input.destProjectId,
-      destOwnerId: input.destOwnerId,
+      destStorageOwnerId: input.destStorageOwnerId,
       folderPath: destFolder,
       name: input.source.name,
       isFolder: false,
@@ -279,7 +279,7 @@ export async function copySingleFile(input: {
  */
 export async function copyPlanItem(input: {
   destProjectId: string
-  destOwnerId: string
+  destStorageOwnerId: string
   destFolderPath: string
   item: CopyPlanItem
   /** Maps source-relative folder path → actual dest folder path (after unique names). */
@@ -304,7 +304,7 @@ export async function copyPlanItem(input: {
     const file = await withTransaction(async (client) =>
       insertCopiedRow(client, {
         destProjectId: input.destProjectId,
-        destOwnerId: input.destOwnerId,
+        destStorageOwnerId: input.destStorageOwnerId,
         folderPath: destParent,
         name: input.item.source.name,
         isFolder: true,
@@ -333,7 +333,7 @@ export async function copyPlanItem(input: {
   }
 
   const destKey = projectUploadObjectKey(
-    input.destOwnerId,
+    input.destStorageOwnerId,
     input.destProjectId,
     destParent,
     `${randomUUID()}-${input.item.source.name}`,
@@ -343,7 +343,7 @@ export async function copyPlanItem(input: {
   return withTransaction(async (client) =>
     insertCopiedRow(client, {
       destProjectId: input.destProjectId,
-      destOwnerId: input.destOwnerId,
+      destStorageOwnerId: input.destStorageOwnerId,
       folderPath: destParent,
       name: input.item.source.name,
       isFolder: false,

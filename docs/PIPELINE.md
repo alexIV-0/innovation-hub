@@ -59,7 +59,7 @@
 
 Точки входа, все через эту функцию: `PATCH /api/projects/[id]` (кабинет),
 `PATCH /api/projects/[id]/drive/folder-state`, `putSidecar kind: folder-state`
-(машина), `PATCH /api/admin/pipeline/projects/[id]` (админка).
+(машина), `PATCH /api/admin/workspaces/projects/[id]` (админка).
 
 **Устаревшее `projects.is_active` удалено** (миграция `2026-08-13-pipeline-automation.sql`):
 колонка дублировала смысл `is_paused` и была с ней сварена перекрёстным

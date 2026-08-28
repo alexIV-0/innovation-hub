@@ -266,10 +266,10 @@ type StatsObject = { key: string; etag: string | null }
 
 /** Листинг `options/_stats/` одного проекта. Возвращает ключи с их версиями. */
 async function listStatsObjects(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): Promise<StatsObject[]> {
-  const prefix = `${projectPrefix(userId, projectId)}options/_stats/`
+  const prefix = `${projectPrefix(storageOwnerId, projectId)}options/_stats/`
   const client = getS3Client()
   const bucket = getS3Bucket()
   const found: StatsObject[] = []
@@ -314,8 +314,12 @@ export async function importProcessingArchive(options?: {
   const maxFiles = options?.maxFiles ?? MAX_FILES_PER_RUN
   // Архивные и приостановленные проекты тоже сканируем: их история не менее
   // ценна, а файлы никуда не делись.
-  const projects = await query<{ id: string; user_id: string }>(
-    `SELECT id, user_id FROM projects`,
+  // Префикс — по адресу в хранилище, а не по владельцу: у переданного проекта
+  // они расходятся, и по user_id листинг вернул бы пусто, молча потеряв всю
+  // статистику проекта.
+  const projects = await query<{ id: string; storage_owner_id: string }>(
+    `SELECT id, COALESCE(storage_owner_id, user_id) AS storage_owner_id
+       FROM projects`,
   )
 
   const cursors = await query<{
@@ -331,7 +335,7 @@ export async function importProcessingArchive(options?: {
 
     let objects: StatsObject[]
     try {
-      objects = await listStatsObjects(project.user_id, project.id)
+      objects = await listStatsObjects(project.storage_owner_id, project.id)
     } catch (error) {
       result.errors++
       console.error("[stats] list _stats failed", project.id, error)

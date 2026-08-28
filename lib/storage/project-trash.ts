@@ -12,6 +12,7 @@ const PROJECT_FIELDS = `
   id,
   user_id AS "ownerId",
   user_id AS "userId",
+  COALESCE(storage_owner_id, user_id) AS "storageOwnerId",
   name,
   COALESCE(description, '') AS description,
   COALESCE(group_name, 'personal') AS "groupName",
@@ -73,13 +74,13 @@ export async function listDeletedProjects(
 }
 
 async function deleteProjectPrefix(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): Promise<number> {
   if (!isS3Configured()) return 0
   const client = getS3Client()
   const bucket = getS3Bucket()
-  const prefix = projectObjectPrefix(userId, projectId)
+  const prefix = projectObjectPrefix(storageOwnerId, projectId)
   let deleted = 0
   let token: string | undefined
   do {
@@ -107,8 +108,11 @@ export async function purgeDeletedProjects(): Promise<{ purged: number }> {
   const cutoff = new Date(
     Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000,
   )
-  const rows = await query<{ id: string; userId: string }>(
-    `SELECT id, user_id AS "userId"
+  // Чистим по адресу в хранилище, а не по владельцу: у переданного проекта
+  // объекты остались под тем, кто его завёл, и удаление по user_id прошло бы по
+  // пустому префиксу, оставив байты в бакете навсегда.
+  const rows = await query<{ id: string; storageOwnerId: string }>(
+    `SELECT id, COALESCE(storage_owner_id, user_id) AS "storageOwnerId"
        FROM projects
       WHERE deleted_at IS NOT NULL AND deleted_at < $1
       LIMIT 50`,
@@ -117,7 +121,7 @@ export async function purgeDeletedProjects(): Promise<{ purged: number }> {
   let purged = 0
   for (const row of rows.rows) {
     try {
-      await deleteProjectPrefix(row.userId, row.id)
+      await deleteProjectPrefix(row.storageOwnerId, row.id)
     } catch (error) {
       console.error("[storage] purge project R2 failed", row.id, error)
     }

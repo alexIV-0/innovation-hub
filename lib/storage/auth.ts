@@ -78,6 +78,13 @@ export type { ProjectAccessRole } from "@/lib/project-access"
 export type StorageProjectAccess = {
   projectId: string
   ownerId: string
+  /**
+   * Первый сегмент ключа проекта в R2 (`projects.storage_owner_id`). У
+   * переданного другому человеку проекта не равен `ownerId`: владение
+   * переехало, байты остались. Ключи строить отсюда, права проверять по
+   * `ownerId` и `accessRole` — docs/ADMIN_WORKSPACE_PLAN.md §5.
+   */
+  storageOwnerId: string
   accessRole: ProjectAccessRole
 }
 
@@ -95,10 +102,16 @@ function unauthorized(message = "Unauthorized.") {
 export async function resolveProjectAccess(
   projectId: string,
   userId: string,
-): Promise<{ role: ProjectAccessRole; ownerId: string } | null> {
+): Promise<
+  { role: ProjectAccessRole; ownerId: string; storageOwnerId: string } | null
+> {
   const access = await resolveSiteProjectAccess(projectId, userId)
   if (!access) return null
-  return { role: access.role, ownerId: access.project.userId }
+  return {
+    role: access.role,
+    ownerId: access.project.userId,
+    storageOwnerId: access.project.storageOwnerId,
+  }
 }
 
 async function authFromRemoteComputerToken(
@@ -255,6 +268,7 @@ export async function requireProjectAccess(
     return {
       projectId: project.id,
       ownerId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       accessRole: "owner",
     }
   }
@@ -267,6 +281,7 @@ export async function requireProjectAccess(
     return {
       projectId: project.id,
       ownerId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       accessRole: "owner",
     }
   }
@@ -278,6 +293,7 @@ export async function requireProjectAccess(
   return {
     projectId,
     ownerId: resolved.ownerId,
+    storageOwnerId: resolved.storageOwnerId,
     accessRole: resolved.role,
   }
 }
@@ -313,6 +329,7 @@ export async function requireOwnedProjectAccess(
   return {
     projectId: project.id,
     ownerId: project.ownerId,
+    storageOwnerId: project.storageOwnerId,
     accessRole: "owner",
   }
 }

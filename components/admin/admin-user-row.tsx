@@ -13,6 +13,7 @@ import {
   UserX,
 } from "lucide-react"
 import { useAdminI18n } from "@/components/admin/admin-dict"
+import { UserHistory } from "@/components/admin/shared/user-history"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -143,6 +144,9 @@ export function AdminUserRow({
             {t.suspended}
           </Badge>
         )}
+        {/* Кто и когда это сделал. Значок стоит рядом с состоянием, а не в меню:
+            вопрос «почему он заблокирован» задают, глядя именно на этот бейдж. */}
+        <UserHistory userId={user.id} userLabel={user.email} />
       </div>
 
       <p className="hidden text-xs text-muted-foreground md:block">

@@ -280,7 +280,8 @@ export async function POST(request: NextRequest) {
 
     try {
       await writeProjectMeta({
-        userId: project.ownerId,
+        storageOwnerId: project.storageOwnerId,
+        ownerId: project.ownerId,
         projectId: project.id,
         name,
         description: description ?? "",

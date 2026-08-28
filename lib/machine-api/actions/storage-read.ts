@@ -81,10 +81,10 @@ export const getSidecarAction = defineAction(
 
     const key =
       props.name === "folder-state"
-        ? projectFolderStateKey(access.ownerId, access.projectId)
+        ? projectFolderStateKey(access.storageOwnerId, access.projectId)
         : props.name === "description"
-          ? projectDescriptionKey(access.ownerId, access.projectId)
-          : projectOptionsKey(access.ownerId, access.projectId)
+          ? projectDescriptionKey(access.storageOwnerId, access.projectId)
+          : projectOptionsKey(access.storageOwnerId, access.projectId)
 
     const text = await getObjectText(key)
     if (text == null) return apiError("Not found.", 404)

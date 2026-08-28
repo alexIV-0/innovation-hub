@@ -110,7 +110,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
   try {
     const file = await writeRename({
-      userId: owned.project.ownerId,
+      storageOwnerId: owned.project.storageOwnerId,
       fileId,
       projectId: id,
       name,
@@ -149,7 +149,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     await writeFileDelete({
-      userId: owned.project.ownerId,
+      storageOwnerId: owned.project.storageOwnerId,
       projectId: id,
       fileId,
       deletedBy: auth.userId,

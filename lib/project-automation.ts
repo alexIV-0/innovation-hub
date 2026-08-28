@@ -42,7 +42,14 @@ import { writeSidecarSync } from "@/lib/storage/write-path"
  */
 export async function setProjectPaused(input: {
   projectId: string
+  /** Владелец: по нему обновляется строка проекта (WHERE user_id = …). */
   ownerId: string
+  /**
+   * `projects.storage_owner_id` — по нему строится ключ сайдкара. У переданного
+   * проекта не равен `ownerId`, и подстановка владельца записала бы folderState
+   * туда, где его никто не читает.
+   */
+  storageOwnerId: string
   paused: boolean
   /** Кто менял — siteUpdatedBy(email) из lib/project-storage. */
   updatedBy: string
@@ -56,7 +63,7 @@ export async function setProjectPaused(input: {
   }
 
   const folderState = await setProjectAutomationEnabled({
-    userId: input.ownerId,
+    storageOwnerId: input.storageOwnerId,
     projectId: input.projectId,
     enabled: !input.paused,
     updatedBy: input.updatedBy,
@@ -73,9 +80,9 @@ export async function setProjectPaused(input: {
   }
 
   await writeSidecarSync({
-    userId: input.ownerId,
+    storageOwnerId: input.storageOwnerId,
     projectId: input.projectId,
-    key: projectFolderStateKey(input.ownerId, input.projectId),
+    key: projectFolderStateKey(input.storageOwnerId, input.projectId),
     name: FOLDER_STATE_FILE_NAME,
     actor: input.actorUserId ? { userId: input.actorUserId } : null,
   })

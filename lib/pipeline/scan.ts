@@ -182,10 +182,10 @@ export type InEntry = {
  */
 export function resolveInEntry(
   key: string,
-  ownerId: string,
+  storageOwnerId: string,
   projectId: string,
 ): InEntry | null {
-  const prefix = projectPrefix(ownerId, projectId)
+  const prefix = projectPrefix(storageOwnerId, projectId)
   if (!key.startsWith(prefix)) return null
   const rest = key.slice(prefix.length)
   if (!rest.startsWith("IN/")) return null
@@ -413,7 +413,7 @@ export async function collectTasks(): Promise<CollectResult> {
 
     const entry = resolveInEntry(
       change.key,
-      project.ownerId,
+      project.storageOwnerId,
       project.projectId,
     )
     if (!entry) continue
@@ -620,7 +620,7 @@ export async function materializeCandidates(input: {
 
     if (!optionsCache.has(project.projectId)) {
       const raw = await getObjectText(
-        projectOptionsKey(project.ownerId, project.projectId),
+        projectOptionsKey(project.storageOwnerId, project.projectId),
       )
       if (raw == null) {
         optionsCache.set(project.projectId, null)
@@ -858,6 +858,7 @@ async function pauseForBilling(
     await setProjectPaused({
       projectId: project.projectId,
       ownerId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       paused: true,
       updatedBy: "billing",
     })

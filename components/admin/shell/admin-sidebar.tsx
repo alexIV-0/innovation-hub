@@ -6,7 +6,7 @@ import { useI18n } from "@/components/account/i18n"
 import { useAdminData } from "@/components/admin/data/admin-data-context"
 import { AdminSidebarLink } from "./admin-sidebar-link"
 import { AdminSidebarUser } from "./admin-sidebar-user"
-import { adminAllNavItems, visibleNavItems } from "./nav-config"
+import { toolsInArea, visibleAreas } from "./nav-config"
 
 type Props = {
   email: string
@@ -25,10 +25,14 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
     currentUserCapabilities,
   } = useAdminData()
 
-  const items = visibleNavItems(
-    adminAllNavItems,
-    currentUserRole,
-    currentUserCapabilities,
+  // На узком экране группы не сворачиваем: подпись группы + её инструменты
+  // читаются одним взглядом, а лишний тап по стрелке на телефоне дороже, чем
+  // несколько строк прокрутки.
+  const areas = visibleAreas(currentUserRole, currentUserCapabilities).map(
+    (area) => ({
+      ...area,
+      tools: toolsInArea(area.key, currentUserRole, currentUserCapabilities),
+    }),
   )
 
   const counts: Record<string, number> = {
@@ -59,14 +63,21 @@ export function AdminSidebar({ email, fullName, onNavigate }: Props) {
         <p className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/70">
           {t.workspaceSection}
         </p>
-        {items.map((item) => (
-          <AdminSidebarLink
-            key={item.href}
-            item={item}
-            label={t[item.labelKey]}
-            badge={counts[item.href]}
-            onNavigate={onNavigate}
-          />
+        {areas.map((area) => (
+          <div key={area.key} className="pb-1">
+            <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">
+              {t[area.labelKey]}
+            </p>
+            {area.tools.map((tool) => (
+              <AdminSidebarLink
+                key={`${area.key}:${tool.href}`}
+                item={tool}
+                label={t[tool.labelKey]}
+                badge={counts[tool.href]}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
         ))}
       </nav>
 

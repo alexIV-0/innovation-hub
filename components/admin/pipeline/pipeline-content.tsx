@@ -1,148 +1,78 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import { toast } from "sonner"
+import { useCallback, useEffect, useState } from "react"
 
-import { useAdminI18n } from "@/components/admin/admin-dict"
-import { ArchiveDialog } from "@/components/account/workspace/archive-dialog"
-import { ClipboardPanel } from "@/components/account/workspace/clipboard-panel"
-import { WorkspaceContextMenu } from "@/components/account/workspace/context-menu"
-import { PreviewDialog } from "@/components/account/workspace/file-preview"
-import { FullMode } from "@/components/account/workspace/full-mode"
-import { ProjectsColumn } from "@/components/account/workspace/projects-column"
-import { ShareDialog } from "@/components/account/workspace/share-dialog"
-import { WorkspaceDialogs } from "@/components/account/workspace/workspace-dialogs"
-import { WorkspaceProvider } from "@/components/account/workspace/workspace-context"
-import { createPipelineSource } from "./pipeline-source"
-import { PipelineRunBar } from "./pipeline-run-bar"
-import { UsersColumn, type PipelineUserDto } from "./users-column"
+import { useI18n } from "@/components/account/i18n"
+import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
+import { RunPanel } from "./run-panel"
+import { TasksPanel } from "./tasks-panel"
 
 /**
- * Страница «Конвейер»: три колонки (пользователи → проекты → файлы) и нижняя
- * панель с описанием, настройками и чатом.
- *
- * Колонки 2 и 3 — те же компоненты, что в кабинете пользователя; отличается
- * только источник данных (createPipelineSource). Своя раскладка, а не
- * WorkspacePageClient, потому что здесь не нужен ни упрощённый режим, ни
- * мобильная навигация по табам: админский вид всегда полный и трёхколоночный.
+ * Пока слежение идёт, спрашиваем чаще — видно, что цикл живой. Такт один на всю
+ * страницу: пульт и очередь смотрят на одно и то же состояние, и разъезжаться
+ * им нельзя.
  */
-function PipelineLayout({
-  users,
-  loadingUsers,
-  selectedUserId,
-  onSelectUser,
-  onToggleUser,
-}: {
-  users: PipelineUserDto[]
-  loadingUsers: boolean
-  selectedUserId: string | null
-  onSelectUser: (userId: string) => void
-  onToggleUser: (userId: string, enabled: boolean) => void
-}) {
-  const t = useAdminI18n()
-
-  return (
-    // Колонки сверху, полоса запуска снизу на всю ширину страницы — она
-    // управляет слежением по всем пользователям, а не тем, что выбрано в
-    // колонках, поэтому и не должна жить внутри одной из них.
-    <div className="flex h-full min-w-0 flex-col overflow-hidden">
-      <div className="hidden min-h-0 flex-1 lg:flex">
-        <UsersColumn
-          users={users}
-          loading={loadingUsers}
-          selectedUserId={selectedUserId}
-          onSelectUser={onSelectUser}
-          onToggle={onToggleUser}
-        />
-        <ProjectsColumn />
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <FullMode />
-        </main>
-      </div>
-
-      {/* Три колонки на телефоне не помещаются, а урезанный вид админке не
-          нужен: обработкой управляют с рабочего места. */}
-      <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-[14px] text-ws-4 lg:hidden">
-        {t.pipelineNarrowScreen}
-      </div>
-
-      <PipelineRunBar />
-
-      <ClipboardPanel />
-      <WorkspaceContextMenu />
-      <ArchiveDialog />
-      <PreviewDialog />
-      <ShareDialog />
-      <WorkspaceDialogs />
-    </div>
-  )
-}
+const POLL_RUNNING_MS = 10_000
+const POLL_IDLE_MS = 30_000
 
 export function PipelineContent() {
-  const t = useAdminI18n()
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
-  const [users, setUsers] = useState<PipelineUserDto[]>([])
-  const [loadingUsers, setLoadingUsers] = useState(true)
+  const { t } = useI18n()
+  const [tick, setTick] = useState(0)
+  const [running, setRunning] = useState(false)
 
   /**
-   * Выбранный пользователь живёт в URL, как и раздел проектов в кабинете:
-   * ссылка на конкретного пользователя переживает перезагрузку и её можно
-   * переслать.
+   * Опрашиваем только видимую вкладку.
+   *
+   * Страницу конвейера держат открытой весь день, и раньше она стучалась в
+   * сервер каждые десять секунд, даже когда на неё никто не смотрел. Возвращаясь
+   * на вкладку, спрашиваем сразу: подождать полный такт, глядя на устаревшие
+   * цифры, — худшее из возможных мест для экономии.
    */
-  const selectedUserId = searchParams.get("user")
-
   useEffect(() => {
-    void (async () => {
-      setLoadingUsers(true)
-      try {
-        const res = await fetch("/api/admin/pipeline/users")
-        if (!res.ok) {
-          toast.error(t.pipelineUsersLoadError)
-          return
-        }
-        const data = await res.json()
-        setUsers(data.users ?? [])
-      } finally {
-        setLoadingUsers(false)
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    const start = () => {
+      if (timer) clearInterval(timer)
+      timer = setInterval(
+        () => setTick((v) => v + 1),
+        running ? POLL_RUNNING_MS : POLL_IDLE_MS,
+      )
+    }
+    const stop = () => {
+      if (timer) clearInterval(timer)
+      timer = null
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        setTick((v) => v + 1)
+        start()
+      } else {
+        stop()
       }
-    })()
+    }
+
+    if (document.visibilityState === "visible") start()
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [running])
+
+  const onRunningChange = useCallback((value: boolean) => {
+    setRunning(value)
   }, [])
-
-  const onSelectUser = useCallback(
-    (userId: string) => {
-      // Меняя пользователя, сбрасываем выбранный проект: он принадлежал другому.
-      const params = new URLSearchParams()
-      params.set("user", userId)
-      router.replace(`/admin/pipeline?${params.toString()}`, { scroll: false })
-    },
-    [router],
-  )
-
-  const onToggleUser = useCallback((userId: string, enabled: boolean) => {
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId ? { ...u, automationEnabled: enabled } : u,
-      ),
-    )
-  }, [])
-
-  const source = useMemo(
-    () => createPipelineSource(selectedUserId),
-    [selectedUserId],
-  )
 
   return (
-    <WorkspaceProvider source={source}>
-      <PipelineLayout
-        users={users}
-        loadingUsers={loadingUsers}
-        selectedUserId={selectedUserId}
-        onSelectUser={onSelectUser}
-        onToggleUser={onToggleUser}
+    <div className="space-y-6">
+      <AdminPageHeader
+        eyebrow={t.adminPipelineEyebrow}
+        title={t.adminPipeline}
+        description={t.adminPipelineDesc}
       />
-    </WorkspaceProvider>
+      <RunPanel tick={tick} onRunningChange={onRunningChange} />
+      <TasksPanel tick={tick} />
+    </div>
   )
 }

@@ -49,29 +49,42 @@ const meterMapSchema = z.object({
   bytes: z.number().nonnegative().max(1e15),
 })
 
-export const billingSettingsSchema = z.object({
+export const trialSettingsSchema = z.object({
+  enabled: z.boolean(),
+  amountCents: z.number().int().min(0).max(1e11),
+  lifetimeDays: z.number().int().min(1).max(3650).nullable(),
+})
+
+/**
+ * Правила и цены — всё, кроме тестового периода.
+ *
+ * Документ настроек один, а распоряжаются им двое: тарифом — `billing.manage`,
+ * периодом — `billing.trial`. Поэтому и схемы две, и каждая ПОЛНАЯ в своей
+ * части: приняв целый документ от любого из них, мы дали бы одному тегу тихо
+ * переписать поля другого — ровно то, ради чего теги и разделяли.
+ */
+export const billingRulesSchema = z.object({
   rates: rateMapSchema,
   marginPct: z.number().min(0).max(1000),
   minAdmitUnits: meterMapSchema,
   defaultEstimateUnits: meterMapSchema,
   overdraftLimitCents: z.number().int().min(0).max(1e11),
-  trial: z.object({
-    enabled: z.boolean(),
-    amountCents: z.number().int().min(0).max(1e11),
-    lifetimeDays: z.number().int().min(1).max(3650).nullable(),
-  }),
   enforceForOwnProjects: z.boolean(),
   vendorCurrency: z.string().trim().length(3).toUpperCase(),
   fxAdjustPct: z.number().min(-50).max(100),
 })
 
-export const billingSettingsWriteSchema = z.object({
-  settings: billingSettingsSchema,
-  /**
-   * Ревизия, которую клиент видел при чтении. Разошлась — отказ, а не
-   * молчаливое затирание чужой правки.
-   */
-  baseRevision: z.number().int().min(0),
+/** Ревизия, которую клиент видел при чтении: разошлась — отказ, а не затирание. */
+const revision = z.number().int().min(0)
+
+export const billingRulesWriteSchema = z.object({
+  settings: billingRulesSchema,
+  baseRevision: revision,
+})
+
+export const trialWriteSchema = z.object({
+  trial: trialSettingsSchema,
+  baseRevision: revision,
 })
 
 export function isKnownPair(value: string): value is PayPair {

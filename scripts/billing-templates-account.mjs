@@ -19,11 +19,17 @@
  * Идемпотентно: повторный запуск обновляет пароль и флаги, но не создаёт
  * второго аккаунта и не трогает уже заведённые проекты.
  *
- * Заодно выпускает машинный токен `mch_…`. Интерфейса для него нет нигде:
- * единственный вход — `POST /api/account/machine-tokens`, то есть из браузера
- * под этим же аккаунтом. Гонять человека через devtools ради одной строки
+ * Заодно выпускает машинный токен `mch_…`. Интерфейса ВЫПУСКА для него нет
+ * нигде: единственный вход — `POST /api/account/machine-tokens`, то есть из
+ * браузера под этим же аккаунтом (отзыв в админке есть, выдача — нет). Гонять человека через devtools ради одной строки
  * незачем, а формат токена и хеширование здесь повторены один в один с
  * `lib/storage/write-path.ts` — разойдись они, токен просто не подошёл бы.
+ *
+ * Проверка вместо изменения:
+ *   TEMPLATES_PASSWORD=... node scripts/billing-templates-account.mjs --verify
+ * Сверяет пароль с хешем в базе и ничего не пишет. Нужна, чтобы разделить два
+ * разных «не пускает»: хеш не тот — чинится здесь; хеш тот — значит браузер
+ * отправляет не то, что вы набрали (автозаполнение менеджера паролей).
  *
  * Запуск:
  *   TEMPLATES_EMAIL=templates@ffworks.pro TEMPLATES_PASSWORD=... \
@@ -31,7 +37,8 @@
  *
  * Пароль и токен можно не задавать — сгенерируем и напечатаем один раз.
  * Повторный запуск выпускает ЕЩЁ один токен: старые не отзываются, потому что
- * ими могут ходить другие машины.
+ * ими могут ходить другие машины. Лишний снимается в админке — «Удалённый
+ * доступ», меню на строке токена; новый всегда даёт повторный запуск.
  */
 import "dotenv/config"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
@@ -63,26 +70,108 @@ const client = new Client({
   ssl: resolvePgSsl(),
 })
 
+const VERIFY_ONLY = process.argv.includes("--verify")
+
+async function verify() {
+  const result = await client.query(
+    `SELECT id, is_active AS "isActive", role, auth_provider AS "authProvider",
+            password_hash AS "passwordHash", length(email) AS "emailLen"
+       FROM users WHERE email = $1`,
+    [email],
+  )
+  const user = result.rows[0]
+
+  console.log("")
+  if (!user) {
+    console.log(`Пользователя ${email} в этой базе НЕТ.`)
+    // Ищем похожие: невидимый символ или другой регистр дают ровно такую
+    // картину — в списке админки строка есть, а точное сравнение её не находит.
+    const like = await client.query(
+      `SELECT email, length(email) AS len FROM users WHERE lower(email) LIKE $1`,
+      [`%templates%`],
+    )
+    if (like.rows.length > 0) {
+      console.log("Похожие адреса в базе:")
+      for (const row of like.rows) {
+        console.log(`  «${row.email}» (символов: ${row.len})`)
+      }
+      console.log(
+        `  для сравнения: «${email}» (символов: ${email.length})`,
+      )
+    }
+    return
+  }
+
+  console.log(`Пользователь ${email} найден.`)
+  console.log(
+    `  вход:   ${user.isActive ? "активен" : "ЗАБЛОКИРОВАН"}, ` +
+      `роль ${user.role}, провайдер ${user.authProvider}`,
+  )
+  console.log(
+    `  хеш:    ${user.passwordHash ? `есть (${user.passwordHash.slice(0, 4)}…)` : "ОТСУТСТВУЕТ"}`,
+  )
+
+  if (!process.env.TEMPLATES_PASSWORD) {
+    console.log("")
+    console.log("  Пароль не задан — сверять нечего.")
+    console.log("  TEMPLATES_PASSWORD='…' node scripts/billing-templates-account.mjs --verify")
+    return
+  }
+  if (!user.passwordHash) return
+
+  const ok = await bcrypt.compare(process.env.TEMPLATES_PASSWORD, user.passwordHash)
+  console.log("")
+  console.log(
+    ok
+      ? "  ✓ Пароль СОВПАДАЕТ с хешем. Значит база в порядке, и вход ломает\n" +
+          "    что-то на клиенте — почти всегда автозаполнение менеджера паролей.\n" +
+          "    Очистите поле руками или откройте приватное окно."
+      : "  ✗ Пароль НЕ совпадает с хешем. Задайте его заново:\n" +
+          "    TEMPLATES_PASSWORD='…' npm run billing:templates-account",
+  )
+}
+
 async function main() {
   await client.connect()
 
+  if (VERIFY_ONLY) {
+    await verify()
+    return
+  }
+
   const passwordHash = await bcrypt.hash(password, 10)
 
+  // Только базовые колонки: они есть в схеме всегда. `billing_exempt` приезжает
+  // миграцией биллинга, и завязывать на неё создание аккаунта нельзя — иначе
+  // скрипт падает целиком там, где не хватает одного необязательного флага, и
+  // человек остаётся без аккаунта, не поняв почему.
   const result = await client.query(
     `INSERT INTO users (
-       id, full_name, email, password_hash, role, is_active,
-       auth_provider, billing_exempt
+       id, full_name, email, password_hash, role, is_active, auth_provider
      )
-     VALUES ($1, $2, $3, $4, 'USER', TRUE, 'local', TRUE)
+     VALUES ($1, $2, $3, $4, 'USER', TRUE, 'local')
      ON CONFLICT (email) DO UPDATE
-       SET password_hash  = EXCLUDED.password_hash,
-           is_active      = TRUE,
-           billing_exempt = TRUE
+       SET password_hash = EXCLUDED.password_hash,
+           is_active     = TRUE
      RETURNING id, (xmax = 0) AS created`,
     [randomUUID(), "Шаблоны пробного периода", email, passwordHash],
   )
 
   const { id, created } = result.rows[0]
+
+  // Освобождение от оплаты — отдельным шагом и без падения: миграция биллингa
+  // могла быть ещё не накачена, а аккаунт нужен уже сейчас.
+  let exemptSet = false
+  try {
+    await client.query(
+      `UPDATE users SET billing_exempt = TRUE WHERE id = $1`,
+      [id],
+    )
+    exemptSet = true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!/column .*billing_exempt.* does not exist/i.test(message)) throw error
+  }
 
   // Формат — `mch_` + 32 случайных байта в base64url, хранится только SHA-256.
   // Обе половины повторяют lib/storage/write-path.ts.
@@ -103,11 +192,40 @@ async function main() {
   )
   const { total, marked } = templates.rows[0]
 
+  // Сверка по факту, а не по нашим ожиданиям: если вход не работает, первым
+  // делом надо знать, что в базе, а не что мы туда собирались положить.
+  const check = await client.query(
+    `SELECT is_active AS "isActive",
+            password_hash IS NOT NULL AS "hasPassword",
+            role,
+            auth_provider AS "authProvider",
+            (SELECT COUNT(*)::int FROM machine_tokens mt
+              WHERE mt.user_id = u.id AND mt.revoked_at IS NULL) AS "tokens"
+       FROM users u WHERE u.id = $1`,
+    [id],
+  )
+  const state = check.rows[0]
+
   console.log("")
   console.log(created ? "Аккаунт создан." : "Аккаунт уже был, обновлён.")
   console.log(`  почта:   ${email}`)
   console.log(`  id:      ${id}`)
+  console.log(
+    `  вход:    ${state.isActive ? "активен" : "ЗАБЛОКИРОВАН"}, ` +
+      `пароль ${state.hasPassword ? "задан" : "ОТСУТСТВУЕТ"}, ` +
+      `роль ${state.role}, провайдер ${state.authProvider}`,
+  )
+  console.log(`  токены:  ${state.tokens}`)
   console.log(`  проекты: ${total}, из них в пробном наборе: ${marked}`)
+  if (!exemptSet) {
+    console.log("")
+    console.log(
+      "  ⚠ billing_exempt не выставлен: миграция биллинга ещё не накачена.",
+    )
+    console.log(
+      "    На вход и на шаблоны это не влияет — перезапустите скрипт после npm run db:migrate.",
+    )
+  }
   if (generated) {
     console.log(`  пароль:  ${password}`)
     console.log("  (сгенерирован; больше нигде не показывается)")

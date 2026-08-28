@@ -78,6 +78,13 @@ export type { ProjectAccessRole } from "@/lib/project-access"
 export type StorageProjectAccess = {
   projectId: string
   ownerId: string
+  /**
+   * Первый сегмент ключа проекта в R2 (`projects.storage_owner_id`). У
+   * переданного другому человеку проекта не равен `ownerId`: владение
+   * переехало, байты остались. Ключи строить отсюда, права проверять по
+   * `ownerId` и `accessRole` — docs/ADMIN_WORKSPACE_PLAN.md §5.
+   */
+  storageOwnerId: string
   accessRole: ProjectAccessRole
 }
 
@@ -95,10 +102,16 @@ function unauthorized(message = "Unauthorized.") {
 export async function resolveProjectAccess(
   projectId: string,
   userId: string,
-): Promise<{ role: ProjectAccessRole; ownerId: string } | null> {
+): Promise<
+  { role: ProjectAccessRole; ownerId: string; storageOwnerId: string } | null
+> {
   const access = await resolveSiteProjectAccess(projectId, userId)
   if (!access) return null
-  return { role: access.role, ownerId: access.project.userId }
+  return {
+    role: access.role,
+    ownerId: access.project.userId,
+    storageOwnerId: access.project.storageOwnerId,
+  }
 }
 
 async function authFromRemoteComputerToken(
@@ -255,6 +268,7 @@ export async function requireProjectAccess(
     return {
       projectId: project.id,
       ownerId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       accessRole: "owner",
     }
   }
@@ -267,6 +281,7 @@ export async function requireProjectAccess(
     return {
       projectId: project.id,
       ownerId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
       accessRole: "owner",
     }
   }
@@ -278,6 +293,7 @@ export async function requireProjectAccess(
   return {
     projectId,
     ownerId: resolved.ownerId,
+    storageOwnerId: resolved.storageOwnerId,
     accessRole: resolved.role,
   }
 }
@@ -313,6 +329,7 @@ export async function requireOwnedProjectAccess(
   return {
     projectId: project.id,
     ownerId: project.ownerId,
+    storageOwnerId: project.storageOwnerId,
     accessRole: "owner",
   }
 }
@@ -360,17 +377,70 @@ export async function listMachineTokens(userId: string) {
  * Машины помечаются отозванными, а не удаляются: та же машина по своему UUID
  * спокойно заведётся заново под новым токеном (частичный уникальный индекс
  * считает только неотозванные), а история останется.
+ *
+ * `ownerId` — владелец, которому токен обязан принадлежать, или `null` для
+ * админского отзыва. Проверка владения зашита в тот же UPDATE, а не сделана
+ * отдельным SELECT: между чтением и записью токен успел бы сменить состояние.
  */
-export async function revokeMachineToken(userId: string, tokenId: string) {
-  const result = await query(
-    `UPDATE machine_tokens SET revoked_at = NOW()
-      WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`,
-    [tokenId, userId],
-  )
-  if ((result.rowCount ?? 0) === 0) return
+async function revokeTokenRow(
+  tokenId: string,
+  ownerId: string | null,
+): Promise<boolean> {
+  const result = ownerId
+    ? await query(
+        `UPDATE machine_tokens SET revoked_at = NOW()
+          WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+        [tokenId, ownerId],
+      )
+    : await query(
+        `UPDATE machine_tokens SET revoked_at = NOW()
+          WHERE id = $1 AND revoked_at IS NULL`,
+        [tokenId],
+      )
+  if ((result.rowCount ?? 0) === 0) return false
 
   const { revokeComputersByToken } = await import(
     "@/lib/repositories/remote-computers"
   )
   await revokeComputersByToken(tokenId)
+  return true
+}
+
+/** Отзыв владельцем: чужой токен этим путём не снять. */
+export async function revokeMachineToken(userId: string, tokenId: string) {
+  await revokeTokenRow(tokenId, userId)
+}
+
+/**
+ * Отзыв админом, без проверки владельца.
+ *
+ * Страница «Удалённый доступ» показывает токены всех аккаунтов — парк машин это
+ * установка целиком, а не собственность одного человека. Значит и снимать токен
+ * надо там же: стоп-кран, до которого нельзя дотянуться, стоп-краном не
+ * является, а входить под чужим аккаунтом ради одной кнопки — не путь.
+ */
+export async function revokeMachineTokenById(tokenId: string): Promise<boolean> {
+  return revokeTokenRow(tokenId, null)
+}
+
+/** Токен с владельцем — чтобы роут отличил «нет такого» от «уже отозван». */
+export async function findMachineTokenById(tokenId: string) {
+  const result = await query<{
+    id: string
+    userId: string
+    name: string
+    ownerEmail: string
+    revokedAt: Date | null
+  }>(
+    `SELECT mt.id,
+            mt.user_id AS "userId",
+            mt.name,
+            u.email AS "ownerEmail",
+            mt.revoked_at AS "revokedAt"
+       FROM machine_tokens mt
+       JOIN users u ON u.id = mt.user_id
+      WHERE mt.id = $1`,
+    [tokenId],
+  )
+  return result.rows[0] ?? null
 }

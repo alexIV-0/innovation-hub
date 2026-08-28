@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@/lib/domain-types"
+import { BalanceWidget } from "@/components/account/balance-widget"
 import { ResizeGrip } from "@/components/account/resize-grip"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { useProjectCounts } from "@/components/account/use-project-counts"
@@ -34,10 +35,8 @@ import {
   useI18n,
 } from "@/components/account/i18n"
 import {
-  adminNavItems,
-  adminStandaloneItems,
-  isItemActive,
-  visibleNavItems,
+  isAreaActive,
+  visibleAreas,
 } from "@/components/admin/shell/nav-config"
 import type { AdminCapability } from "@/lib/admin-capabilities"
 
@@ -157,16 +156,6 @@ function SidebarContent({
   const isProfile = pathname.startsWith("/account/profile")
   // Разделы, поднятые из «Админки» на верхний уровень, подсвечивают сами себя:
   // свёртка при них не считается активной и не раскрывается.
-  const isStandaloneAdmin = adminStandaloneItems.some((item) =>
-    isItemActive(item, pathname),
-  )
-  const isAdminGroup = pathname.startsWith("/admin") && !isStandaloneAdmin
-  const [adminOpen, setAdminOpen] = useState(isAdminGroup)
-
-  useEffect(() => {
-    if (isAdminGroup) setAdminOpen(true)
-  }, [isAdminGroup])
-
   const signOut = async () => {
     await fetch("/api/auth/signout", { method: "POST" })
     router.push("/login")
@@ -222,175 +211,128 @@ function SidebarContent({
         )}
       </div>
 
-      <div className="shrink-0 px-3 pb-1 pt-1.5">
-        <div
-          className={cn(
-            "rounded-xl border border-[rgba(91,155,224,0.28)] bg-gradient-to-br from-[rgba(45,131,206,0.16)] to-[rgba(45,131,206,0.03)]",
-            collapsed ? "p-2.5" : "p-3.5",
-          )}
-        >
+      {/* Прокручиваемая середина панели: при низком окне пункты меню не
+          обрезаются, а листаются колесом. Шапка и подвал с профилем
+          остаются на месте. */}
+      <div className="scrollbar-elegant flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+        <div className="shrink-0 px-3 pb-1 pt-1.5">
           <div
             className={cn(
-              "flex items-center gap-2",
-              collapsed && "justify-center",
+              "rounded-xl border border-[rgba(91,155,224,0.28)] bg-gradient-to-br from-[rgba(45,131,206,0.16)] to-[rgba(45,131,206,0.03)]",
+              collapsed ? "p-2.5" : "p-3.5",
             )}
           >
-            <Wallet className="h-[19px] w-[19px] text-[#8fb8ea]" />
-            {!collapsed && (
-              <span className="flex-1 text-[10.5px] font-semibold tracking-[1.4px] text-[#8fb8ea]">
-                {t.balance}
-              </span>
-            )}
-          </div>
-          {!collapsed && (
-            <>
-              <div className="mt-2 text-[22px] font-bold tracking-tight text-[#eef1f6]">
-                {formatBalance(user.balanceCents, lang)}
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <span className="truncate text-[11.5px] text-[#9aa0ac]">
-                  {t.renderMinutes}
-                </span>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-lg bg-white/10 px-2.5 py-1 text-[12px] text-[#eef1f6] hover:bg-white/[0.18]"
-                >
-                  {t.topup}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      <nav className="flex shrink-0 flex-col gap-1 overflow-y-auto px-3 py-2">
-        {!collapsed && (
-          <div className="px-2.5 pb-1.5 pt-3.5 text-[11px] font-semibold tracking-[1.4px] text-[#5a606e]">
-            {t.workspaceSection}
-          </div>
-        )}
-        <div onClick={onNavigate}>
-          <NavItem
-            href="/account"
-            active={isDash}
-            collapsed={collapsed}
-            icon={<LayoutDashboard className="h-5 w-5" />}
-            label={t.dashboard}
-          />
-        </div>
-        {PROJECT_SECTIONS.map((section) => {
-          const Icon = section.icon
-          return (
-            <div key={section.tab} onClick={onNavigate}>
-              <NavItem
-                href={
-                  section.tab === "projects"
-                    ? "/account/projects"
-                    : `/account/projects?tab=${section.tab}`
-                }
-                active={isTab(section.tab)}
-                collapsed={collapsed}
-                icon={<Icon className="h-5 w-5" />}
-                label={t[section.labelKey]}
-                count={counts[section.tab]}
-              />
-            </div>
-          )
-        })}
-      </nav>
-
-      <div className="flex-1" />
-
-      <nav className="flex shrink-0 flex-col gap-1 overflow-y-auto px-3 pb-2">
-        {isElevated(user.role) && (
-          <div className="flex flex-col gap-0.5">
-            {/* Отбивка: админская зона отделена от рабочего места */}
             <div
               className={cn(
-                "mb-1 h-px bg-white/10",
-                collapsed ? "mx-1" : "mx-2.5",
+                "flex items-center gap-2",
+                collapsed && "justify-center",
               )}
-            />
-            {visibleNavItems(adminStandaloneItems, user.role, user.capabilities).map((item) => {
-              const Icon = item.icon
-              return (
-                <div key={item.href} onClick={onNavigate}>
-                  <NavItem
-                    href={item.href}
-                    active={isItemActive(item, pathname)}
-                    collapsed={collapsed}
-                    icon={<Icon className="h-5 w-5" />}
-                    label={t[item.labelKey]}
-                  />
-                </div>
-              )
-            })}
-            {collapsed ? (
-              <div onClick={onNavigate}>
-                <NavItem
-                  href="/admin"
-                  active={isAdminGroup}
-                  collapsed
-                  icon={<Shield className="h-5 w-5" />}
-                  label={t.adminPanel}
-                />
-              </div>
-            ) : (
+            >
+              <Wallet className="h-[19px] w-[19px] text-[#8fb8ea]" />
+              {!collapsed && (
+                <span className="flex-1 text-[10.5px] font-semibold tracking-[1.4px] text-[#8fb8ea]">
+                  {t.balance}
+                </span>
+              )}
+            </div>
+            {!collapsed && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setAdminOpen((v) => !v)}
-                  className={cn(
-                    "relative flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-medium transition-colors",
-                    isAdminGroup
-                      ? "bg-[rgba(45,131,206,0.16)] text-[#eef1f6]"
-                      : "text-[#c3c8d2] hover:bg-white/5 hover:text-[#eef1f6]",
-                  )}
-                >
-                  {isAdminGroup && (
-                    <span className="absolute bottom-[9px] left-0 top-[9px] w-[3px] rounded-[3px] bg-[#2f80ed]" />
-                  )}
-                  <span
-                    className={cn(
-                      isAdminGroup ? "text-[#6aa5e8]" : "text-[#8b909c]",
-                    )}
-                  >
-                    <Shield className="h-5 w-5" />
-                  </span>
-                  <span className="flex-1 whitespace-nowrap text-left">
-                    {t.adminPanel}
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 shrink-0 text-[#8b909c] transition-transform",
-                      adminOpen && "rotate-180",
-                    )}
-                  />
-                </button>
-                {adminOpen && (
-                  <div className="ml-4 flex flex-col gap-0.5 border-l border-white/10 pl-2">
-                    {visibleNavItems(adminNavItems, user.role, user.capabilities).map((item) => {
-                      const Icon = item.icon
-                      return (
-                        <div key={item.href} onClick={onNavigate}>
-                          <NavItem
-                            href={item.href}
-                            active={isItemActive(item, pathname)}
-                            collapsed={false}
-                            nested
-                            icon={<Icon className="h-4 w-4" />}
-                            label={t[item.labelKey]}
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+                {/* Число берётся из кошельков биллинга, а не из пропса: `balanceCents`
+                    — наследие, оно ничем не подкреплено, а истина здесь сумма ленты
+                    транзакций. Тот же компонент стоит на дашборде, чтобы две
+                    цифры не разошлись. */}
+                <BalanceWidget
+                  className="mt-2"
+                  href="/account/billing"
+                  action={
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg bg-white/10 px-2.5 py-1 text-[12px] text-[#eef1f6] hover:bg-white/[0.18]"
+                    >
+                      {t.topup}
+                    </button>
+                  }
+                />
               </>
             )}
           </div>
-        )}
-      </nav>
+        </div>
+
+        <nav className="flex shrink-0 flex-col gap-1 px-3 py-2">
+          {!collapsed && (
+            <div className="px-2.5 pb-1.5 pt-3.5 text-[11px] font-semibold tracking-[1.4px] text-[#5a606e]">
+              {t.workspaceSection}
+            </div>
+          )}
+          <div onClick={onNavigate}>
+            <NavItem
+              href="/account"
+              active={isDash}
+              collapsed={collapsed}
+              icon={<LayoutDashboard className="h-5 w-5" />}
+              label={t.dashboard}
+            />
+          </div>
+          {PROJECT_SECTIONS.map((section) => {
+            const Icon = section.icon
+            return (
+              <div key={section.tab} onClick={onNavigate}>
+                <NavItem
+                  href={
+                    section.tab === "projects"
+                      ? "/account/projects"
+                      : `/account/projects?tab=${section.tab}`
+                  }
+                  active={isTab(section.tab)}
+                  collapsed={collapsed}
+                  icon={<Icon className="h-5 w-5" />}
+                  label={t[section.labelKey]}
+                  count={counts[section.tab]}
+                />
+              </div>
+            )
+          })}
+        </nav>
+
+        <div className="flex-1" />
+
+        <nav className="flex shrink-0 flex-col gap-1 px-3 pb-2">
+          {isElevated(user.role) && (
+            <div className="flex flex-col gap-0.5">
+              {/* Отбивка: админская зона отделена от рабочего места.
+                  Свёртки здесь нет намеренно — разделы админки лежат так же
+                  плоско, как разделы кабинета выше, а что внутри раздела,
+                  показывает вторая колонка. Свёртка добавляла клик перед каждым
+                  переходом и прятала половину админки от глаз. */}
+              <div
+                className={cn(
+                  "mb-1 h-px bg-white/10",
+                  collapsed ? "mx-1" : "mx-2.5",
+                )}
+              />
+              {!collapsed ? (
+                <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6b7280]">
+                  {t.adminPanel}
+                </p>
+              ) : null}
+              {visibleAreas(user.role, user.capabilities).map((area) => {
+                const Icon = area.icon
+                return (
+                  <div key={area.key} onClick={onNavigate}>
+                    <NavItem
+                      href={area.href}
+                      active={isAreaActive(area, pathname)}
+                      collapsed={collapsed}
+                      icon={<Icon className="h-5 w-5" />}
+                      label={t[area.labelKey]}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </nav>
+      </div>
 
       <div className={cn("shrink-0 px-3 pt-2.5", collapsed && "px-2")}>
         <div

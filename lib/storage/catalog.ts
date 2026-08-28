@@ -21,11 +21,11 @@ export const CATALOG_JOURNAL_NAME = "catalog.jsonl"
 export const CATALOG_REBUILD_EVERY_N = 200
 
 export function catalogObjectKey(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
   fileName: string,
 ): string {
-  return `${projectPrefix(userId, projectId)}${CATALOG_FOLDER_NAME}/${fileName}`
+  return `${projectPrefix(storageOwnerId, projectId)}${CATALOG_FOLDER_NAME}/${fileName}`
 }
 
 async function readObjectText(key: string): Promise<string | null> {
@@ -114,7 +114,7 @@ export async function loadCatalogRows(
 }
 
 export async function rebuildCatalogSnapshot(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): Promise<number> {
   const cursor = await getLatestCursor(projectId)
@@ -131,13 +131,13 @@ export async function rebuildCatalogSnapshot(
     2,
   )
   await putObjectText(
-    catalogObjectKey(userId, projectId, CATALOG_SNAPSHOT_NAME),
+    catalogObjectKey(storageOwnerId, projectId, CATALOG_SNAPSHOT_NAME),
     body,
     "application/json",
   )
   // Truncate the jsonl after a successful snapshot.
   await putObjectText(
-    catalogObjectKey(userId, projectId, CATALOG_JOURNAL_NAME),
+    catalogObjectKey(storageOwnerId, projectId, CATALOG_JOURNAL_NAME),
     "",
     "application/x-ndjson",
   )
@@ -146,14 +146,17 @@ export async function rebuildCatalogSnapshot(
 
 /** Best-effort append of one delta line after Postgres commit. */
 export async function appendCatalogJsonl(input: {
-  userId: string
+  /** Адрес проекта в хранилище — ключ журнала каталога строится по нему. */
+  storageOwnerId: string
+  /** Владелец: под ним ставится фоновая работа на пересборку снимка. */
+  ownerId: string
   projectId: string
   change: StorageChangeRecord
 }): Promise<void> {
   if (!isS3Configured()) return
   try {
     const key = catalogObjectKey(
-      input.userId,
+      input.storageOwnerId,
       input.projectId,
       CATALOG_JOURNAL_NAME,
     )
@@ -171,7 +174,7 @@ export async function appendCatalogJsonl(input: {
       const { createJob } = await import("@/lib/storage/jobs")
       const { scheduleJob } = await import("@/lib/storage/job-runner")
       const job = await createJob({
-        userId: input.userId,
+        userId: input.ownerId,
         projectId: input.projectId,
         kind: "recatalog",
         total: 1,

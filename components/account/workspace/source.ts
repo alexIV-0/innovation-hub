@@ -39,12 +39,16 @@ export const CABINET_SOURCE: WorkspaceSource = {
   chatReadUrl: (projectId) => `/api/projects/${projectId}/chat/read`,
   chatPerspective: "client",
   showServiceFolders: false,
+  directUpload: true,
   can: {
     createProject: true,
     deleteProject: true,
     renameProject: true,
     archiveProject: true,
     shareProject: true,
+    // Передать проект может только администратор: в кабинете владелец один и
+    // менять его некому.
+    transferProject: false,
     upload: true,
     createFolder: true,
     renameItem: true,

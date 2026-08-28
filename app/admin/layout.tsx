@@ -35,6 +35,8 @@ export default async function AdminLayout({
         balanceCents={user.balanceCents ?? 0}
       >
         <AdminShell
+          email={user.email}
+          fullName={user.fullName ?? ""}
           currentUserId={user.id}
           currentUserRole={user.role}
           currentUserCapabilities={user.capabilities}

@@ -39,6 +39,17 @@ export type ProjectRecord = {
   ownerId: string
   /** Alias of ownerId — used by Drive / YouGile integrations. */
   userId: string
+  /**
+   * Где лежат байты проекта в R2 — `projects/{storageOwnerId}/{id}/…`.
+   *
+   * Это НЕ владелец и не право: адрес объекта, назначенный при создании и
+   * неизменный дальше. Совпадает с `ownerId` у всех проектов, кроме переданных
+   * другому человеку — там владелец сменился, а ключи остались прежними,
+   * потому что перенос байтов означал бы полную перезаливку зеркал на парке
+   * машин. Строить ключи — отсюда; решать, кому можно, — из `ownerId` и
+   * project_members. Разбор — docs/ADMIN_WORKSPACE_PLAN.md §5.
+   */
+  storageOwnerId: string
   name: string
   description: string
   groupName: ProjectGroupName

@@ -10,6 +10,10 @@ const PROJECT_FIELDS = `
   id,
   user_id AS "ownerId",
   user_id AS "userId",
+  -- Адрес в R2, а не владение: у переданного проекта они расходятся, и ключи
+  -- строятся по этому полю. COALESCE — чтобы строка, не дошедшая до бэкфилла,
+  -- вела себя как до миграции (db/migrations/2026-08-28-project-storage-owner.sql).
+  COALESCE(storage_owner_id, user_id) AS "storageOwnerId",
   name,
   COALESCE(description, '') AS description,
   COALESCE(group_name, 'personal') AS "groupName",
@@ -206,10 +210,10 @@ export async function createProject(input: {
   const id = randomUUID()
   const result = await query<ProjectRecord>(
     `INSERT INTO projects (
-        id, user_id, name, description, group_name, is_paused,
+        id, user_id, storage_owner_id, name, description, group_name, is_paused,
         drive_folder_id, client_id
      )
-     VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, $6, $7)
+     VALUES ($1, $2, $2, $3, COALESCE($4, ''), COALESCE($5, 'personal'), FALSE, $6, $7)
      RETURNING ${PROJECT_FIELDS}`,
     [
       id,

@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       const rel = data.ensurePath.replace(/^\/+|\/+$/g, "")
       const full = base ? `${base}/${rel}` : rel
       const result = await writeEnsureFolderPath({
-        userId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         folderPath: full,
         eventId: data.eventId,
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Invalid folder name." }, { status: 400 })
     }
     const file = await writeFolderCreate({
-      userId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       folderPath: data.folderPath,
       name: data.name,

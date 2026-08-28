@@ -65,7 +65,7 @@ export type ObjectHead = {
  *
  * Внимание: это НЕ `userId`, который уже принимают writeFolderCreate/writeRename —
  * тот всегда владелец проекта и нужен только для построения ключа в хранилище
- * (`projectPrefix(ownerId, …)`). Здесь — действующее лицо, и в расшаренном
+ * (`projectPrefix(storageOwnerId, …)`). Здесь — действующее лицо, и в расшаренном
  * проекте это чаще всего не владелец.
  *
  * `userId` уезжает в журнал всегда: сквозной ответ на «кто это сделал».
@@ -241,8 +241,12 @@ async function touchFileRow(
 }
 
 export async function writeFolderCreate(input: {
-  /** Владелец проекта — для ключа в хранилище. Не путать с `actor`. */
-  userId: string
+  /**
+   * `projects.storage_owner_id` — первый сегмент ключа. Не путать ни с `actor`
+   * (кто это делает), ни с владельцем: у переданного проекта владелец другой,
+   * а ключи остались под тем, кто проект завёл.
+   */
+  storageOwnerId: string
   projectId: string
   folderPath: string
   name: string
@@ -261,7 +265,7 @@ export async function writeFolderCreate(input: {
     })
     const id = randomUUID()
     const key = logicalKeyForFile({
-      userId: input.userId,
+      storageOwnerId: input.storageOwnerId,
       projectId: input.projectId,
       folderPath,
       name,
@@ -308,7 +312,7 @@ export async function writeFolderCreate(input: {
  * Creates missing parents; returns the last existing/created folder, or null for root.
  */
 export async function writeEnsureFolderPath(input: {
-  userId: string
+  storageOwnerId: string
   projectId: string
   folderPath: string
   eventId?: string
@@ -345,7 +349,7 @@ export async function writeEnsureFolderPath(input: {
     }
 
     const created = await writeFolderCreate({
-      userId: input.userId,
+      storageOwnerId: input.storageOwnerId,
       projectId: input.projectId,
       folderPath: parent,
       name,
@@ -435,8 +439,8 @@ export async function writeFilePut(input: {
 }
 
 export async function writeNotifyUpload(input: {
-  /** Владелец проекта — для ключа строк-папок, которые заводятся по пути заливки. */
-  userId: string
+  /** `projects.storage_owner_id` — для ключа строк-папок по пути заливки. */
+  storageOwnerId: string
   projectId: string
   s3Key: string
   folderPath: string
@@ -482,7 +486,7 @@ export async function writeNotifyUpload(input: {
   if (input.folderPath.replace(/^\/+|\/+$/g, "")) {
     try {
       await writeEnsureFolderPath({
-        userId: input.userId,
+        storageOwnerId: input.storageOwnerId,
         projectId: input.projectId,
         folderPath: input.folderPath,
         actor: input.actor,
@@ -577,7 +581,7 @@ export async function writeNotifyUpload(input: {
 }
 
 export async function writeFileDelete(input: {
-  userId: string
+  storageOwnerId: string
   projectId: string
   fileId: string
   deletedBy?: string | null
@@ -642,7 +646,7 @@ export async function writeFileDelete(input: {
       const key =
         row.s3Key ??
         logicalKeyForFile({
-          userId: input.userId,
+          storageOwnerId: input.storageOwnerId,
           projectId: input.projectId,
           folderPath: row.folderPath,
           name: row.name,
@@ -685,7 +689,7 @@ export async function writeFileDelete(input: {
  * становится `description.contact` витка (lib/pipeline/scan.ts#resolveSourceActor).
  */
 export async function writeRename(input: {
-  userId: string
+  storageOwnerId: string
   projectId: string
   fileId: string
   name?: string
@@ -776,7 +780,7 @@ export async function writeRename(input: {
     const key =
       existing.s3Key ??
       logicalKeyForFile({
-        userId: input.userId,
+        storageOwnerId: input.storageOwnerId,
         projectId: input.projectId,
         folderPath: existing.folderPath,
         name: existing.name,
@@ -821,8 +825,8 @@ export async function writeRename(input: {
  * uuid-ключом, здесь же переводится на канонический и сохраняет свой `file_id`.
  */
 export async function writeSidecarSync(input: {
-  /** Владелец проекта — для ключа папки в хранилище. */
-  userId: string
+  /** `projects.storage_owner_id` — для ключа папки в хранилище. */
+  storageOwnerId: string
   projectId: string
   /** Канонический ключ объекта. */
   key: string
@@ -852,7 +856,7 @@ export async function writeSidecarSync(input: {
   // Папка нужна раньше файла: buildTree спускается только в существующие
   // строки-папки, поэтому без неё сайдкар лежал бы в каталоге невидимкой.
   await writeEnsureFolderPath({
-    userId: input.userId,
+    storageOwnerId: input.storageOwnerId,
     projectId: input.projectId,
     folderPath,
     actor: input.actor,
@@ -921,8 +925,8 @@ export async function writeSidecarSync(input: {
 }
 
 export async function writeSidecarPut(input: {
-  /** Владелец проекта — нужен, чтобы завести строку каталога и папку options. */
-  userId: string
+  /** `projects.storage_owner_id` — чтобы завести строку каталога и папку options. */
+  storageOwnerId: string
   projectId: string
   key: string
   body: string
@@ -968,7 +972,7 @@ export async function writeSidecarPut(input: {
   // Журналирует и заводит строку writeSidecarSync — отдельной записи в журнал
   // здесь нет намеренно, иначе событие ушло бы дважды.
   const file = await writeSidecarSync({
-    userId: input.userId,
+    storageOwnerId: input.storageOwnerId,
     projectId: input.projectId,
     key: input.key,
     name: input.key.slice(input.key.lastIndexOf("/") + 1),
@@ -1058,7 +1062,10 @@ function preferCandidate(
   return a.key <= b.key ? a : b
 }
 
-export async function reindexProject(userId: string, projectId: string): Promise<{
+export async function reindexProject(
+  storageOwnerId: string,
+  projectId: string,
+): Promise<{
   scanned: number
   inserted: number
   updated: number
@@ -1069,7 +1076,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
     throw new StorageWriteError("Object storage is not configured.")
   }
 
-  const prefix = projectPrefix(userId, projectId)
+  const prefix = projectPrefix(storageOwnerId, projectId)
   const client = getS3Client()
   const bucket = getS3Bucket()
   const remoteKeys = new Map<string, ObjectHead>()
@@ -1114,7 +1121,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
       key,
       head,
       name: logicalNameFromObjectKey(physicalName),
-      folderPath: folderPathFromKey(userId, projectId, key, physicalName),
+      folderPath: folderPathFromKey(storageOwnerId, projectId, key, physicalName),
     }
     const id = logicalRowId(candidate.folderPath, candidate.name)
     const previous = byLogical.get(id)
@@ -1143,7 +1150,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
   ].sort()
   for (const folderPath of folderPaths) {
     try {
-      await writeEnsureFolderPath({ userId, projectId, folderPath })
+      await writeEnsureFolderPath({ storageOwnerId, projectId, folderPath })
     } catch (error) {
       // Имя занято файлом или недопустимо: пропускаем только эту папку, а не
       // весь реиндекс — остальное проиндексировать всё равно нужно.
@@ -1266,7 +1273,7 @@ export async function reindexProject(userId: string, projectId: string): Promise
 
     for (const [, row] of localByKey) {
       // Снимки каталога живут вне дерева: строк у них нет и удалять нечего.
-      if (isCatalogKey(row.s3Key, userId, projectId)) continue
+      if (isCatalogKey(row.s3Key, storageOwnerId, projectId)) continue
       // Строка уже в корзине — её объект стёрт вместе с ретеншеном, повторное
       // событие удаления клиенту ни о чём не сообщит.
       if (row.deletedAt != null) continue

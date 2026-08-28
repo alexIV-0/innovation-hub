@@ -85,18 +85,30 @@ export function priceCharge(input: {
   vendorRate?: number | null
   vendorRateSource?: string | null
   fxAdjustPct?: number
+  /**
+   * Готовая себестоимость в копейках — сумма строк потребления по задаче
+   * (`vendor_usage`). Когда она есть, `vendorAmount` не используется вовсе:
+   * строки уже посчитаны по прайсу каждого сервиса и по своему курсу, а
+   * `total_cost` из архива — одно число без валюты и без разреза по вендорам.
+   *
+   * `null` (не ноль) означает «строк нет»: тогда работает прежний путь. Ноль
+   * здесь обнулил бы себестоимость всему парку в день выката.
+   */
+  vendorCentsFromUsage?: number | null
 }): PricedCharge {
   // Себестоимость есть, а курса нет — считаем её нулём и запоминаем это в
   // условиях. Ронять списание нельзя: обработка уже сделана, деньги на вендора
   // уже потрачены, и отказ означал бы «раздали бесплатно».
   const vendorCents =
-    input.vendorAmount && input.vendorRate
-      ? vendorCostToCents({
-          amount: input.vendorAmount,
-          rate: input.vendorRate,
-          adjustPct: input.fxAdjustPct ?? 0,
-        })
-      : 0
+    input.vendorCentsFromUsage != null
+      ? Math.max(0, Math.round(input.vendorCentsFromUsage))
+      : input.vendorAmount && input.vendorRate
+        ? vendorCostToCents({
+            amount: input.vendorAmount,
+            rate: input.vendorRate,
+            adjustPct: input.fxAdjustPct ?? 0,
+          })
+        : 0
 
   const breakdown = computeBreakdown({
     units: input.units,
@@ -114,9 +126,15 @@ export function priceCharge(input: {
       units: input.base === "fixed" ? 1 : input.units,
       unitRateCents: input.unitRateCents,
       marginPct: input.marginPct,
-      vendorCurrency: input.vendorCurrency ?? null,
-      vendorRate: input.vendorRate ?? null,
-      vendorRateSource: input.vendorRateSource ?? null,
+      // При расчёте по строкам потребления валюта и курс живут в самих строках:
+      // сервисов в одной обработке может быть несколько, и у каждого свои.
+      // Записать сюда один из них значило бы выдать частный случай за общий.
+      vendorCurrency: input.vendorCentsFromUsage != null ? null : input.vendorCurrency ?? null,
+      vendorRate: input.vendorCentsFromUsage != null ? null : input.vendorRate ?? null,
+      vendorRateSource:
+        input.vendorCentsFromUsage != null
+          ? "vendor_usage"
+          : input.vendorRateSource ?? null,
     },
   }
 }

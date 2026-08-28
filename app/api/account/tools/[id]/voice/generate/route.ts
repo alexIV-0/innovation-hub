@@ -141,10 +141,21 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   try {
     await Promise.all([
-      putFile(client, bucket, access.project.ownerId, projectId, folderPath, audioPath, wav, "audio/wav"),
       putFile(
         client,
         bucket,
+        access.project.storageOwnerId,
+        access.project.ownerId,
+        projectId,
+        folderPath,
+        audioPath,
+        wav,
+        "audio/wav",
+      ),
+      putFile(
+        client,
+        bucket,
+        access.project.storageOwnerId,
         access.project.ownerId,
         projectId,
         folderPath,
@@ -194,6 +205,9 @@ export async function POST(request: NextRequest, { params }: Params) {
 async function putFile(
   client: ReturnType<typeof getS3Client>,
   bucket: string,
+  /** Адрес проекта в хранилище — из него собирается ключ. */
+  storageOwnerId: string,
+  /** Владелец проекта — им подписывается запись в журнале. */
   ownerId: string,
   projectId: string,
   taskFolder: string,
@@ -204,13 +218,18 @@ async function putFile(
   const slash = relative.lastIndexOf("/")
   const folderPath = `${taskFolder}/${relative.slice(0, slash)}`
   const fileName = relative.slice(slash + 1)
-  const s3Key = projectUploadObjectKey(ownerId, projectId, folderPath, fileName)
+  const s3Key = projectUploadObjectKey(
+    storageOwnerId,
+    projectId,
+    folderPath,
+    fileName,
+  )
 
   await client.send(
     new PutObjectCommand({ Bucket: bucket, Key: s3Key, Body: bytes, ContentType: contentType }),
   )
   await writeNotifyUpload({
-    userId: ownerId,
+    storageOwnerId,
     projectId,
     s3Key,
     folderPath,

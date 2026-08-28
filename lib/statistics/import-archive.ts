@@ -49,6 +49,8 @@ type StatsRowInput = {
   startedAt: string | null
   endedAt: string | null
   outSec: number | null
+  /** Хронометраж исходника — поле схемы v2. У строк v1 отсутствует. */
+  srcSec: number | null
   renderSec: number | null
   outPaths: string
   totalCost: number | null
@@ -174,6 +176,7 @@ function parseLine(
     startedAt: asTimestamp(d.startedAt),
     endedAt: asTimestamp(d.endedAt),
     outSec: asInt4(d.outSec),
+    srcSec: asInt4(d.srcSec),
     renderSec: asInt4(d.renderSec),
     outPaths: JSON.stringify(outPaths),
     totalCost: asCost(d.totalCost),
@@ -234,6 +237,7 @@ async function insertBatch(rows: StatsRowInput[]): Promise<number> {
       r.startedAt,
       r.endedAt,
       r.outSec,
+      r.srcSec,
       r.renderSec,
       r.outPaths,
       r.totalCost,
@@ -242,14 +246,15 @@ async function insertBatch(rows: StatsRowInput[]): Promise<number> {
     const p = (offset: number) => `$${start + offset}`
     return `(${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)}, ${p(6)}, ${p(7)}, ${p(8)}, ${p(9)},
              ${p(10)}::timestamptz, ${p(11)}::timestamptz, ${p(12)}::timestamptz,
-             ${p(13)}::int, ${p(14)}::int, ${p(15)}::jsonb, ${p(16)}::numeric, ${p(17)})`
+             ${p(13)}::int, ${p(14)}::int, ${p(15)}::int, ${p(16)}::jsonb,
+             ${p(17)}::numeric, ${p(18)})`
   })
 
   const result = await query(
     `INSERT INTO processing_stats (
        item_id, project_id, schema_version, status, project_name, main_folder,
        cur_item, in_type, out_type, registered_at, started_at, ended_at,
-       out_sec, render_sec, out_paths, total_cost, machine
+       out_sec, src_sec, render_sec, out_paths, total_cost, machine
      ) VALUES ${tuples.join(", ")}
      ON CONFLICT (item_id) DO NOTHING`,
     params,
@@ -261,10 +266,10 @@ type StatsObject = { key: string; etag: string | null }
 
 /** Листинг `options/_stats/` одного проекта. Возвращает ключи с их версиями. */
 async function listStatsObjects(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): Promise<StatsObject[]> {
-  const prefix = `${projectPrefix(userId, projectId)}options/_stats/`
+  const prefix = `${projectPrefix(storageOwnerId, projectId)}options/_stats/`
   const client = getS3Client()
   const bucket = getS3Bucket()
   const found: StatsObject[] = []
@@ -309,8 +314,12 @@ export async function importProcessingArchive(options?: {
   const maxFiles = options?.maxFiles ?? MAX_FILES_PER_RUN
   // Архивные и приостановленные проекты тоже сканируем: их история не менее
   // ценна, а файлы никуда не делись.
-  const projects = await query<{ id: string; user_id: string }>(
-    `SELECT id, user_id FROM projects`,
+  // Префикс — по адресу в хранилище, а не по владельцу: у переданного проекта
+  // они расходятся, и по user_id листинг вернул бы пусто, молча потеряв всю
+  // статистику проекта.
+  const projects = await query<{ id: string; storage_owner_id: string }>(
+    `SELECT id, COALESCE(storage_owner_id, user_id) AS storage_owner_id
+       FROM projects`,
   )
 
   const cursors = await query<{
@@ -326,7 +335,7 @@ export async function importProcessingArchive(options?: {
 
     let objects: StatsObject[]
     try {
-      objects = await listStatsObjects(project.user_id, project.id)
+      objects = await listStatsObjects(project.storage_owner_id, project.id)
     } catch (error) {
       result.errors++
       console.error("[stats] list _stats failed", project.id, error)

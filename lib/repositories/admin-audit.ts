@@ -82,6 +82,14 @@ export async function listAuditEvents(options: {
   before?: string | null
   action?: AuditAction | null
   actorId?: string | null
+  /**
+   * «Что происходило вот с этим». Пара, а не один `targetId`: идентификаторы
+   * разных сущностей ниоткуда не обязаны различаться, и выборка по голому id
+   * рано или поздно смешает историю аккаунта с историей проекта. Под этот
+   * вопрос стоит индекс `admin_audit_log_target_idx` — он тоже по паре.
+   */
+  targetType?: string | null
+  targetId?: string | null
 }): Promise<{ events: AuditEvent[]; nextCursor: string | null }> {
   const conditions: string[] = []
   const params: unknown[] = []
@@ -97,6 +105,12 @@ export async function listAuditEvents(options: {
   if (options.actorId) {
     params.push(options.actorId)
     conditions.push(`actor_id = $${params.length}`)
+  }
+  if (options.targetType && options.targetId) {
+    params.push(options.targetType)
+    conditions.push(`target_type = $${params.length}`)
+    params.push(options.targetId)
+    conditions.push(`target_id = $${params.length}`)
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""

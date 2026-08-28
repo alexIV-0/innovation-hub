@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireUserApi } from "@/lib/admin-auth"
+import { auditFrom } from "@/lib/audit"
 import { hashPassword } from "@/lib/auth"
 import {
   sendProjectAccessGrantedEmail,
@@ -10,7 +11,7 @@ import {
 import {
   canGrantRole,
   canManageMember,
-  requireProjectAccess,
+  requireProjectAccessOrCapability,
   type ProjectAccessRole,
   type ProjectMemberRole,
 } from "@/lib/project-access"
@@ -246,7 +247,15 @@ export async function GET(request: NextRequest, { params }: Params) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const access = await requireProjectAccess(id, auth.userId, "full")
+  // Владелец, участник с полным доступом — или админ, которому доверено
+  // распоряжаться чужими проектами: он раздаёт доступ из «Папок пользователей»
+  // тем же диалогом, что и владелец (docs/ADMIN_WORKSPACE_PLAN.md §7).
+  const access = await requireProjectAccessOrCapability(
+    id,
+    auth,
+    "full",
+    "projects.manage",
+  )
   if (access instanceof NextResponse) return access
 
   const [members, owner] = await Promise.all([
@@ -280,7 +289,15 @@ export async function POST(request: NextRequest, { params }: Params) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const access = await requireProjectAccess(id, auth.userId, "full")
+  // Владелец, участник с полным доступом — или админ, которому доверено
+  // распоряжаться чужими проектами: он раздаёт доступ из «Папок пользователей»
+  // тем же диалогом, что и владелец (docs/ADMIN_WORKSPACE_PLAN.md §7).
+  const access = await requireProjectAccessOrCapability(
+    id,
+    auth,
+    "full",
+    "projects.manage",
+  )
   if (access instanceof NextResponse) return access
 
   let body: unknown
@@ -329,6 +346,23 @@ export async function POST(request: NextRequest, { params }: Params) {
   const failed = results.filter((r) => !r.ok)
   const status = invited.length === 0 ? 400 : 200
 
+  // Одна запись на приглашение, а не одна на запрос: в одном обращении бывает
+  // до двадцати адресов, и «выдал доступ 20 людям» в журнале не ответит на
+  // вопрос «кому именно».
+  if (access.viaCapability) {
+    const audit = auditFrom(request, auth)
+    for (const result of invited) {
+      if (!result.ok) continue
+      await audit({
+        action: "project.shared",
+        targetType: "project",
+        targetId: access.project.id,
+        targetLabel: access.project.name,
+        meta: { email: result.email, role: parsed.data.role },
+      })
+    }
+  }
+
   return NextResponse.json(
     {
       results,
@@ -351,7 +385,15 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const access = await requireProjectAccess(id, auth.userId, "full")
+  // Владелец, участник с полным доступом — или админ, которому доверено
+  // распоряжаться чужими проектами: он раздаёт доступ из «Папок пользователей»
+  // тем же диалогом, что и владелец (docs/ADMIN_WORKSPACE_PLAN.md §7).
+  const access = await requireProjectAccessOrCapability(
+    id,
+    auth,
+    "full",
+    "projects.manage",
+  )
   if (access instanceof NextResponse) return access
 
   let body: unknown
@@ -408,6 +450,16 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     invitedBy: existing.invitedBy ?? auth.userId,
   })
 
+  if (access.viaCapability) {
+    await auditFrom(request, auth)({
+      action: "project.shared",
+      targetType: "project",
+      targetId: access.project.id,
+      targetLabel: access.project.name,
+      meta: { userId: parsed.data.userId, role: parsed.data.role },
+    })
+  }
+
   return NextResponse.json({
     member: {
       userId: member.userId,
@@ -431,7 +483,15 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const access = await requireProjectAccess(id, auth.userId, "full")
+  // Владелец, участник с полным доступом — или админ, которому доверено
+  // распоряжаться чужими проектами: он раздаёт доступ из «Папок пользователей»
+  // тем же диалогом, что и владелец (docs/ADMIN_WORKSPACE_PLAN.md §7).
+  const access = await requireProjectAccessOrCapability(
+    id,
+    auth,
+    "full",
+    "projects.manage",
+  )
   if (access instanceof NextResponse) return access
 
   const userId = request.nextUrl.searchParams.get("userId")
@@ -463,6 +523,15 @@ export async function DELETE(request: NextRequest, { params }: Params) {
   const ok = await removeProjectMember(id, userId)
   if (!ok) {
     return NextResponse.json({ message: "Member not found." }, { status: 404 })
+  }
+  if (access.viaCapability) {
+    await auditFrom(request, auth)({
+      action: "project.unshared",
+      targetType: "project",
+      targetId: access.project.id,
+      targetLabel: access.project.name,
+      meta: { userId, role: existing.role },
+    })
   }
   return NextResponse.json({ ok: true })
 }

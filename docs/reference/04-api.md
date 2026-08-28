@@ -42,6 +42,10 @@
 | `/api/account/statistics` | GET | user | Полная статистика со скоупом «только своё». Оси — в query (`breakdown`, `period`, `userId`, `projectId`). |
 | `/api/account/machine-tokens` | GET, POST, DELETE | user | Токены `mch_…`. Сырой токен показывается один раз. Отзыв токена отзывает и машины, ходившие под ним. |
 | `/api/account/push-subscription` | POST, DELETE | user | Регистрация / снятие подписки Web Push. |
+| `/api/account/balance` | GET | user | Кошельки, доступное с учётом резерва и «на что ещё хватит» по мерам (видео, файлы, объём, запуски). Питает виджет баланса и разбор на кошельке. |
+| `/api/account/spending` | GET | user | Расход за период: итоги, лента по дням, разрез по проектам и по заливщикам. `?period=day\|week\|month\|year`, `?projectId=`. |
+| `/api/account/trial` | GET, POST | user | Состояние тестового периода и его активация. POST отвечает `202`: пробные проекты ещё копируются. |
+| `/api/account/promos` | GET | user | Акции этого человека: начислено, потрачено, остаток, срок, проекты. Плюс не взятое предложение тестового периода. |
 
 ⚠️ `stats` и `statistics` — разные вещи с почти одинаковыми именами
 (см. [14](./14-improvements.md#12-именование-путающее-эндпоинты)).
@@ -116,6 +120,7 @@
 | `/api/admin/statistics` | GET | Статистика без скоупа. |
 | `/api/admin/statistics/import` | POST | Разовый импорт архива обработок из R2. Долгий — `maxDuration` поднят. |
 | `/api/admin/machines` | GET | Токены доступа вместе с машинами под ними — один список для страницы. |
+| `/api/admin/machines/[id]` | DELETE | Отзыв `mch_`-токена админом, без проверки владельца: список общий, значит и стоп-кран общий. Машины под токеном отзываются вместе с ним. |
 | `/api/admin/computers` | GET, POST | Парк машин: список активных, регистрация. |
 | `/api/admin/computers/[id]` | PATCH, DELETE | Имя/описание; DELETE — отзыв. |
 | `/api/admin/computers/[id]/rotate-token` | POST | Ротация токена, сырой возвращается один раз. |
@@ -125,13 +130,13 @@
 
 | Эндпоинт | Методы | Назначение |
 | --- | --- | --- |
-| `/api/admin/pipeline/users` | GET, PATCH | Колонка 1: пользователи и гейт `automation_enabled`. |
-| `/api/admin/pipeline/projects` | GET | Колонка 2: проекты выбранного пользователя, включая архивные. |
-| `/api/admin/pipeline/projects/[id]` | PATCH | Тумблер слежения (тот же, что у пользователя). Больше ничего этот роут не принимает. |
-| `/api/admin/pipeline/projects/[id]/drive` | GET | Колонка 3: дерево целиком, вместе с `options`. |
-| `/api/admin/pipeline/projects/[id]/files/[fileId]` | GET | Содержимое файла для превью и просмотра сайдкаров. |
-| `/api/admin/pipeline/projects/[id]/description` | GET, PUT | Описание проекта. **Единственная запись** в чужой проект, кроме паузы. |
-| `/api/admin/pipeline/projects/[id]/chat` | GET, POST | Тот же чат, со стороны команды. |
+| `/api/admin/workspaces/users` | GET, PATCH | Колонка 1: пользователи и гейт `automation_enabled`. GET — по `projects.access`, PATCH — по `pipeline.operate`. |
+| `/api/admin/workspaces/projects` | GET | Колонка 2: проекты выбранного пользователя, включая архивные. |
+| `/api/admin/workspaces/projects/[id]` | PATCH | Тумблер слежения (тот же, что у пользователя). Больше ничего этот роут не принимает. Тег — `pipeline.operate`: это гейт обработки. |
+| `/api/admin/workspaces/projects/[id]/drive` | GET, POST | Колонка 3: дерево целиком, вместе с `options`. POST — создать папку. |
+| `/api/admin/workspaces/projects/[id]/files/[fileId]` | GET, PATCH, DELETE | Содержимое файла для превью и сайдкаров; переименование и удаление. |
+| `/api/admin/workspaces/projects/[id]/description` | GET, PUT | Описание проекта — бриф от команды клиенту. |
+| `/api/admin/workspaces/projects/[id]/chat` | GET, POST | Тот же чат, со стороны команды. |
 | `/api/admin/pipeline/state` | GET, PATCH | Состояние конвейера; PATCH включает/выключает слежение и меняет период обхода. |
 | `/api/admin/pipeline/collect` | POST | Разовая событийная сборка задач. |
 | `/api/admin/pipeline/sweep` | POST | Разовый обход папок IN. |
@@ -168,6 +173,7 @@
 | `/trash/restore` | POST | Восстановить из корзины. |
 | `/jobs/[id]` | GET | Прогресс фоновой работы. |
 | `/queue` | POST | Очередь задач для десктопа (`mch_…`). Логика общая с `POST /api/v1`. |
+| `/vault` | POST | Сейф для десктопа (`mch_…`): `action: "keys"` — ключи внешних сервисов по версиям, `action: "usage"` — потребление в единицах. Логика общая с экшенами `vendorKeys` / `vendorUsage`. |
 | `/multipart/create` | POST | Начать многочастную заливку. |
 | `/multipart/presign-part` | POST | Ссылка на часть. |
 | `/multipart/complete` | POST | Собрать части. |
@@ -186,7 +192,7 @@
 Слить их в один нельзя: каталог импортирует клиентский компонент, а реестр тянет
 `pg`.
 
-### 33 экшена
+### 35 экшенов
 
 | Группа | Экшены |
 | --- | --- |
@@ -197,6 +203,7 @@
 | Запись | `presign`, `notify`, `mkdir`, `rename`, `copy`, `deleteObject`, `reindex`, `putSidecar`, `getJob` |
 | Multipart | `multipartCreate`, `multipartPresignPart`, `multipartComplete`, `multipartAbort` |
 | Словари | `getSettings`, `putSettings` |
+| Сейф | `vendorKeys`, `vendorUsage` |
 | Очередь | `machinePing`, `claimTask`, `taskProgress`, `taskDone`, `taskFailed`, `releaseTask` |
 
 `GET /api/v1` отвечает 405 с подсказкой. `maxDuration: 120`.
@@ -217,6 +224,10 @@
 | `/api/cron/storage-jobs` | POST | secret | Разобрать до 20 фоновых работ + вычистить просроченную корзину файлов и проектов. |
 | `/api/cron/storage-purge` | POST | secret | Вычистить корзину + снять суточный срез + импортировать архив обработок + выгрузить месячную копию. |
 | `/api/webhooks/yougile` | POST | `token=` | Приём `chat_message-created`. Пропускает эхо собственных сообщений по `botUserId`, дедуплицирует по `yougile_message_id`. **Всегда отвечает 2xx.** |
+| `/api/admin/services` | GET, POST | `services.manage` | Внешние сервисы: список и заведение. Секрет наружу не отдаётся ни одним методом — только версия и подсказка «••••4f21». |
+| `/api/admin/services/[id]` | PATCH, DELETE | `services.manage` | Правка сервиса; DELETE переводит в `revoked`, а не удаляет строку: по ней посчитан прошлый расход. |
+| `/api/admin/services/[id]/secret` | POST, DELETE | `services.manage` | POST — ротация (новая версия, старая остаётся живой); DELETE — погасить прежние версии. |
+| `/api/admin/services/[id]/prices` | POST | `services.manage` | Новая цена меры. Всегда добавление: прошлые строки нужны прошлым списаниям. |
 
 ⚠️ Оба cron-роута чистят корзину, а второй ещё и дублирует работу часового
 тика статистики. Разбор — [14](./14-improvements.md#7-cron-роуты).

@@ -26,7 +26,7 @@ export function RemoteAccessContent() {
   const [loading, setLoading] = useState(true)
   const [connectOpen, setConnectOpen] = useState(false)
   const [rotateId, setRotateId] = useState<string | null>(null)
-  const [revokeId, setRevokeId] = useState<string | null>(null)
+  const [revokeTarget, setRevokeTarget] = useState<AccessTokenDto | null>(null)
   const { can } = useAdminData()
   const canIssueTokens = can("machines.manage")
 
@@ -59,25 +59,33 @@ export function RemoteAccessContent() {
     return () => window.clearInterval(id)
   }, [load])
 
-  const revokeTarget = tokens.find((c) => c.id === revokeId)
   const rotateTarget = tokens.find((c) => c.id === rotateId)
+  const isComputer = revokeTarget?.kind === "computer"
 
+  /**
+   * Роут отзыва зависит от того, кто токен завёл: `rc_` выпускали мы (таблица
+   * компьютеров), `mch_` аккаунт выпустил себе сам (таблица токенов). В списке
+   * они лежат вперемешку намеренно — значит развилка здесь, а не у человека.
+   */
   const handleRevoke = async () => {
-    if (!revokeId) return
+    if (!revokeTarget) return
+    const computer = revokeTarget.kind === "computer"
+    const url = computer
+      ? `/api/admin/computers/${revokeTarget.id}`
+      : `/api/admin/machines/${revokeTarget.id}`
+    const errorText = computer ? t.remoteRevokeError : t.tokenRevokeError
     try {
-      const res = await fetch(`/api/admin/computers/${revokeId}`, {
-        method: "DELETE",
-      })
+      const res = await fetch(url, { method: "DELETE" })
       const data = (await res.json()) as { message?: string }
       if (!res.ok) {
-        toast.error(data.message ?? t.remoteRevokeError)
+        toast.error(data.message ?? errorText)
         return
       }
-      toast.success(t.remoteRevoked)
-      setRevokeId(null)
+      toast.success(computer ? t.remoteRevoked : t.tokenRevoked)
+      setRevokeTarget(null)
       await load(true)
     } catch {
-      toast.error(t.remoteRevokeError)
+      toast.error(errorText)
     }
   }
 
@@ -133,7 +141,7 @@ export function RemoteAccessContent() {
               token={token}
               canRotateToken={canIssueTokens}
               onRotateToken={() => setRotateId(token.id)}
-              onRevoke={() => setRevokeId(token.id)}
+              onRevoke={() => setRevokeTarget(token)}
             />
           ))}
         </div>
@@ -155,17 +163,19 @@ export function RemoteAccessContent() {
       />
 
       <AdminConfirmDialog
-        open={revokeId != null}
+        open={revokeTarget != null}
         onOpenChange={(open) => {
-          if (!open) setRevokeId(null)
+          if (!open) setRevokeTarget(null)
         }}
-        title={t.remoteRevokeTitle}
+        title={isComputer ? t.remoteRevokeTitle : t.tokenRevokeTitle}
         description={
           revokeTarget
-            ? tf(t.remoteRevokeDesc, { name: revokeTarget.name })
+            ? tf(isComputer ? t.remoteRevokeDesc : t.tokenRevokeDesc, {
+                name: revokeTarget.name,
+              })
             : undefined
         }
-        confirmLabel={t.remoteRevokeConfirm}
+        confirmLabel={isComputer ? t.remoteRevokeConfirm : t.tokenRevokeConfirm}
         cancelLabel={t.cancel}
         destructive
         onConfirm={() => void handleRevoke()}

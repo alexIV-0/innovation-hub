@@ -1,10 +1,7 @@
-import { requireCapabilityPage } from "@/lib/admin-page-guard"
-import { AdminBillingContent } from "@/components/admin/billing/billing-content"
+import { AdminHub } from "@/components/admin/shell/admin-hub"
 
 export const dynamic = "force-dynamic"
 
-export default async function AdminBillingPage() {
-  await requireCapabilityPage("billing.manage")
-
-  return <AdminBillingContent />
+export default function AdminBillingPage() {
+  return <AdminHub area="billing" />
 }

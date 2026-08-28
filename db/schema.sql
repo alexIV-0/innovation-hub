@@ -173,6 +173,14 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAU
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+-- Где лежат байты проекта, в отличие от того, кому он принадлежит.
+-- Ключи в R2 — `projects/{storage_owner_id}/{projectId}/…` и не меняются
+-- никогда; владение живёт в user_id и меняется при передаче проекта другому
+-- человеку. Читается через COALESCE(storage_owner_id, user_id), поэтому строка
+-- без значения ведёт себя как до миграции.
+-- См. db/migrations/2026-08-28-project-storage-owner.sql.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS storage_owner_id TEXT REFERENCES users(id);
+
 CREATE INDEX IF NOT EXISTS projects_user_archived_idx
   ON projects (user_id, is_archived, created_at DESC);
 

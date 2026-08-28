@@ -12,9 +12,19 @@ function safeSegment(value: string, label: string): string {
   return segment
 }
 
-/** Stable per-user project root: `projects/{userId}/{projectId}/`. */
-export function projectObjectPrefix(userId: string, projectId: string): string {
-  return `projects/${safeSegment(userId, "User ID")}/${safeSegment(projectId, "Project ID")}/`
+/**
+ * Корень проекта в хранилище: `projects/{storageOwnerId}/{projectId}/`.
+ *
+ * Первый сегмент — `projects.storage_owner_id`, а НЕ текущий владелец: у
+ * переданного другому человеку проекта они расходятся, и ключи остаются на
+ * месте (docs/ADMIN_WORKSPACE_PLAN.md §5). Передавать сюда `ownerId` нельзя —
+ * у такого проекта получится ключ, по которому ничего не лежит.
+ */
+export function projectObjectPrefix(
+  storageOwnerId: string,
+  projectId: string,
+): string {
+  return `projects/${safeSegment(storageOwnerId, "Storage owner ID")}/${safeSegment(projectId, "Project ID")}/`
 }
 
 export function userMetaObjectKey(userId: string): string {
@@ -22,12 +32,12 @@ export function userMetaObjectKey(userId: string): string {
 }
 
 export function buildProjectObjectKey(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
   relativePath: string,
 ): string {
   const relative = relativePath.replace(/^\/+/, "").replace(/\.\./g, "_")
-  return `${projectObjectPrefix(userId, projectId)}${relative}`
+  return `${projectObjectPrefix(storageOwnerId, projectId)}${relative}`
 }
 
 /**

@@ -199,7 +199,7 @@ export async function sweepInFolders(options?: {
     const entry: InEntry | null = row.isFolder
       ? {
           name: row.name,
-          key: `${projectPrefix(project.ownerId, project.projectId)}IN/${row.name}`,
+          key: `${projectPrefix(project.storageOwnerId, project.projectId)}IN/${row.name}`,
           isFolder: true,
         }
       : row.s3Key

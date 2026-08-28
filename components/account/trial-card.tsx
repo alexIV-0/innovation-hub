@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { Gift, Loader2, Wallet } from "lucide-react"
 import { toast } from "sonner"
 import { formatBalance, tf, useI18n } from "@/components/account/i18n"
@@ -109,14 +110,15 @@ export function TrialCard({
         <Wallet className="h-5 w-5 text-primary/70" />
       </div>
 
-      <div
+      <Link
+        href="/account/billing"
         className={cn(
-          "mt-4 text-[34px] font-bold tracking-tight",
+          "mt-4 block text-[34px] font-bold tracking-tight hover:opacity-80",
           own < 0 && "text-destructive",
         )}
       >
         {formatBalance(own, lang)}
-      </div>
+      </Link>
 
       {/* Подарочный — второй строкой и мельче. Пустой не показываем вовсе:
           израсходованный подарок не должен занимать место и объяснять себя. */}

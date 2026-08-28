@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const file = await restoreFromTrash({
-      userId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       fileId: parsed.data.fileId,
       eventId: parsed.data.eventId,

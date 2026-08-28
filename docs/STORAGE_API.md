@@ -439,6 +439,52 @@ Machine-api actions: `multipartCreate`, `multipartPresignPart`, `multipartComple
 
 ---
 
+## `POST /api/storage/v1/vault`
+
+Ключи внешних сервисов и отчёт о потреблении. Тот же контракт доступен экшенами
+`vendorKeys` / `vendorUsage` на `POST /api/v1` для машин с токеном `rc_…`.
+
+**Ключи — перед задачей и только по нужным ей сервисам:**
+
+```jsonc
+{ "action": "keys",
+  "services": ["eleven-labs"],
+  "known": { "eleven-labs": 6 } }   // версии из локального сейфа
+```
+
+```jsonc
+{ "keys": [ { "slug": "eleven-labs", "version": 7, "secret": "sk_…", "ttlSec": 21600 } ],
+  "fresh": [],          // по этим версия у вас актуальная — ключ не поехал
+  "unavailable": [],    // нет, на паузе, отозван или помечен proxy
+  "vaultRevision": 42 }
+```
+
+`vaultRevision` приходит и в ответе на `heartbeat`. Разошлась с вашей — спросите
+ключи заново: так отзыв доезжает за полминуты, а не по истечении `ttlSec`.
+
+Копию храните шифрованной (Keychain / DPAPI), не дольше `ttlSec`, и никогда не
+пишите ключ в логи: логи уезжают к нам, и вычистить их потом нечем.
+
+**Потребление — сразу после ответа вендора, не дожидаясь `taskDone`:**
+
+```jsonc
+{ "action": "usage",
+  "taskId": "0f5c…",
+  "entries": [ { "service": "eleven-labs", "unit": "char", "units": 8140 } ] }
+```
+
+```jsonc
+{ "recorded": 1, "duplicate": 0, "unknown": [], "unpriced": [], "noRate": [] }
+```
+
+⚠️ **Единицы, а не деньги.** Цену знает сайт: прайс, зашитый в плагин,
+размножается по парку и разъезжается при первом же изменении цен у вендора.
+`unit`: `token` · `char` · `sec` · `image` · `run`.
+
+Повтор по той же тройке (задача, сервис, мера) расход не удваивает — держит
+уникальный индекс. Ответ разбирайте: `unpriced` и `noRate` означают, что строка
+**не записана**, и её надо прислать позже.
+
 ## `GET /api/storage/v1/tree`
 
 Bootstrap / full subtree from Postgres cache.

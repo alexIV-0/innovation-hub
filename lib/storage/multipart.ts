@@ -68,7 +68,7 @@ export function assertStorageConfigured() {
 }
 
 export async function startMultipartUpload(input: {
-  ownerId: string
+  storageOwnerId: string
   projectId: string
   folderPath: string
   fileName: string
@@ -81,7 +81,7 @@ export async function startMultipartUpload(input: {
     throw new StorageWriteError("Content type not allowed.", 400)
   }
   const s3Key = projectUploadObjectKey(
-    input.ownerId,
+    input.storageOwnerId,
     input.projectId,
     input.folderPath,
     `${randomUUID()}-${fileName}`,
@@ -106,7 +106,7 @@ export async function startMultipartUpload(input: {
 }
 
 export async function presignMultipartPart(input: {
-  ownerId: string
+  storageOwnerId: string
   projectId: string
   s3Key: string
   uploadId: string
@@ -114,7 +114,7 @@ export async function presignMultipartPart(input: {
   ttlSec?: number
 }) {
   assertStorageConfigured()
-  const expectedPrefix = projectPrefix(input.ownerId, input.projectId)
+  const expectedPrefix = projectPrefix(input.storageOwnerId, input.projectId)
   if (!input.s3Key.startsWith(expectedPrefix)) {
     throw new StorageWriteError("Invalid key.", 400)
   }
@@ -138,7 +138,7 @@ export async function presignMultipartPart(input: {
 }
 
 export async function completeMultipartUpload(input: {
-  ownerId: string
+  storageOwnerId: string
   projectId: string
   s3Key: string
   uploadId: string
@@ -153,7 +153,7 @@ export async function completeMultipartUpload(input: {
   actor?: StorageActor | null
 }) {
   assertStorageConfigured()
-  const expectedPrefix = projectPrefix(input.ownerId, input.projectId)
+  const expectedPrefix = projectPrefix(input.storageOwnerId, input.projectId)
   if (!input.s3Key.startsWith(expectedPrefix)) {
     throw new StorageWriteError("Invalid key.", 400)
   }
@@ -171,7 +171,7 @@ export async function completeMultipartUpload(input: {
     }),
   )
   const file = await writeNotifyUpload({
-    userId: input.ownerId,
+    storageOwnerId: input.storageOwnerId,
     projectId: input.projectId,
     s3Key: input.s3Key,
     folderPath: input.folderPath,
@@ -187,13 +187,13 @@ export async function completeMultipartUpload(input: {
 }
 
 export async function abortMultipartUpload(input: {
-  ownerId: string
+  storageOwnerId: string
   projectId: string
   s3Key: string
   uploadId: string
 }) {
   assertStorageConfigured()
-  const expectedPrefix = projectPrefix(input.ownerId, input.projectId)
+  const expectedPrefix = projectPrefix(input.storageOwnerId, input.projectId)
   if (!input.s3Key.startsWith(expectedPrefix)) {
     throw new StorageWriteError("Invalid key.", 400)
   }

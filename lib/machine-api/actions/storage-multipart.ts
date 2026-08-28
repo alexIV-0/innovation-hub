@@ -32,7 +32,7 @@ export const multipartCreateAction = defineAction(
     try {
       return apiOk(
         await startMultipartUpload({
-          ownerId: access.ownerId,
+          storageOwnerId: access.storageOwnerId,
           projectId: access.projectId,
           folderPath: data.folderPath,
           fileName: data.fileName,
@@ -53,7 +53,7 @@ export const multipartPresignPartAction = defineAction(
     try {
       return apiOk(
         await presignMultipartPart({
-          ownerId: access.ownerId,
+          storageOwnerId: access.storageOwnerId,
           projectId: access.projectId,
           s3Key: data.s3Key,
           uploadId: data.uploadId,
@@ -74,7 +74,7 @@ export const multipartCompleteAction = defineAction(
     if (access instanceof NextResponse) return access
     try {
       const file = await completeMultipartUpload({
-        ownerId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         s3Key: data.s3Key,
         uploadId: data.uploadId,
@@ -101,7 +101,7 @@ export const multipartAbortAction = defineAction(
     if (access instanceof NextResponse) return access
     try {
       await abortMultipartUpload({
-        ownerId: access.ownerId,
+        storageOwnerId: access.storageOwnerId,
         projectId: access.projectId,
         s3Key: data.s3Key,
         uploadId: data.uploadId,

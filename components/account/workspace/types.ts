@@ -113,6 +113,12 @@ export type WorkspaceCapabilities = {
   archiveProject: boolean
   /** Расшарить проект, сменить роль участника, снять доступ. */
   shareProject: boolean
+  /**
+   * Передать проект другому человеку: у прежнего владельца он исчезает, у
+   * нового появляется. В кабинете такого действия нет — там владелец один и
+   * менять его некому; включает его только админская зона.
+   */
+  transferProject: boolean
   upload: boolean
   createFolder: boolean
   renameItem: boolean
@@ -212,8 +218,22 @@ export type WorkspaceSource = {
    * пользовательские слева.
    */
   chatPerspective: "client" | "team"
+  /**
+   * Смена владельца проекта. Необязательный: без адреса действие недоступно,
+   * сколько бы прав ни давала зона.
+   */
+  transferUrl?: (projectId: string) => string
   /** Показывать служебную папку options (в кабинете она скрыта). */
   showServiceFolders: boolean
+  /**
+   * Заливать байты мимо Next: presign → PUT в R2 → notify.
+   *
+   * Раньше этот выбор делался по `scopeKey === "cabinet"` прямо в загрузчике —
+   * то есть новая зона получала прокси через Next просто потому, что называлась
+   * иначе. Признак у источника, а не имя: адрес `uploadUrl` при этом всё равно
+   * обязателен по контракту, но не используется.
+   */
+  directUpload?: boolean
   can: WorkspaceCapabilities
 }
 

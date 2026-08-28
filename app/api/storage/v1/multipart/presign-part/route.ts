@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await presignMultipartPart({
-      ownerId: access.ownerId,
+      storageOwnerId: access.storageOwnerId,
       projectId: access.projectId,
       s3Key: parsed.data.s3Key,
       uploadId: parsed.data.uploadId,

@@ -1,4 +1,5 @@
 import type { UserRole } from "@/lib/domain-types"
+import type { AdminCapability } from "@/lib/admin-capabilities"
 
 export type ContentKind = "video" | "idea"
 
@@ -33,6 +34,8 @@ export type AdminUser = {
   fullName: string
   email: string
   role: UserRole
+  /** Выданные теги разделов. У суперадмина всегда пусто — ему не проверяются. */
+  capabilities: AdminCapability[]
   isActive: boolean
   createdAt: string
 }

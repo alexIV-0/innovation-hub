@@ -112,6 +112,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       await setProjectPaused({
         projectId: access.project.id,
         ownerId,
+        storageOwnerId: access.project.storageOwnerId,
         paused: isPaused,
         updatedBy: siteUpdatedBy(auth.email),
         actorUserId: auth.userId,

@@ -10,6 +10,7 @@
     "lint": "next lint",
     "i18n:check": "node scripts/i18n-check.mjs",
     "md:check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/description-format-check.mts",
+    "admin:check": "node scripts/admin-nav-check.mjs",
     "db:init": "node scripts/db-init.mjs",
     "db:reset": "node scripts/db-init.mjs --reset",
     "db:migrate": "node scripts/db-migrate.mjs",

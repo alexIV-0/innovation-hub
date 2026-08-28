@@ -3,6 +3,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 import { NextResponse, type NextRequest } from "next/server"
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth"
 import { findFileByS3Key } from "@/lib/repositories/project-files"
+import { findProjectById } from "@/lib/repositories/projects"
 import { findUserById } from "@/lib/repositories/users"
 import { getS3Bucket, isAllowedMediaObjectKey } from "@/lib/s3-config"
 import { getS3Client } from "@/lib/s3-client"
@@ -41,11 +42,11 @@ async function authorizeProjectKey(
   request: NextRequest,
   key: string,
 ): Promise<NextResponse | null> {
-  const [namespace, keyUserId, keyProjectId] = key.split("/")
+  const [namespace, keyStorageOwnerId, keyProjectId] = key.split("/")
   const isCurrentProjectKey =
     namespace === "projects" &&
-    Boolean(keyUserId && keyProjectId) &&
-    /^[0-9a-f-]{36}$/i.test(keyUserId) &&
+    Boolean(keyStorageOwnerId && keyProjectId) &&
+    /^[0-9a-f-]{36}$/i.test(keyStorageOwnerId) &&
     /^[0-9a-f-]{36}$/i.test(keyProjectId)
   const isLegacyProjectKey =
     key.startsWith("innohub/projects/") || key.startsWith("ffworks/projects/")
@@ -74,7 +75,21 @@ async function authorizeProjectKey(
     if (hasCapability(user.role, capabilities, "projects.access")) return null
   }
 
-  if (isCurrentProjectKey && keyUserId === user.id) return null
+  // Владение спрашиваем у базы, а не у ключа.
+  //
+  // Раньше здесь стоял быстрый путь `keyUserId === user.id`: сегмент ключа и был
+  // владельцем, поэтому лишний запрос выглядел ненужным. С передачей проекта
+  // другому человеку это перестало быть правдой — первый сегмент остаётся
+  // прежним навсегда (`projects.storage_owner_id`), и по нему бывший владелец
+  // продолжал бы открывать файлы проекта, которого у него больше нет.
+  // См. docs/ADMIN_WORKSPACE_PLAN.md §5.4.
+  if (isCurrentProjectKey && keyProjectId) {
+    const project = await findProjectById(keyProjectId)
+    if (!project || project.ownerId !== user.id) {
+      return NextResponse.json({ message: "Not found." }, { status: 404 })
+    }
+    return null
+  }
 
   // During migration, legacy object keys still need a DB ownership check.
   const file = await findFileByS3Key(key)

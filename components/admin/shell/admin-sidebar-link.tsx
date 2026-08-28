@@ -3,10 +3,10 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { isItemActive, type AdminNavItem } from "./nav-config"
+import { isToolActive, type AdminTool } from "./nav-config"
 
 type Props = {
-  item: AdminNavItem
+  item: AdminTool
   label: string
   badge?: number
   onNavigate?: () => void
@@ -14,7 +14,7 @@ type Props = {
 
 export function AdminSidebarLink({ item, label, badge, onNavigate }: Props) {
   const pathname = usePathname()
-  const active = isItemActive(item, pathname ?? "")
+  const active = isToolActive(item, pathname ?? "")
   const Icon = item.icon
 
   return (

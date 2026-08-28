@@ -141,3 +141,141 @@ export async function listTemplateCosts(
   }
   return map
 }
+
+export type UserPick = {
+  userId: string
+  email: string
+  fullName: string
+  balanceOwnCents: number
+  balanceGiftCents: number
+}
+
+/** Поиск человека для адресного подарка. */
+export async function searchUsers(q: string, limit = 20): Promise<UserPick[]> {
+  const term = `%${q.trim().toLowerCase()}%`
+  const result = await query<
+    Omit<UserPick, "balanceOwnCents" | "balanceGiftCents"> & {
+      balanceOwnCents: string
+      balanceGiftCents: string
+    }
+  >(
+    `SELECT id AS "userId",
+            email,
+            COALESCE(full_name, '') AS "fullName",
+            COALESCE(balance_own_cents, 0)::text  AS "balanceOwnCents",
+            COALESCE(balance_gift_cents, 0)::text AS "balanceGiftCents"
+       FROM users
+      WHERE is_active
+        AND (lower(email) LIKE $1 OR lower(COALESCE(full_name, '')) LIKE $1)
+      ORDER BY email
+      LIMIT $2`,
+    [term, limit],
+  )
+  return result.rows.map((row) => ({
+    ...row,
+    balanceOwnCents: Number(row.balanceOwnCents),
+    balanceGiftCents: Number(row.balanceGiftCents),
+  }))
+}
+
+export type UserProject = {
+  projectId: string
+  name: string
+  isArchived: boolean
+}
+
+/**
+ * Проекты человека — чтобы отметить, где действует подарок.
+ *
+ * Архивные показываем тоже: подарок могут дарить под конкретную работу, и
+ * проект вполне мог быть отправлен в архив до того, как о нём договорились.
+ */
+export async function listUserProjects(userId: string): Promise<UserProject[]> {
+  const result = await query<UserProject>(
+    `SELECT id AS "projectId",
+            name,
+            COALESCE(is_archived, FALSE) AS "isArchived"
+       FROM projects
+      WHERE user_id = $1 AND deleted_at IS NULL
+      ORDER BY COALESCE(is_archived, FALSE), lower(name)`,
+    [userId],
+  )
+  return result.rows
+}
+
+export type GrantRow = {
+  grantId: string
+  kind: string
+  status: string
+  amountCents: number
+  remainingCents: number
+  createdAt: Date
+  expiresAt: Date | null
+  comment: string
+  projectIds: string[]
+}
+
+/** Все подарки одного человека — и период, и акции. */
+export async function listUserGrants(userId: string): Promise<GrantRow[]> {
+  const result = await query<
+    Omit<GrantRow, "amountCents" | "remainingCents" | "projectIds"> & {
+      amountCents: string
+      remainingCents: string
+      projectIds: string[] | null
+    }
+  >(
+    `SELECT g.id AS "grantId",
+            g.kind,
+            g.status,
+            g.amount_cents::text AS "amountCents",
+            COALESCE((
+              SELECT SUM(b.amount_cents) FROM billing_transactions b
+               WHERE b.grant_id = g.id
+            ), 0)::text AS "remainingCents",
+            g.created_at AS "createdAt",
+            g.expires_at AS "expiresAt",
+            g.comment,
+            ARRAY(
+              SELECT gp.project_id FROM billing_grant_projects gp
+               WHERE gp.grant_id = g.id
+            ) AS "projectIds"
+       FROM billing_grants g
+      WHERE g.user_id = $1
+      ORDER BY g.created_at DESC`,
+    [userId],
+  )
+  return result.rows.map((row) => ({
+    ...row,
+    amountCents: Number(row.amountCents),
+    remainingCents: Number(row.remainingCents),
+    projectIds: row.projectIds ?? [],
+  }))
+}
+
+/**
+ * Персональный лимит овердрафта.
+ *
+ * `null` — действует общий из «Тарифов». Своё значение ставится осознанно,
+ * поэтому ноль у человека означает именно «этому в кредит не даём», а не
+ * «возьми общий»: иначе снять доверие было бы нечем.
+ */
+export async function setOverdraftLimit(input: {
+  userId: string
+  limitCents: number | null
+}): Promise<void> {
+  await query(`UPDATE users SET overdraft_limit_cents = $2 WHERE id = $1`, [
+    input.userId,
+    input.limitCents,
+  ])
+}
+
+export async function readOverdraftLimit(
+  userId: string,
+): Promise<number | null> {
+  const result = await query<{ limit: string | null }>(
+    `SELECT overdraft_limit_cents::text AS limit FROM users WHERE id = $1`,
+    [userId],
+  )
+  const raw = result.rows[0]?.limit
+  return raw == null ? null : Number(raw)
+}

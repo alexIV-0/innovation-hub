@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { auditFrom } from "@/lib/audit"
 import { isElevated, isSuperAdmin } from "@/lib/admin-roles"
+import { listCapabilitiesForMany } from "@/lib/repositories/admin-capabilities"
 import { userCreateSchema } from "@/lib/admin-schemas"
 import { hashPassword } from "@/lib/auth"
 import {
@@ -17,7 +18,17 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth
 
   const users = await listUsers()
-  return NextResponse.json(users)
+
+  // Теги отдаём вместе со списком: страница «Права доступа» строится из него же,
+  // и отдельный запрос на каждую строку превратил бы её открытие в веер вызовов.
+  const capabilities = await listCapabilitiesForMany(users.map((u) => u.id))
+
+  return NextResponse.json(
+    users.map((user) => ({
+      ...user,
+      capabilities: capabilities.get(user.id) ?? [],
+    })),
+  )
 }
 
 export async function POST(request: NextRequest) {

@@ -80,17 +80,25 @@ export function contentTypeForSidecar(name: string): string {
 const PROJECT_KEY_RE =
   /^projects\/([^/]+)\/([^/]+)\/(?:options\/(.+)|([^/]+)\/(.+)|([^/]+))$/
 
-export function projectPrefix(userId: string, projectId: string): string {
-  return projectObjectPrefix(userId, projectId)
+/**
+ * Первым аргументом — `projects.storage_owner_id`, а не текущий владелец.
+ * У переданного другому человеку проекта это разные люди, и ключи остаются под
+ * тем, кто проект завёл (docs/ADMIN_WORKSPACE_PLAN.md §5).
+ */
+export function projectPrefix(
+  storageOwnerId: string,
+  projectId: string,
+): string {
+  return projectObjectPrefix(storageOwnerId, projectId)
 }
 
 export function isCatalogKey(
   key: string,
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): boolean {
   return key.startsWith(
-    `${projectPrefix(userId, projectId)}${CATALOG_FOLDER_NAME}/`,
+    `${projectPrefix(storageOwnerId, projectId)}${CATALOG_FOLDER_NAME}/`,
   )
 }
 
@@ -102,7 +110,7 @@ export function parseProjectIdFromKey(key: string): string | null {
 }
 
 export function logicalKeyForFile(input: {
-  userId: string
+  storageOwnerId: string
   projectId: string
   folderPath: string
   name: string
@@ -111,16 +119,16 @@ export function logicalKeyForFile(input: {
   const relative = folder
     ? `${folder}/${input.name}`
     : input.name
-  return buildProjectObjectKey(input.userId, input.projectId, relative)
+  return buildProjectObjectKey(input.storageOwnerId, input.projectId, relative)
 }
 
 export function folderPathFromKey(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
   key: string,
   fileName: string,
 ): string {
-  const prefix = projectPrefix(userId, projectId)
+  const prefix = projectPrefix(storageOwnerId, projectId)
   if (!key.startsWith(prefix)) return ""
   const rest = key.slice(prefix.length)
   if (!rest || rest === fileName) return ""
@@ -134,11 +142,11 @@ export function folderPathFromKey(
 
 export function isOptionsKey(
   key: string,
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): boolean {
   return key.startsWith(
-    `${projectPrefix(userId, projectId)}${OPTIONS_FOLDER_NAME}/`,
+    `${projectPrefix(storageOwnerId, projectId)}${OPTIONS_FOLDER_NAME}/`,
   )
 }
 

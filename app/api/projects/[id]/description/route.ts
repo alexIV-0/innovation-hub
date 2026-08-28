@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (access instanceof NextResponse) return access
   const project = access.project
 
-  const body = await readProjectDescriptionMd(project.ownerId, project.id)
+  const body = await readProjectDescriptionMd(project.storageOwnerId, project.id)
   // null, а не 404: отсутствие описания — обычное состояние проекта, а не ошибка.
   return NextResponse.json({ body })
 }

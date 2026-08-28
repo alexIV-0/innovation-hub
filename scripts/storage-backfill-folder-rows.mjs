@@ -35,8 +35,8 @@ const ONLY_PROJECT =
 const pool = new pg.Pool({ ...readConnectionConfig(), ssl: false, max: 2 })
 
 /** Ключ логической папки — тот же, что строит logicalKeyForFile в lib/storage/keys.ts. */
-function logicalFolderKey(ownerId, projectId, folderPath) {
-  return `projects/${ownerId}/${projectId}/${folderPath}`
+function logicalFolderKey(storageOwnerId, projectId, folderPath) {
+  return `projects/${storageOwnerId}/${projectId}/${folderPath}`
 }
 
 function splitParent(path) {
@@ -112,7 +112,7 @@ async function backfillProject(client, project) {
        RETURNING seq`,
       [
         project.id,
-        logicalFolderKey(project.ownerId, project.id, path),
+        logicalFolderKey(project.storageOwnerId, project.id, path),
         Math.floor(Date.now() / 1000),
         `backfill:mkdir:${id}`,
         JSON.stringify({ fileId: id, name, folderPath: parent, isFolder: true }),
@@ -138,9 +138,9 @@ console.log(
 try {
   const { rows: projects } = await pool.query(
     ONLY_PROJECT
-      ? `SELECT id, name, user_id AS "ownerId" FROM projects
+      ? `SELECT id, name, COALESCE(storage_owner_id, user_id) AS "storageOwnerId" FROM projects
           WHERE id = $1 AND deleted_at IS NULL`
-      : `SELECT id, name, user_id AS "ownerId" FROM projects
+      : `SELECT id, name, COALESCE(storage_owner_id, user_id) AS "storageOwnerId" FROM projects
           WHERE deleted_at IS NULL ORDER BY created_at ASC`,
     ONLY_PROJECT ? [ONLY_PROJECT] : [],
   )

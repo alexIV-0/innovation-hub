@@ -38,6 +38,10 @@ function capabilitiesForRole(role: ProjectAccessRole): WorkspaceCapabilities {
     renameProject: p.renameProject,
     archiveProject: p.archiveProject,
     shareProject: p.manageMembers,
+    // Передача идёт вместе с удалением, а не с расшариванием: и то и другое
+    // отнимает папку у владельца, и полного доступа для этого мало
+    // (lib/project-roles.ts — «переносить между клиентами»).
+    transferProject: p.deleteProject,
     upload: p.writeFiles,
     createFolder: p.writeFiles,
     renameItem: p.writeFiles,

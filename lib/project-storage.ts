@@ -22,10 +22,14 @@ import type { ExposedOption } from "@/lib/options/types"
 /**
  * R2/S3 layout for a project (replaces the Google Drive tree):
  *
- *   projects/{userId}/{projectId}/project-meta.json
- *   projects/{userId}/{projectId}/options/folderState.json
- *   projects/{userId}/{projectId}/options/options.json
- *   projects/{userId}/{projectId}/{folderPath}/{uuid}-{name}   — user files
+ *   projects/{storageOwnerId}/{projectId}/project-meta.json
+ *   projects/{storageOwnerId}/{projectId}/options/folderState.json
+ *   projects/{storageOwnerId}/{projectId}/options/options.json
+ *   projects/{storageOwnerId}/{projectId}/{folderPath}/{uuid}-{name}   — user files
+ *
+ * Первый сегмент — `projects.storage_owner_id`, а не текущий владелец: проект
+ * можно передать другому человеку, и тогда они расходятся, а ключи остаются на
+ * месте (docs/ADMIN_WORKSPACE_PLAN.md §5).
  *
  * Структура папок для кабинета живёт в Postgres `project_files` — вместе со
  * служебной папкой `options`: она такая же папка каталога, как любая другая, и
@@ -115,32 +119,46 @@ export function siteUpdatedBy(email: string): string {
   return `site:${email.toLowerCase()}`
 }
 
-export function projectMetaKey(userId: string, projectId: string): string {
-  return buildProjectObjectKey(userId, projectId, PROJECT_META_FILE_NAME)
+/**
+ * Ключи сайдкаров. Первым аргументом — `projects.storage_owner_id`, а не
+ * текущий владелец: у переданного проекта они расходятся, и объекты остаются на
+ * прежних ключах (docs/ADMIN_WORKSPACE_PLAN.md §5).
+ */
+export function projectMetaKey(
+  storageOwnerId: string,
+  projectId: string,
+): string {
+  return buildProjectObjectKey(storageOwnerId, projectId, PROJECT_META_FILE_NAME)
 }
 
-export function projectFolderStateKey(userId: string, projectId: string): string {
+export function projectFolderStateKey(
+  storageOwnerId: string,
+  projectId: string,
+): string {
   return buildProjectObjectKey(
-    userId,
+    storageOwnerId,
     projectId,
     `${OPTIONS_FOLDER_NAME}/${FOLDER_STATE_FILE_NAME}`,
   )
 }
 
-export function projectOptionsKey(userId: string, projectId: string): string {
+export function projectOptionsKey(
+  storageOwnerId: string,
+  projectId: string,
+): string {
   return buildProjectObjectKey(
-    userId,
+    storageOwnerId,
     projectId,
     `${OPTIONS_FOLDER_NAME}/${OPTIONS_FILE_NAME}`,
   )
 }
 
 export function projectDescriptionKey(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): string {
   return buildProjectObjectKey(
-    userId,
+    storageOwnerId,
     projectId,
     `${OPTIONS_FOLDER_NAME}/${DESCRIPTION_FILE_NAME}`,
   )
@@ -151,19 +169,19 @@ export function projectDescriptionKey(
  * описание появляется, когда его напишут.
  */
 export async function readProjectDescriptionMd(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
 ): Promise<string | null> {
-  return getObjectText(projectDescriptionKey(userId, projectId))
+  return getObjectText(projectDescriptionKey(storageOwnerId, projectId))
 }
 
 export async function writeProjectDescriptionMd(input: {
-  userId: string
+  storageOwnerId: string
   projectId: string
   body: string
 }): Promise<void> {
   await putObjectText(
-    projectDescriptionKey(input.userId, input.projectId),
+    projectDescriptionKey(input.storageOwnerId, input.projectId),
     input.body,
     "text/markdown; charset=utf-8",
   )
@@ -171,7 +189,7 @@ export async function writeProjectDescriptionMd(input: {
 
 /** Object key for a user upload under a logical folder path. */
 export function projectUploadObjectKey(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
   folderPath: string,
   fileName: string,
@@ -181,7 +199,7 @@ export function projectUploadObjectKey(
   const relative = folder
     ? `${folder}/${safe}`
     : safe
-  return buildProjectObjectKey(userId, projectId, relative)
+  return buildProjectObjectKey(storageOwnerId, projectId, relative)
 }
 
 function parseJson(raw: string): unknown {
@@ -296,7 +314,10 @@ export async function objectExists(key: string): Promise<boolean> {
 }
 
 export async function writeProjectMeta(input: {
-  userId: string
+  /** Куда писать объект — `projects.storage_owner_id`. */
+  storageOwnerId: string
+  /** Чей проект сейчас — уезжает в тело `project-meta.json`. */
+  ownerId: string
   projectId: string
   name: string
   description: string
@@ -311,14 +332,14 @@ export async function writeProjectMeta(input: {
     projectId: input.projectId,
     name: input.name,
     description: input.description,
-    ownerId: input.userId,
+    ownerId: input.ownerId,
     ownerEmail: input.ownerEmail,
     isArchived: input.isArchived ?? false,
     createdAt: input.createdAt ?? now,
     updatedAt: input.updatedAt ?? now,
   }
   await putObjectText(
-    projectMetaKey(input.userId, input.projectId),
+    projectMetaKey(input.storageOwnerId, input.projectId),
     JSON.stringify(payload, null, 2),
   )
 }
@@ -446,7 +467,7 @@ function buildTree(
  * физические имена (`{uuid}-folderState.json`) и мусор от прошлых заливок.
  */
 export async function loadProjectStorageState(
-  userId: string,
+  storageOwnerId: string,
   projectId: string,
   view?: { includeServiceFiles?: boolean },
 ): Promise<ProjectStorageState> {
@@ -468,8 +489,8 @@ export async function loadProjectStorageState(
   }
 
   const [stateRaw, optionsObject] = await Promise.all([
-    getObjectText(projectFolderStateKey(userId, projectId)),
-    getObjectTextWithMeta(projectOptionsKey(userId, projectId)),
+    getObjectText(projectFolderStateKey(storageOwnerId, projectId)),
+    getObjectTextWithMeta(projectOptionsKey(storageOwnerId, projectId)),
   ])
 
   const folderState = stateRaw
@@ -501,12 +522,12 @@ export async function loadProjectStorageState(
  * порядок записи задаёт lib/project-automation.ts#setProjectPaused.
  */
 export async function setProjectAutomationEnabled(input: {
-  userId: string
+  storageOwnerId: string
   projectId: string
   enabled: boolean
   updatedBy: string
 }): Promise<ProjectFolderState> {
-  const key = projectFolderStateKey(input.userId, input.projectId)
+  const key = projectFolderStateKey(input.storageOwnerId, input.projectId)
   const raw = await getObjectText(key)
   const parsed = raw == null ? null : parseJson(raw)
   const current =
@@ -548,11 +569,11 @@ export async function setProjectAutomationEnabled(input: {
  * новую версию возвращаем наружу.
  */
 export async function updateProjectExposedOptions(input: {
-  userId: string
+  storageOwnerId: string
   projectId: string
   changes: ExposedOptionChange[]
 }): Promise<{ options: ExposedOption[]; etag: string | null }> {
-  const key = projectOptionsKey(input.userId, input.projectId)
+  const key = projectOptionsKey(input.storageOwnerId, input.projectId)
   const raw = await getObjectText(key)
   if (raw == null) {
     throw new ProjectStorageError(

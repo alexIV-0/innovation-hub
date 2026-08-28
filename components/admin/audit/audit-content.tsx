@@ -1,14 +1,20 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import {
+  ArrowLeftRight,
+  FolderTree,
   KeyRound,
   Monitor,
+  Plug,
   ScrollText,
   Settings2,
   ShieldCheck,
   Trash2,
   UserCog,
+  Workflow,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useI18n } from "@/components/account/i18n"
@@ -26,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { AUDIT_ACTIONS, type AuditAction } from "@/lib/audit-actions"
+import { ACTION_META, TONE_CLASS } from "./action-meta"
 import { cn } from "@/lib/utils"
 
 type AuditEvent = {
@@ -42,84 +49,6 @@ type AuditEvent = {
 }
 
 type Dict = ReturnType<typeof useAdminI18n>
-
-/**
- * Подпись действия и его вес. Иконка и цвет несут смысл, а не украшают: по ленте
- * должно быть видно, где раздали доступ, а где поправили профиль, не вчитываясь.
- */
-const ACTION_META: Record<
-  AuditAction,
-  {
-    labelKey: keyof Dict
-    icon: typeof UserCog
-    tone: "access" | "danger" | "neutral"
-  }
-> = {
-  "user.created": { labelKey: "auditUserCreated", icon: UserCog, tone: "neutral" },
-  "user.updated": { labelKey: "auditUserUpdated", icon: UserCog, tone: "neutral" },
-  "user.role_changed": {
-    labelKey: "auditUserRoleChanged",
-    icon: ShieldCheck,
-    tone: "access",
-  },
-  "user.password_reset": {
-    labelKey: "auditUserPasswordReset",
-    icon: KeyRound,
-    tone: "access",
-  },
-  "user.suspended": {
-    labelKey: "auditUserSuspended",
-    icon: UserCog,
-    tone: "danger",
-  },
-  "user.reactivated": {
-    labelKey: "auditUserReactivated",
-    icon: UserCog,
-    tone: "neutral",
-  },
-  "user.deleted": { labelKey: "auditUserDeleted", icon: Trash2, tone: "danger" },
-  "capability.granted": {
-    labelKey: "auditCapabilityGranted",
-    icon: ShieldCheck,
-    tone: "access",
-  },
-  "capability.revoked": {
-    labelKey: "auditCapabilityRevoked",
-    icon: ShieldCheck,
-    tone: "access",
-  },
-  "computer.created": {
-    labelKey: "auditComputerCreated",
-    icon: Monitor,
-    tone: "access",
-  },
-  "computer.token_rotated": {
-    labelKey: "auditComputerTokenRotated",
-    icon: KeyRound,
-    tone: "access",
-  },
-  "computer.revoked": {
-    labelKey: "auditComputerRevoked",
-    icon: Monitor,
-    tone: "neutral",
-  },
-  "settings.updated": {
-    labelKey: "auditSettingsUpdated",
-    icon: Settings2,
-    tone: "neutral",
-  },
-  "project.deleted": {
-    labelKey: "auditProjectDeleted",
-    icon: Trash2,
-    tone: "danger",
-  },
-}
-
-const TONE_CLASS = {
-  access: "bg-amber-500/15 text-amber-300",
-  danger: "bg-destructive/15 text-destructive",
-  neutral: "bg-primary/10 text-primary",
-} as const
 
 function formatMoment(value: string, locale: string) {
   try {
@@ -180,11 +109,25 @@ export function AuditContent() {
   const [action, setAction] = useState<AuditAction | "all">("all")
   const [query, setQuery] = useState("")
 
+  /**
+   * Фильтр по цели живёт в адресе, а не в состоянии: сюда приходят по ссылке
+   * «весь журнал по нему» из подсказки на строке пользователя, и такую ссылку
+   * должно быть можно переслать и открыть в новой вкладке.
+   */
+  const searchParams = useSearchParams()
+  const targetType = searchParams.get("targetType")
+  const targetId = searchParams.get("targetId")
+  const targetLabel = searchParams.get("targetLabel")
+
   const load = useCallback(
     async (before: string | null, nextAction: AuditAction | "all") => {
       const params = new URLSearchParams({ limit: "50" })
       if (before) params.set("before", before)
       if (nextAction !== "all") params.set("action", nextAction)
+      if (targetType && targetId) {
+        params.set("targetType", targetType)
+        params.set("targetId", targetId)
+      }
 
       const response = await fetch(`/api/admin/audit?${params}`, {
         cache: "no-store",
@@ -195,7 +138,7 @@ export function AuditContent() {
         nextCursor: string | null
       }
     },
-    [],
+    [targetType, targetId],
   )
 
   useEffect(() => {
@@ -254,6 +197,21 @@ export function AuditContent() {
         title={page.adminAuditTitle}
         description={page.adminAuditDesc}
       />
+
+      {targetType && targetId ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card/40 px-4 py-3 text-sm">
+          <span className="text-muted-foreground">{t.auditTargetFilter}</span>
+          <span className="font-medium text-foreground">
+            {targetLabel || targetId}
+          </span>
+          <Link
+            href="/admin/audit"
+            className="ml-auto rounded-full border border-border/70 px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {t.auditTargetFilterClear}
+          </Link>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput

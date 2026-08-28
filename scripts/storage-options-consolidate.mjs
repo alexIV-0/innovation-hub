@@ -146,7 +146,7 @@ function pickWinner(candidates) {
 
 async function consolidateProject(ctx, project) {
   const { client, bucket, pool } = ctx
-  const projectPrefix = `projects/${project.ownerId}/${project.id}/`
+  const projectPrefix = `projects/${project.storageOwnerId}/${project.id}/`
   const optionsPrefix = `${projectPrefix}${OPTIONS_FOLDER_NAME}/`
 
   const objects = await listOptionsObjects(client, bucket, optionsPrefix)
@@ -255,8 +255,8 @@ console.log(
 try {
   const { rows: projects } = await pool.query(
     ONLY_PROJECT
-      ? `SELECT id, user_id AS "ownerId" FROM projects WHERE id = $1`
-      : `SELECT id, user_id AS "ownerId" FROM projects ORDER BY created_at ASC`,
+      ? `SELECT id, COALESCE(storage_owner_id, user_id) AS "storageOwnerId" FROM projects WHERE id = $1`
+      : `SELECT id, COALESCE(storage_owner_id, user_id) AS "storageOwnerId" FROM projects ORDER BY created_at ASC`,
     ONLY_PROJECT ? [ONLY_PROJECT] : [],
   )
 

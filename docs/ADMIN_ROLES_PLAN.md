@@ -149,7 +149,7 @@ CHECK в [db/schema.sql](../db/schema.sql)). Один гвард `requireAdminAp
 | `users.read` | Видеть список людей и их состояние | `/admin/users` (чтение), `/admin` |
 | `users.manage` | Заводить, править, блокировать и удалять **обычных** пользователей | `POST/PATCH/DELETE /api/admin/users/*` |
 | `content.manage` | Видео, идеи, публикации, загрузка медиа | `/admin/content`, `/api/admin/{videos,ideas,upload}/*` |
-| `pipeline.operate` | Очередь, задачи, сборка, обход, стоп/старт; список компьютеров и **отзыв** токена | `/admin/pipeline`, `/api/admin/pipeline/*`, `/api/admin/machines` |
+| `pipeline.operate` | Очередь, задачи, сборка, обход, стоп/старт; список компьютеров и **отзыв** токена | `/admin/pipeline`, `/api/admin/pipeline/*`, `/api/admin/machines`, `DELETE /api/admin/machines/:id` |
 | `settings.write` | Правка общих словарей | `PATCH /api/admin/settings` |
 | `machines.manage` | **Выпуск и ротация** `rc_`-токенов | `POST /api/admin/computers`, `.../rotate-token` |
 | `projects.access` | Открывать, скачивать и править файлы чужих проектов по запросу | `/api/media/*`, обходы владения в `lib/storage/*` |

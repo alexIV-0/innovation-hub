@@ -33,7 +33,12 @@ export async function GET(request: NextRequest) {
 }
 
 const createSchema = z.object({
-  userId: z.string().min(1),
+  // Владелец приходит в query — тем же параметром, что и в GET. Тело шлёт общая
+  // рабочая область (components/account/workspace/workspace-context.tsx), она
+  // одна на кабинет и админку и знает только про `{name}`; адресность у неё
+  // живёт в адресе (WorkspaceSource#projectsUrl). Оставляем и поле в теле —
+  // на случай прямого вызова роута.
+  userId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(180),
   description: z.string().trim().max(2000).optional(),
 })
@@ -62,6 +67,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  const userId =
+    request.nextUrl.searchParams.get("userId") ?? parsed.data.userId ?? null
+  if (!userId) {
+    // В отличие от GET здесь пустой ответ не годится: заводить проект
+    // непонятно кому нельзя, а промолчать — значит соврать, что завели.
+    return NextResponse.json({ message: "User is not selected." }, { status: 400 })
+  }
+
   if (!isS3Configured()) {
     return NextResponse.json(
       { message: "Object storage is not configured." },
@@ -69,7 +82,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const owner = await findUserById(parsed.data.userId)
+  const owner = await findUserById(userId)
   if (!owner) {
     return NextResponse.json({ message: "User not found." }, { status: 404 })
   }

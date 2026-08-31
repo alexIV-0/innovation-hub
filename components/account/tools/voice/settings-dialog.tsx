@@ -53,7 +53,10 @@ export function VoiceSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[82vh] w-[680px] max-w-[92vw] flex-col gap-0 overflow-hidden p-0">
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex max-h-[82vh] w-[680px] max-w-[92vw] flex-col gap-0 overflow-hidden p-0"
+      >
         <DialogHeader className="flex-none border-b border-white/[0.07] px-5 py-4">
           <DialogTitle className="text-[16px] font-semibold">{t.srtSettings}</DialogTitle>
         </DialogHeader>

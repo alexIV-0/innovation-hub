@@ -529,7 +529,10 @@ export function MarkdownEditor({
 
       {/* Ссылка */}
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
-        <DialogContent className="border-border/60 bg-ws-raised sm:max-w-md">
+        <DialogContent
+          aria-describedby={undefined}
+          className="border-border/60 bg-ws-raised sm:max-w-md"
+        >
           <DialogHeader>
             <DialogTitle className="text-[15px] text-ws-1">{t.linkTitle}</DialogTitle>
           </DialogHeader>
@@ -572,7 +575,10 @@ export function MarkdownEditor({
 
       {/* Таблица */}
       <Dialog open={tableOpen} onOpenChange={setTableOpen}>
-        <DialogContent className="border-border/60 bg-ws-raised sm:max-w-md">
+        <DialogContent
+          aria-describedby={undefined}
+          className="border-border/60 bg-ws-raised sm:max-w-md"
+        >
           <DialogHeader>
             <DialogTitle className="text-[15px] text-ws-1">{t.tableTitle}</DialogTitle>
           </DialogHeader>
@@ -628,7 +634,10 @@ export function MarkdownEditor({
 
       {/* Блок кода */}
       <Dialog open={codeOpen} onOpenChange={setCodeOpen}>
-        <DialogContent className="border-border/60 bg-ws-raised sm:max-w-sm">
+        <DialogContent
+          aria-describedby={undefined}
+          className="border-border/60 bg-ws-raised sm:max-w-sm"
+        >
           <DialogHeader>
             <DialogTitle className="text-[15px] text-ws-1">{t.codeTitle}</DialogTitle>
           </DialogHeader>

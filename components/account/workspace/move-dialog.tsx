@@ -103,7 +103,10 @@ export function MoveDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && closeMoveDialog()}>
-      <DialogContent className="max-w-2xl border-border/60 bg-ws-raised p-0">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-w-2xl border-border/60 bg-ws-raised p-0"
+      >
         <DialogHeader className="border-b border-white/[0.07] px-5 py-4">
           <DialogTitle className="text-[16px] font-semibold text-ws-1">
             {t.moveTitle}

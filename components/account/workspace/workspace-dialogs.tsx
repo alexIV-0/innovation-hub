@@ -44,7 +44,11 @@ export function WorkspaceDialogs() {
   return (
     <>
       <Dialog open={!!prompt} onOpenChange={(open) => !open && setPrompt(null)}>
-        <DialogContent className="border-border/60 bg-ws-raised sm:max-w-md">
+        {/* Описания нет — что вводить, говорит подпись у поля. См. ui/dialog.tsx. */}
+        <DialogContent
+          aria-describedby={undefined}
+          className="border-border/60 bg-ws-raised sm:max-w-md"
+        >
           <DialogHeader>
             <DialogTitle className="text-[16px] font-semibold text-ws-1">
               {prompt?.title}
@@ -93,7 +97,14 @@ export function WorkspaceDialogs() {
         open={!!confirm}
         onOpenChange={(open) => !open && setConfirm(null)}
       >
-        <AlertDialogContent className="border-border/60 bg-ws-raised">
+        <AlertDialogContent
+          // Описание у подтверждения необязательное (ConfirmRequest#description);
+          // когда его нет — отказываемся от него явно, как в ui/dialog.tsx.
+          {...(confirm?.description
+            ? {}
+            : { "aria-describedby": undefined })}
+          className="border-border/60 bg-ws-raised"
+        >
           <AlertDialogHeader>
             <AlertDialogTitle className="text-ws-1">
               {confirm?.title}

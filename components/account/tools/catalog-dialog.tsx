@@ -139,7 +139,10 @@ export function CatalogDialog() {
 
   return (
     <Dialog open={catalogOpen} onOpenChange={close}>
-      <DialogContent className="max-h-[86vh] gap-0 overflow-hidden border-border/60 bg-ws-raised p-0 sm:max-w-[720px]">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[86vh] gap-0 overflow-hidden border-border/60 bg-ws-raised p-0 sm:max-w-[720px]"
+      >
         <DialogHeader className="border-b border-white/[0.07] px-6 pb-4 pt-6">
           <DialogTitle className="pr-8 text-[18px] font-semibold tracking-tight text-ws-1">
             {opened ? t[toolText(opened.key).name] : t.catalogTitle}

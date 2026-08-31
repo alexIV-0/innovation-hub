@@ -183,7 +183,10 @@ export function ArchiveDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && closeArchiveDialog()}>
-      <DialogContent className="max-w-lg border-border/60 bg-ws-raised p-0">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-w-lg border-border/60 bg-ws-raised p-0"
+      >
         <DialogHeader className="border-b border-white/[0.07] px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-[16px] font-semibold text-ws-1">
             <FileArchive className="h-[18px] w-[18px] opacity-80" />

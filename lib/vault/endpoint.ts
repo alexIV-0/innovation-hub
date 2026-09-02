@@ -97,7 +97,10 @@ export async function handleVendorUsage(
   }
 
   const result = await recordUsage({
-    taskId: props.taskId,
+    // `null` — локальный прогон. Схема уже проверила, что тогда есть `runId`:
+    // без него повторный отчёт лёг бы второй строкой и удвоил расход.
+    taskId: props.taskId ?? null,
+    runId: props.runId ?? null,
     projectId: props.projectId ?? null,
     computerId: auth.computerId,
     entries: props.entries.map((entry) => ({

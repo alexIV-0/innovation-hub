@@ -172,23 +172,40 @@ export const vendorKeysSchema = z.object({
   taskId: z.string().uuid().optional(),
 })
 
-export const vendorUsageSchema = z.object({
-  taskId: z.string().uuid(),
-  projectId: z.string().trim().max(64).nullable().optional(),
-  entries: z
-    .array(
-      z.object({
-        service: slugSchema,
-        unit: z.enum(PRICE_UNITS),
-        /** Единицы, а не деньги. Деньги считает сайт по своему прайсу. */
-        units: z.number().positive().max(1e12),
-        /**
-         * Метка учётки, которой звали вендора — та же, что пришла в выдаче.
-         * Считать «чей это расход» ноде не нужно: владельца знаем мы.
-         */
-        account: accountLabelSchema.optional(),
-      }),
-    )
-    .min(1)
-    .max(50),
-})
+export const vendorUsageSchema = z
+  .object({
+    /**
+     * Задача, под которую считается расход. `null` — локальный прогон:
+     * настройка флоу на машине, которую никому не продают. Такие строки в
+     * списание не идут, а в суточную сверку идут: у вендора деньги списались.
+     */
+    taskId: z.string().uuid().nullable().optional(),
+    /**
+     * Чем дедуплицировать локальный прогон. Обязателен ровно тогда, когда
+     * задачи нет: отчёт может уехать дважды при обрыве связи, и повтор не
+     * должен удваивать расход.
+     */
+    runId: z.string().trim().min(8).max(64).optional(),
+    projectId: z.string().trim().max(64).nullable().optional(),
+    entries: z
+      .array(
+        z.object({
+          service: slugSchema,
+          unit: z.enum(PRICE_UNITS),
+          /** Единицы, а не деньги. Деньги считает сайт по своему прайсу. */
+          units: z.number().positive().max(1e12),
+          /**
+           * Метка учётки, которой звали вендора — та же, что пришла в выдаче.
+           * Считать «чей это расход» ноде не нужно: владельца знаем мы.
+           */
+          account: accountLabelSchema.optional(),
+        }),
+      )
+      .min(1)
+      .max(50),
+  })
+  // Ровно одно из двух. Обе сразу означали бы, что расход принадлежит и задаче,
+  // и отдельному прогону, а ни одной — что дедуплицировать его нечем.
+  .refine((value) => (value.taskId != null) !== (value.runId != null), {
+    message: "Provide either taskId or runId, not both.",
+  })

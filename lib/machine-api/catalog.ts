@@ -1617,26 +1617,75 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
       },
       {
         name: "known",
-        type: "Record<string, number>",
+        type: "Record<string, { account, version }>",
         required: false,
         notes: {
-          ru: "Версии в локальном сейфе: { \"eleven-labs\": 7 }.",
-          en: "Versions in the local vault: { \"eleven-labs\": 7 }.",
+          ru:
+            "Что лежит в локальном сейфе: { \"eleven-labs\": { account: \"main\", " +
+            "version: 7 } }. Пара, а не одна версия: нумерация у каждой учётки " +
+            "своя, и v3 у main совпал бы с v3 у test.",
+          en:
+            "What the local vault holds: { \"eleven-labs\": { account: \"main\", " +
+            "version: 7 } }. A pair, not a bare version: each account numbers its " +
+            "own versions, so v3 of main would collide with v3 of test.",
+        },
+      },
+      {
+        name: "accounts",
+        type: "Record<string, string>",
+        required: false,
+        notes: {
+          ru:
+            "Метка учётки, если она известна из поля проекта: { \"eleven-labs\": " +
+            "\"test\" }. Не названа — сайт выберет по владельцу задачи либо по " +
+            "единственной платформенной.",
+          en:
+            "Account label when the project field names one: { \"eleven-labs\": " +
+            "\"test\" }. Omitted — the site picks by task owner, or the single " +
+            "platform account.",
+        },
+      },
+      {
+        name: "taskId",
+        type: "uuid",
+        required: false,
+        notes: {
+          ru:
+            "Под какую задачу. По ней сайт выдаёт учётку ВЛАДЕЛЬЦА задачи: проект " +
+            "клиента на воркере парка работает его ключом, а не нашим.",
+          en:
+            "Which task the keys are for. The site resolves the task OWNER’s " +
+            "account: a client project on a fleet worker runs on their key, not ours.",
         },
       },
     ],
-    exampleProps: { services: ["eleven-labs"], known: { "eleven-labs": 6 } },
+    exampleProps: {
+      services: ["eleven-labs"],
+      known: { "eleven-labs": { account: "main", version: 6 } },
+      taskId: "0f5c…",
+    },
     exampleResponse: {
       keys: [
         {
           slug: "eleven-labs",
+          account: "main",
           version: 7,
-          secret: "sk_…",
+          fields: { apiKey: "sk_…" },
           ttlSec: 21600,
         },
       ],
       fresh: [],
       unavailable: [],
+      ambiguous: [],
+      services: [
+        {
+          slug: "eleven-labs",
+          baseUrl: "",
+          account: "main",
+          hasSecret: true,
+          secretFields: [{ key: "apiKey", label: "", secret: true }],
+        },
+      ],
       vaultRevision: 42,
     },
   },
@@ -1652,36 +1701,70 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
         "Шлите СРАЗУ после ответа вендора, не дожидаясь taskDone: деньги у вендора " +
         "уже списаны, и упади машина следом — расход всё равно должен быть учтён. " +
         "Цену не присылайте: её знает сайт, и считает он сам. Повтор по той же " +
-        "тройке (задача, сервис, мера) расход не удваивает. Ответ разбирайте: " +
+        "тройке (задача, сервис, мера) расход не удваивает. Локальный прогон " +
+        "шлите без taskId, но с runId: такие строки в списание не идут, а в " +
+        "суточную сверку идут — у вендора деньги списались. Ответ разбирайте: " +
         "unpriced и noRate означают, что строка НЕ записана.",
       en:
         "Send RIGHT AFTER the vendor responds, without waiting for taskDone: the " +
         "vendor has already been paid, and if the machine dies next the spending " +
         "must still be accounted for. Do not send a price: the site knows it and " +
         "computes the money itself. Repeating the same (task, service, unit) does " +
-        "not double the spending. Read the response: unpriced and noRate mean the " +
-        "row was NOT recorded.",
+        "not double the spending. Send a local run without taskId but with runId: " +
+        "such rows are never billed, yet they do count towards the daily " +
+        "reconciliation — the vendor was paid. Read the response: unpriced and " +
+        "noRate mean the row was NOT recorded.",
     },
     props: [
       {
         name: "taskId",
         type: "uuid",
-        required: true,
-        notes: { ru: "Задача из claimTask.", en: "The task from claimTask." },
+        required: false,
+        notes: {
+          ru:
+            "Задача из claimTask. Не шлите для локального прогона — тогда нужен " +
+            "runId. Ровно одно из двух.",
+          en:
+            "The task from claimTask. Omit for a local run — then runId is " +
+            "required. Exactly one of the two.",
+        },
+      },
+      {
+        name: "runId",
+        type: "string",
+        required: false,
+        notes: {
+          ru:
+            "Идентификатор локального прогона, которым он дедуплицируется: отчёт " +
+            "может уехать дважды при обрыве связи. Нужен ровно тогда, когда нет " +
+            "taskId.",
+          en:
+            "Identifier of a local run, used to deduplicate it: the report may be " +
+            "sent twice after a dropped connection. Required exactly when taskId " +
+            "is absent.",
+        },
       },
       {
         name: "entries",
-        type: "{ service, unit, units }[]",
+        type: "{ service, unit, units, account? }[]",
         required: true,
         notes: {
-          ru: "unit: token | char | sec | image | run. units — сколько израсходовано.",
-          en: "unit: token | char | sec | image | run. units — how much was consumed.",
+          ru:
+            "unit: token | char | sec | image | run. units — сколько израсходовано. " +
+            "account — метка учётки из выдачи ключей: по ней мы поймём, чей это " +
+            "расход, наш или клиента.",
+          en:
+            "unit: token | char | sec | image | run. units — how much was consumed. " +
+            "account — the label from the key issue, so we can tell whose spending " +
+            "it is, ours or the client’s.",
         },
       },
     ],
     exampleProps: {
       taskId: "0f5c…",
-      entries: [{ service: "eleven-labs", unit: "char", units: 8140 }],
+      entries: [
+        { service: "eleven-labs", unit: "char", units: 8140, account: "main" },
+      ],
     },
     exampleResponse: {
       recorded: 1,

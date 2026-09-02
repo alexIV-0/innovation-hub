@@ -562,6 +562,141 @@ export async function addPrice(input: {
   )
 }
 
+// ─── Учётки глазами их владельца (7.1) ───────────────────────────────────────
+
+/**
+ * Учётка клиента для его собственного экрана «Мои ключи».
+ *
+ * Отдельный тип, а не `VendorAccount`: там учётка внутри сервиса, здесь —
+ * плоский список по всем сервисам сразу. Ключ у человека один на все его
+ * проекты, и искать его «в том проекте, где я его вводил» он не должен.
+ *
+ * Расхода здесь нет намеренно: сколько он потратил у вендора — вопрос его
+ * личного кабинета у вендора, а не наш. Мы показываем, что ключ подключён.
+ */
+export type OwnedAccount = {
+  id: string
+  serviceId: string
+  serviceName: string
+  serviceSlug: string
+  label: string
+  status: VendorStatus
+  createdAt: Date
+  /** Только версия и подсказка. Сам секрет не отдаётся даже владельцу. */
+  secret: { version: number; hint: string; createdAt: Date } | null
+}
+
+export async function listAccountsForOwner(userId: string): Promise<OwnedAccount[]> {
+  const result = await query<{
+    id: string
+    serviceId: string
+    serviceName: string
+    serviceSlug: string
+    label: string
+    status: VendorStatus
+    createdAt: Date
+    secretVersion: number | null
+    secretHint: string | null
+    secretCreatedAt: Date | null
+  }>(
+    `SELECT a.id,
+            a.service_id  AS "serviceId",
+            s.name        AS "serviceName",
+            s.slug        AS "serviceSlug",
+            a.label,
+            a.status,
+            a.created_at  AS "createdAt",
+            live.version    AS "secretVersion",
+            live.hint       AS "secretHint",
+            live.created_at AS "secretCreatedAt"
+       FROM vendor_accounts a
+       JOIN vendor_services s ON s.id = a.service_id
+       ${LIVE_ACCOUNT_SECRET}
+      -- Строго свои. Отсутствие этого условия означало бы, что человек видит
+      -- студийные ключи — ровно то, чего экран не должен допускать никогда.
+      WHERE a.owner_user_id = $1
+        AND a.status <> 'revoked'
+      ORDER BY s.name ASC, a.label ASC`,
+    [userId],
+  )
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    serviceId: row.serviceId,
+    serviceName: row.serviceName,
+    serviceSlug: row.serviceSlug,
+    label: row.label,
+    status: row.status,
+    createdAt: row.createdAt,
+    secret:
+      row.secretVersion == null
+        ? null
+        : {
+            version: row.secretVersion,
+            hint: row.secretHint ?? "",
+            createdAt: row.secretCreatedAt ?? row.createdAt,
+          },
+  }))
+}
+
+/**
+ * Сервисы, к которым человек может подключить свой ключ.
+ *
+ * `proxy` сюда не попадает: его ключ не покидает сервер по решению админа, и
+ * предлагать человеку завести такой — обещать работу, которой не будет.
+ */
+export type OwnedAccountService = {
+  id: string
+  slug: string
+  name: string
+  secretFields: SecretFieldSpec[]
+}
+
+export async function listServicesForOwner(): Promise<OwnedAccountService[]> {
+  const result = await query<{
+    id: string
+    slug: string
+    name: string
+    secretFields: SecretFieldSpec[] | null
+  }>(
+    `SELECT s.id, s.slug, s.name, s.secret_fields AS "secretFields"
+       FROM vendor_services s
+      WHERE s.owner_user_id IS NULL
+        AND s.status = 'active'
+        AND s.delivery = 'keys'
+      ORDER BY s.name ASC`,
+  )
+  return result.rows.map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    secretFields:
+      row.secretFields && row.secretFields.length > 0
+        ? row.secretFields
+        : DEFAULT_SECRET_FIELDS,
+  }))
+}
+
+/**
+ * Учётка, принадлежащая ИМЕННО этому человеку.
+ *
+ * Владелец проверяется запросом, а не после выборки: иначе проверку однажды
+ * забудут дописать в новом роуте, и чужая учётка окажется доступна по прямому
+ * id. Здесь забыть нельзя — функция без владельца ничего не возвращает.
+ */
+export async function findOwnedAccount(
+  accountId: string,
+  userId: string,
+): Promise<{ id: string; serviceId: string; label: string } | null> {
+  const result = await query<{ id: string; serviceId: string; label: string }>(
+    `SELECT id, service_id AS "serviceId", label
+       FROM vendor_accounts
+      WHERE id = $1 AND owner_user_id = $2`,
+    [accountId, userId],
+  )
+  return result.rows[0] ?? null
+}
+
 // ─── Выдача машинам ──────────────────────────────────────────────────────────
 
 export type IssuedKey = {
@@ -597,6 +732,16 @@ export type ServiceEndpoint = {
   baseUrl: string
   /** Какая учётка выбрана для этого запроса. `null` — ни одной не подошло. */
   account: string | null
+  /**
+   * Из чего состоит секрет этого сервиса.
+   *
+   * Едет вместе с адресом, а не отдельным каталогом: блок `services` и так
+   * приходит на каждый запрос ключей, в том числе когда секрет не менялся, —
+   * транспорт уже есть. Без этого поля форма заведения учётки на машине
+   * рисуется по локальному справочнику, который разъедется с нашим при первом
+   * же новом вендоре.
+   */
+  secretFields: SecretFieldSpec[]
   /**
    * Есть ли у сервиса ключ. `false` — законное состояние, а не поломка: свой
    * сервис, поднятый рядом, может не требовать авторизации. Ноде это надо
@@ -696,6 +841,7 @@ export async function issueKeysForMachine(input: {
     delivery: VendorDelivery
     baseUrl: string
     keyTtlSec: number
+    secretFields: SecretFieldSpec[] | null
     accountId: string | null
     label: string | null
     ownerUserId: string | null
@@ -705,9 +851,10 @@ export async function issueKeysForMachine(input: {
     `SELECT s.slug,
             s.status,
             s.delivery,
-            s.base_url    AS "baseUrl",
-            s.key_ttl_sec AS "keyTtlSec",
-            a.id          AS "accountId",
+            s.base_url      AS "baseUrl",
+            s.key_ttl_sec   AS "keyTtlSec",
+            s.secret_fields AS "secretFields",
+            a.id            AS "accountId",
             a.label,
             a.owner_user_id AS "ownerUserId",
             live.version,
@@ -760,6 +907,12 @@ export async function issueKeysForMachine(input: {
       baseUrl: first.baseUrl,
       account: picked?.label ?? null,
       hasSecret: picked?.version != null && picked?.ciphertext != null,
+      // Пустой массив в базе означает «состав по умолчанию»: разворачиваем его
+      // здесь, чтобы машине не пришлось знать про это соглашение.
+      secretFields:
+        first.secretFields && first.secretFields.length > 0
+          ? first.secretFields
+          : DEFAULT_SECRET_FIELDS,
     })
 
     if (!picked || picked.version == null || picked.ciphertext == null) continue

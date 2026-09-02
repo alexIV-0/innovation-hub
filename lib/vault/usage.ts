@@ -97,7 +97,10 @@ async function priceFor(
 }
 
 export async function recordUsage(input: {
-  taskId: string
+  /** `null` — локальный прогон: расход есть, задачи нет (пункт 4 запроса). */
+  taskId: string | null
+  /** Ключ дедупликации локального прогона. Нужен ровно когда нет задачи. */
+  runId?: string | null
   projectId?: string | null
   computerId?: string | null
   entries: UsageEntry[]
@@ -160,13 +163,17 @@ export async function recordUsage(input: {
 
     const inserted = await query(
       `INSERT INTO vendor_usage (
-         id, task_id, service_id, account_id, project_id, unit, units,
+         id, task_id, run_id, service_id, account_id, project_id, unit, units,
          price_micros, currency, fx_rate, fx_source, cents, computer_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-       ON CONFLICT (task_id, service_id, unit) DO NOTHING`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       -- Без указания индекса: их теперь два, по задаче и по локальному
+       -- прогону, и оба частичные. Перечислять их здесь значило бы повторить
+       -- условие WHERE, которое живёт в миграции.
+       ON CONFLICT DO NOTHING`,
       [
         randomUUID(),
         input.taskId,
+        input.taskId ? null : (input.runId ?? null),
         priced.serviceId,
         priced.accountId,
         input.projectId ?? null,

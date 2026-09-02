@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderOpen,
+  KeyRound,
   Trash2,
   Users,
   Wrench,
@@ -292,6 +293,19 @@ function SidebarContent({
               </div>
             )
           })}
+          {/* Свои ключи от внешних сервисов. Отдельным пунктом, а не полем в
+              настройках проекта: ключ у человека один на все его проекты, и
+              заводить его изнутри проекта означало бы «найди тот проект, где я
+              его вводил» — при заведении, при замене и при отзыве. */}
+          <div onClick={onNavigate}>
+            <NavItem
+              href="/account/vendor-keys"
+              active={pathname === "/account/vendor-keys"}
+              collapsed={collapsed}
+              icon={<KeyRound className="h-5 w-5" />}
+              label={t.vendorKeysNav}
+            />
+          </div>
         </nav>
 
         <div className="flex-1" />

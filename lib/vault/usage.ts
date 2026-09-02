@@ -22,6 +22,16 @@ export type UsageEntry = {
   serviceSlug: string
   unit: PriceUnit
   units: number
+  /**
+   * Метка учётки, которой звали вендора. Нода получила её в выдаче ключей и
+   * возвращает как есть — считать «чей это расход» ей не нужно, это делаем мы
+   * по владельцу учётки.
+   *
+   * Пусто — старый отчёт без учётки: тогда привязываем к единственной
+   * платформенной, а при нескольких оставляем `NULL`. Угадать здесь хуже, чем
+   * не знать: неверный владелец увёл бы расход в чужую себестоимость.
+   */
+  account?: string | null
 }
 
 export type UsageResult = {
@@ -38,6 +48,8 @@ export type UsageResult = {
 
 type PricedRow = {
   serviceId: string
+  /** `null` — учётку определить не удалось; расход запишется без адресата. */
+  accountId: string | null
   currency: string
   priceMicros: string | null
 }
@@ -52,10 +64,24 @@ type PricedRow = {
 async function priceFor(
   slug: string,
   unit: PriceUnit,
+  account?: string | null,
 ): Promise<PricedRow | null> {
   const result = await query<PricedRow>(
     `SELECT s.id AS "serviceId",
             s.currency,
+            (SELECT a.id FROM vendor_accounts a
+              WHERE a.service_id = s.id
+                AND a.status <> 'revoked'
+                -- Метка названа — берём её. Не названа — только если
+                -- платформенная учётка ровно одна.
+                AND ($3::text IS NOT NULL AND a.label = $3::text
+                     OR $3::text IS NULL
+                        AND a.owner_user_id IS NULL
+                        AND (SELECT COUNT(*) FROM vendor_accounts a2
+                              WHERE a2.service_id = s.id
+                                AND a2.owner_user_id IS NULL
+                                AND a2.status <> 'revoked') = 1)
+              LIMIT 1) AS "accountId",
             (SELECT p.price_micros::text
                FROM vendor_service_prices p
               WHERE p.service_id = s.id
@@ -65,7 +91,7 @@ async function priceFor(
               LIMIT 1) AS "priceMicros"
        FROM vendor_services s
       WHERE s.slug = $1 AND s.owner_user_id IS NULL`,
-    [slug, unit],
+    [slug, unit, account ?? null],
   )
   return result.rows[0] ?? null
 }
@@ -91,7 +117,7 @@ export async function recordUsage(input: {
   const rates = new Map<string, { rate: number; source: string } | null>()
 
   for (const entry of input.entries) {
-    const priced = await priceFor(entry.serviceSlug, entry.unit)
+    const priced = await priceFor(entry.serviceSlug, entry.unit, entry.account)
     if (!priced) {
       out.unknown.push(entry.serviceSlug)
       continue
@@ -134,14 +160,15 @@ export async function recordUsage(input: {
 
     const inserted = await query(
       `INSERT INTO vendor_usage (
-         id, task_id, service_id, project_id, unit, units,
+         id, task_id, service_id, account_id, project_id, unit, units,
          price_micros, currency, fx_rate, fx_source, cents, computer_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (task_id, service_id, unit) DO NOTHING`,
       [
         randomUUID(),
         input.taskId,
         priced.serviceId,
+        priced.accountId,
         input.projectId ?? null,
         entry.unit,
         entry.units,

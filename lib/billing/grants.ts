@@ -27,7 +27,8 @@ const GRANT_FIELDS = `
   comment,
   provision_job_id AS "provisionJobId",
   closed_at    AS "closedAt",
-  created_at   AS "createdAt"
+  created_at   AS "createdAt",
+  reset_at     AS "resetAt"
 `
 
 export async function findGrant(id: string): Promise<GrantRecord | null> {
@@ -38,11 +39,21 @@ export async function findGrant(id: string): Promise<GrantRecord | null> {
   return result.rows[0] ?? null
 }
 
+/**
+ * Действующий тестовый период человека. Сброшенные не считаются: после сброса
+ * кнопка «Попробовать» обязана загореться снова, а состояние периода выводится
+ * из этого запроса, а не из флага у пользователя (П9.1).
+ *
+ * Тот же предикат, что у уникального индекса `billing_grants_trial_once_idx` —
+ * и это не совпадение: «что мешает завести новый» и «что показывать как
+ * текущий» обязаны быть одним условием, иначе кнопка будет обещать то, что
+ * база откажется выдать.
+ */
 export async function findTrialGrant(userId: string): Promise<GrantRecord | null> {
   const result = await query<GrantRecord>(
     `SELECT ${GRANT_FIELDS}
        FROM billing_grants
-      WHERE user_id = $1 AND kind = 'trial'`,
+      WHERE user_id = $1 AND kind = 'trial' AND reset_at IS NULL`,
     [userId],
   )
   return result.rows[0] ?? null
@@ -243,6 +254,105 @@ export async function closeGrant(input: {
       )
     }
   })
+}
+
+/**
+ * Отзыв и сброс тестового периода (П9.1).
+ *
+ * Это ДВА действия, и слить их в одно нельзя. Отзыв — про деньги сейчас:
+ * закрывает активный грант и гасит остаток. Сброс — про право на будущее:
+ * снимает замок «один раз на человека». Самый частый сценарий (поменяли набор
+ * шаблонов, человек ещё внутри периода) собирается из них по очереди, и именно
+ * поэтому в интерфейсе это две команды, а не одна кнопка с двумя смыслами.
+ */
+
+export type TrialRevokeResult =
+  | { ok: true; burnedCents: number }
+  | { ok: false; reason: "not-found" | "not-trial" | "not-active" }
+
+/** Остаток подарка по ленте. Считаем по транзакциям, а не по счётчику. */
+async function grantRemainingCents(grantId: string): Promise<number> {
+  const result = await query<{ remaining: string }>(
+    `SELECT COALESCE(SUM(amount_cents), 0)::text AS remaining
+       FROM billing_transactions WHERE grant_id = $1`,
+    [grantId],
+  )
+  return Math.max(0, Number(result.rows[0]?.remaining ?? 0))
+}
+
+/**
+ * Закрыть активный период досрочно и погасить остаток.
+ *
+ * Пробные проекты при этом НЕ трогаем: это его файлы и его работа поверх
+ * шаблона. Мы забираем подарок, а не имущество. Дальше судьбу проектов решает
+ * общий допуск — есть свои деньги, работает за свои; нет, конвейер остановится
+ * той же причиной, что и при обычном исходе периода.
+ */
+export async function revokeTrialGrant(input: {
+  grantId: string
+  actorUserId: string
+}): Promise<TrialRevokeResult> {
+  const grant = await findGrant(input.grantId)
+  if (!grant) return { ok: false, reason: "not-found" }
+  if (grant.kind !== "trial") return { ok: false, reason: "not-trial" }
+  // `provisioning` тоже не подходит: деньги ещё не начислены, гасить нечего, а
+  // закрытие оставило бы работу копирования без гранта, к которому она идёт.
+  if (grant.status !== "active") return { ok: false, reason: "not-active" }
+
+  const remainingCents = await grantRemainingCents(grant.id)
+  await closeGrant({
+    grantId: grant.id,
+    status: "revoked",
+    remainingCents,
+    actorUserId: input.actorUserId,
+    comment: "Тестовый период отозван",
+  })
+  return { ok: true, burnedCents: remainingCents }
+}
+
+export type TrialResetResult =
+  | { ok: true; attempt: number }
+  | { ok: false; reason: "not-found" | "not-trial" | "already-reset" | "still-open" }
+
+/**
+ * Разрешить человеку пройти период заново.
+ *
+ * Строку не удаляем и статус не трогаем: удаление каскадом снесло бы
+ * `billing_grant_projects` — запись о том, где подарок действовал, — а у
+ * `billing_transactions.grant_id` стоит `ON DELETE SET NULL`, и движения денег
+ * остались бы сиротами. Сброс обязан учесть, что период был, а не сделать вид,
+ * что его не было.
+ *
+ * Открытый период не сбрасываем: сначала отзыв. Иначе у человека одновременно
+ * жили бы два гранта, и правило выбора кошелька (П3) выбирало бы из них молча.
+ */
+export async function resetTrialGrant(input: {
+  grantId: string
+  actorUserId: string
+}): Promise<TrialResetResult> {
+  const grant = await findGrant(input.grantId)
+  if (!grant) return { ok: false, reason: "not-found" }
+  if (grant.kind !== "trial") return { ok: false, reason: "not-trial" }
+  if (grant.resetAt) return { ok: false, reason: "already-reset" }
+  if (grant.status === "active" || grant.status === "provisioning") {
+    return { ok: false, reason: "still-open" }
+  }
+
+  await query(
+    `UPDATE billing_grants
+        SET reset_at = NOW(), reset_by = $2, updated_at = NOW()
+      WHERE id = $1 AND reset_at IS NULL`,
+    [grant.id, input.actorUserId],
+  )
+
+  // Номер следующей попытки. Считаем по строкам, а не отдельным счётчиком:
+  // сколько раз человеку давали период, видно по количеству его грантов.
+  const counted = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM billing_grants
+      WHERE user_id = $1 AND kind = 'trial'`,
+    [grant.userId],
+  )
+  return { ok: true, attempt: Number(counted.rows[0]?.n ?? 1) + 1 }
 }
 
 /**

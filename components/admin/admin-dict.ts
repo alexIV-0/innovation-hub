@@ -169,6 +169,10 @@ export const adminDict = {
     auditServiceSecretRotated: "Заменён ключ сервиса",
     auditServiceSecretsRevoked: "Погашены прежние ключи сервиса",
     auditServiceKeysIssued: "Ключи выданы машине",
+    auditServiceAccountCreated: "Учётка заведена",
+    auditServiceAccountUpdated: "Учётка изменена",
+    auditTrialRevoked: "Тестовый период отозван",
+    auditTrialReset: "Тестовый период разрешён заново",
 
     // capability tags
     capsMenuItem: "Доступы",
@@ -726,6 +730,10 @@ export const adminDict = {
     auditServiceSecretRotated: "Service key rotated",
     auditServiceSecretsRevoked: "Previous service keys revoked",
     auditServiceKeysIssued: "Keys issued to a machine",
+    auditServiceAccountCreated: "Account created",
+    auditServiceAccountUpdated: "Account updated",
+    auditTrialRevoked: "Trial period revoked",
+    auditTrialReset: "Trial period allowed again",
 
     // capability tags
     capsMenuItem: "Access",

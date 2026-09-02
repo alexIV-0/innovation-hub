@@ -1,13 +1,18 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { KeyRound, Loader2, Plug, Plus } from "lucide-react"
+import { ChevronRight, KeyRound, Link2, Loader2, Plug, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { formatBalance, tf, useI18n, type DictKey } from "@/components/account/i18n"
 import { NumberField, Section, rublesToCents } from "@/components/admin/billing/fields"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -17,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { VENDOR_CURRENCIES } from "@/lib/billing/types"
+import { slugify } from "@/lib/vault/slug"
 import {
   BILLING_MODELS,
   DELIVERIES,
@@ -44,14 +50,35 @@ type Service = {
   slug: string
   name: string
   adapter: string
+  /** Пусто — адрес зашит в самой ноде (О5). */
+  baseUrl: string
   billingModel: VendorBillingModel
   currency: string
   delivery: VendorDelivery
   keyTtlSec: number
   dailyCapCents: number
   status: "active" | "paused" | "revoked"
-  secret: { version: number; hint: string; createdAt: string } | null
+  /** Из чего состоит секрет учётки: `apiKey` либо `login` + `password`. */
+  secretFields: { key: string; label: string; secret: boolean }[]
+  accounts: Account[]
   prices: { unit: PriceUnit; priceMicros: number; effectiveFrom: string }[]
+  spentMonthCents: number
+}
+
+/**
+ * Учётка под сервисом. Их несколько, потому что на одном вендоре живут «тест и
+ * прод», а клиент может принести свой ключ — и тогда расход его, а не наш.
+ */
+type Account = {
+  id: string
+  serviceId: string
+  label: string
+  ownerUserId: string | null
+  ownerEmail: string | null
+  status: "active" | "paused" | "revoked"
+  createdAt: string
+  updatedAt: string
+  secret: { version: number; hint: string; createdAt: string } | null
   spentMonthCents: number
 }
 
@@ -199,8 +226,8 @@ function ServiceCard({
   onReload: () => Promise<void>
 }) {
   const { t } = useI18n()
-  const [rotating, setRotating] = useState(false)
-  const [secret, setSecret] = useState("")
+  const [editingUrl, setEditingUrl] = useState(false)
+  const [urlDraft, setUrlDraft] = useState(service.baseUrl)
   const [unit, setUnit] = useState<PriceUnit>("token")
   const [price, setPrice] = useState("")
 
@@ -210,39 +237,6 @@ function ServiceCard({
       month: "short",
       day: "numeric",
     })
-
-  const rotate = async () => {
-    if (secret.trim().length < 8) return
-    try {
-      const res = await fetch(`/api/admin/services/${service.id}/secret`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: secret.trim() }),
-      })
-      if (!res.ok) throw new Error(String(res.status))
-      const body = (await res.json()) as { version: number }
-      toast.success(tf(t.servicesRotated, { version: body.version }))
-      setSecret("")
-      setRotating(false)
-      await onReload()
-    } catch {
-      toast.error(t.servicesSaveError)
-    }
-  }
-
-  const retireOld = async () => {
-    try {
-      const res = await fetch(`/api/admin/services/${service.id}/secret`, {
-        method: "DELETE",
-      })
-      if (!res.ok) throw new Error(String(res.status))
-      const body = (await res.json()) as { revoked: number }
-      toast.success(tf(t.servicesRevokedOld, { count: body.revoked }))
-      await onReload()
-    } catch {
-      toast.error(t.servicesSaveError)
-    }
-  }
 
   const addPrice = async () => {
     // Цена вводится в валюте сервиса, хранится в микроединицах: 0.000002 в
@@ -280,6 +274,9 @@ function ServiceCard({
         >
           {t[STATUS_KEY[service.status]]}
         </span>
+        {service.baseUrl ? (
+          <span className="font-mono text-[11px]">{service.baseUrl}</span>
+        ) : null}
         <span>{service.currency}</span>
         <span>{t[MODEL_KEY[service.billingModel]]}</span>
         <span>{t[DELIVERY_KEY[service.delivery]]}</span>
@@ -296,58 +293,60 @@ function ServiceCard({
         </span>
       </div>
 
-      {/* Ключ: версия и подсказка. Самого ключа здесь нет и быть не может. */}
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5">
-        <KeyRound className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm">
-          {service.secret ? (
-            <>
-              <span className="font-mono">{service.secret.hint}</span>
-              <span className="ml-2 text-xs text-muted-foreground">
-                {tf(t.servicesKeyVersion, {
-                  version: service.secret.version,
-                  date: date(service.secret.createdAt),
-                })}
-              </span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">{t.servicesNoKey}</span>
-          )}
-        </span>
-        <div className="ml-auto flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setRotating((prev) => !prev)}
-          >
-            {t.servicesRotate}
-          </Button>
-          {(service.secret?.version ?? 0) > 1 ? (
-            <Button type="button" variant="ghost" size="sm" onClick={retireOld}>
-              {t.servicesRevokeOld}
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      {/* Учётки: подсказка, версия и владелец. Самих полей секрета здесь нет
+          и быть не может — наружу они уходят только машинам. */}
+      <AccountsBlock service={service} busy={busy} lang={lang} onReload={onReload} />
 
-      {rotating ? (
-        <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
-          <p className="text-xs text-muted-foreground">{t.servicesRotateHint}</p>
-          <div className="flex flex-wrap gap-2">
+      {/* Адрес правится здесь, а не только при заведении: смена эндпоинта у
+          вендора не должна означать обход парка. Ревизия сейфа поднимется, и
+          машины заберут новый адрес блоком `services`. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5">
+        <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+        {editingUrl ? (
+          <>
             <Input
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-              type="password"
+              value={urlDraft}
+              onChange={(event) => setUrlDraft(event.target.value)}
               autoComplete="off"
+              placeholder="https://comfy.example.com"
               className="max-w-md"
             />
-            <Button type="button" size="sm" onClick={rotate}>
-              {t.servicesRotate}
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={async () => {
+                await onPatch(service.id, { baseUrl: urlDraft.trim() })
+                setEditingUrl(false)
+              }}
+            >
+              {t.billingSave}
             </Button>
-          </div>
-        </div>
-      ) : null}
+          </>
+        ) : (
+          <>
+            <span className="text-sm">
+              {service.baseUrl ? (
+                <span className="font-mono">{service.baseUrl}</span>
+              ) : (
+                <span className="text-muted-foreground">{t.servicesNoBaseUrl}</span>
+              )}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              onClick={() => {
+                setUrlDraft(service.baseUrl)
+                setEditingUrl(true)
+              }}
+            >
+              {t.servicesEditBaseUrl}
+            </Button>
+          </>
+        )}
+      </div>
 
       {/* Прайс: без него потребление записать нечем, и это сказано прямо. */}
       <div className="space-y-2">
@@ -441,18 +440,445 @@ function ServiceCard({
   )
 }
 
+/**
+ * Форма заведения сервиса.
+ *
+ * На первом экране три поля: название, валюта и ключ. Остальное — под
+ * «Дополнительно», и не потому, что неважно, а потому, что у всего остального
+ * есть верный по умолчанию ответ (`prepaid`, `keys`, 6 часов, без потолка).
+ * Восемь полей подряд читаются как восемь решений, которых на самом деле нет.
+ */
+/**
+ * Учётки сервиса.
+ *
+ * Отдельным компонентом, а не куском карточки: у каждой строки своё состояние
+ * ротации, и держи мы его в карточке — открытие одной формы открывало бы все.
+ *
+ * Значений секрета здесь нет ни в каком виде: наружу они уходят ровно из одного
+ * места, и это выдача машинам.
+ */
+function AccountsBlock({
+  service,
+  busy,
+  lang,
+  onReload,
+}: {
+  service: Service
+  busy: boolean
+  lang: "ru" | "en"
+  onReload: () => Promise<void>
+}) {
+  const { t } = useI18n()
+  const [adding, setAdding] = useState(false)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-normal text-muted-foreground">
+          {t.servicesAccounts}
+        </Label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setAdding((prev) => !prev)}
+        >
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          {t.servicesAccountAdd}
+        </Button>
+      </div>
+
+      {service.accounts.length === 0 ? (
+        <p className="text-xs text-muted-foreground/80">{t.servicesAccountsEmpty}</p>
+      ) : (
+        <div className="space-y-2">
+          {service.accounts.map((account) => (
+            <AccountRow
+              key={account.id}
+              service={service}
+              account={account}
+              busy={busy}
+              lang={lang}
+              onReload={onReload}
+            />
+          ))}
+        </div>
+      )}
+
+      {adding ? (
+        <AccountForm
+          service={service}
+          onDone={async () => {
+            setAdding(false)
+            await onReload()
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/** Одна учётка: подсказка, версия, владелец, расход и её команды. */
+function AccountRow({
+  service,
+  account,
+  busy,
+  lang,
+  onReload,
+}: {
+  service: Service
+  account: Account
+  busy: boolean
+  lang: "ru" | "en"
+  onReload: () => Promise<void>
+}) {
+  const { t } = useI18n()
+  const [rotating, setRotating] = useState(false)
+
+  const date = (iso: string) =>
+    new Date(iso).toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
+
+  const call = async (path: string, init: RequestInit, done: (body: never) => void) => {
+    try {
+      const res = await fetch(
+        `/api/admin/services/${service.id}/accounts/${account.id}${path}`,
+        init,
+      )
+      if (!res.ok) throw new Error(String(res.status))
+      done((await res.json()) as never)
+      await onReload()
+    } catch {
+      toast.error(t.servicesSaveError)
+    }
+  }
+
+  const retireOld = () =>
+    call("/secret", { method: "DELETE" }, (body: { revoked: number }) => {
+      toast.success(tf(t.servicesRevokedOld, { count: body.revoked }))
+    })
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/60 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="text-sm font-medium">{account.label}</span>
+
+        {/* Чья учётка — самое важное в строке: от этого зависит, попадёт её
+            расход в себестоимость ролика или нет. */}
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[11px]",
+            account.ownerUserId ? "bg-amber-500/15 text-amber-500" : "bg-muted/60",
+          )}
+        >
+          {account.ownerUserId
+            ? tf(t.servicesAccountOwned, { email: account.ownerEmail ?? "—" })
+            : t.servicesAccountOurs}
+        </span>
+
+        {account.status !== "active" ? (
+          <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[11px]">
+            {t[STATUS_KEY[account.status]]}
+          </span>
+        ) : null}
+
+        <span className="text-sm">
+          {account.secret ? (
+            <>
+              <span className="font-mono">{account.secret.hint}</span>
+              <span className="ml-2 text-xs text-muted-foreground">
+                {tf(t.servicesKeyVersion, {
+                  version: account.secret.version,
+                  date: date(account.secret.createdAt),
+                })}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{t.servicesNoKey}</span>
+          )}
+        </span>
+
+        <span className="ml-auto text-xs text-muted-foreground">
+          {formatBalance(account.spentMonthCents, lang)}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setRotating((prev) => !prev)}
+        >
+          {account.secret ? t.servicesRotate : t.servicesSetKey}
+        </Button>
+        {(account.secret?.version ?? 0) > 1 ? (
+          <Button type="button" variant="ghost" size="sm" onClick={retireOld}>
+            {t.servicesRevokeOld}
+          </Button>
+        ) : null}
+        {account.status === "active" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              call("", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "paused" }),
+              }, () => toast.success(t.servicesSaved))
+            }
+          >
+            {t.servicesPause}
+          </Button>
+        ) : account.status === "paused" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              call("", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "active" }),
+              }, () => toast.success(t.servicesSaved))
+            }
+          >
+            {t.servicesResume}
+          </Button>
+        ) : null}
+        {account.status !== "revoked" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm(t.servicesAccountRevokeConfirm)) return
+              void call("", { method: "DELETE" }, () =>
+                toast.success(t.servicesSaved),
+              )
+            }}
+          >
+            {t.servicesRevoke}
+          </Button>
+        ) : null}
+      </div>
+
+      {rotating ? (
+        <SecretFields
+          service={service}
+          hint={t.servicesRotateHint}
+          submitLabel={t.servicesRotate}
+          onSubmit={async (fields) => {
+            await call(
+              "/secret",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fields }),
+              },
+              (body: { version: number }) => {
+                toast.success(tf(t.servicesRotated, { version: body.version }))
+                setRotating(false)
+              },
+            )
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Поля секрета по описанию сервиса.
+ *
+ * Форма одна на все сервисы и рисуется по данным, а не по коду: новый вендор с
+ * парой `client_id` + `client_secret` — это строка в каталоге, а не новое окно.
+ */
+function SecretFields({
+  service,
+  hint,
+  submitLabel,
+  onSubmit,
+}: {
+  service: Service
+  hint: string
+  submitLabel: string
+  onSubmit: (fields: Record<string, string>) => Promise<void>
+}) {
+  const [values, setValues] = useState<Record<string, string>>({})
+  const specs =
+    service.secretFields.length > 0
+      ? service.secretFields
+      : [{ key: "apiKey", label: "", secret: true }]
+
+  const filled = specs.every((spec) => (values[spec.key] ?? "").trim().length > 0)
+
+  return (
+    <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
+      <p className="text-xs text-muted-foreground">{hint}</p>
+      <div className="flex flex-wrap items-end gap-2">
+        {specs.map((spec) => (
+          <div key={spec.key} className="space-y-1">
+            <Label className="text-xs font-normal text-muted-foreground">
+              {spec.label || spec.key}
+            </Label>
+            <Input
+              value={values[spec.key] ?? ""}
+              onChange={(event) =>
+                setValues((prev) => ({ ...prev, [spec.key]: event.target.value }))
+              }
+              // Логин прятать незачем — прячем только то, что объявлено секретом.
+              type={spec.secret ? "password" : "text"}
+              autoComplete="off"
+              className="max-w-xs"
+            />
+          </div>
+        ))}
+        <Button
+          type="button"
+          size="sm"
+          disabled={!filled}
+          onClick={() => void onSubmit(values)}
+        >
+          {submitLabel}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Заведение учётки: метка, владелец почтой и поля секрета. */
+function AccountForm({
+  service,
+  onDone,
+}: {
+  service: Service
+  onDone: () => Promise<void>
+}) {
+  const { t } = useI18n()
+  const [label, setLabel] = useState("")
+  const [ownerEmail, setOwnerEmail] = useState("")
+
+  const submit = async (fields: Record<string, string>) => {
+    try {
+      const res = await fetch(`/api/admin/services/${service.id}/accounts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: label.trim(),
+          ownerEmail: ownerEmail.trim() || null,
+          fields,
+        }),
+      })
+      if (res.status === 409) {
+        toast.error(t.servicesAccountLabelTaken)
+        return
+      }
+      if (res.status === 404) {
+        toast.error(t.servicesAccountOwnerMissing)
+        return
+      }
+      if (!res.ok) throw new Error(String(res.status))
+      toast.success(t.servicesAccountCreated)
+      await onDone()
+    } catch {
+      toast.error(t.servicesSaveError)
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
+      <div className="flex flex-wrap gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs font-normal text-muted-foreground">
+            {t.servicesAccountLabel}
+          </Label>
+          <Input
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            autoComplete="off"
+            placeholder="main"
+            className="max-w-[12rem]"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs font-normal text-muted-foreground">
+            {t.servicesAccountOwner}
+          </Label>
+          <Input
+            value={ownerEmail}
+            onChange={(event) => setOwnerEmail(event.target.value)}
+            autoComplete="off"
+            placeholder={t.servicesAccountOwnerPlaceholder}
+            className="max-w-[18rem]"
+          />
+        </div>
+      </div>
+      <p className="max-w-2xl text-xs text-muted-foreground/80">
+        {t.servicesAccountOwnerHint}
+      </p>
+      <SecretFields
+        service={service}
+        hint={t.servicesAccountSecretHint}
+        submitLabel={t.servicesAccountCreate}
+        onSubmit={async (fields) => {
+          if (!label.trim()) return
+          await submit(fields)
+        }}
+      />
+    </div>
+  )
+}
+
 function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
   const { t } = useI18n()
   const [name, setName] = useState("")
   const [slug, setSlug] = useState("")
+  /**
+   * Слаг правили руками — именем его больше не перетираем. Человек мог подогнать
+   * его под то, чего уже ждёт нода, и потерять эту правку дороже, чем набрать
+   * слаг заново.
+   */
+  const [slugTouched, setSlugTouched] = useState(false)
   const [adapter, setAdapter] = useState("")
+  const [baseUrl, setBaseUrl] = useState("")
   const [currency, setCurrency] = useState("USD")
   const [model, setModel] = useState<VendorBillingModel>("prepaid")
   const [delivery, setDelivery] = useState<VendorDelivery>("keys")
   const [ttlHours, setTtlHours] = useState("6")
   const [cap, setCap] = useState("")
   const [secret, setSecret] = useState("")
+  const [fieldKeys, setFieldKeys] = useState("")
+  const [more, setMore] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const effectiveSlug = slugTouched ? slug.trim() : slugify(name)
+
+  /**
+   * Состав секрета из строки «login, password». Пусто — одно поле `apiKey`.
+   *
+   * Список, а не редактор полей: у подавляющего большинства вендоров поле одно,
+   * и полноценный конструктор ради редкого случая читался бы дольше, чем сам
+   * случай встречается.
+   */
+  const specs = (() => {
+    const keys = fieldKeys
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+    return keys.length > 0
+      ? keys.map((key) => ({ key, label: "", secret: true }))
+      : [{ key: "apiKey", label: "", secret: true }]
+  })()
 
   const submit = async () => {
     setSaving(true)
@@ -462,14 +888,20 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          slug: slug.trim(),
+          slug: effectiveSlug,
           adapter: adapter.trim(),
+          baseUrl: baseUrl.trim(),
           currency,
           billingModel: model,
           delivery,
           keyTtlSec: Math.max(60, Math.round(Number(ttlHours || "6") * 3600)),
           dailyCapCents: cap.trim() ? (rublesToCents(cap) ?? 0) : 0,
-          secret: secret.trim(),
+          secretFields: specs,
+          // Первая учётка заводится сразу, если ключ введён. Без ключа сервис
+          // остаётся без учёток — законный случай для своего сервиса рядом.
+          account: secret.trim()
+            ? { label: "main", fields: { [specs[0]!.key]: secret.trim() } }
+            : null,
         }),
       })
       if (res.status === 409) {
@@ -497,30 +929,19 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
           <Label htmlFor="svc-name" className="text-sm font-normal text-muted-foreground">
             {t.servicesFieldName}
           </Label>
-          <Input id="svc-name" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="svc-slug" className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldSlug}
-          </Label>
           <Input
-            id="svc-slug"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase())}
-            placeholder="eleven-labs"
+            id="svc-name"
+            autoComplete="off"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground/80">{t.servicesFieldSlugHint}</p>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="svc-adapter" className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldAdapter}
-          </Label>
-          <Input
-            id="svc-adapter"
-            value={adapter}
-            onChange={(e) => setAdapter(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground/80">{t.servicesFieldAdapterHint}</p>
+          {/* Слаг показан сразу, а не спрятан целиком: поменять его после
+              создания нельзя, и увидеть его надо ДО нажатия «Завести». */}
+          {effectiveSlug ? (
+            <p className="text-xs text-muted-foreground/80">
+              {tf(t.servicesSlugAuto, { slug: effectiveSlug })}
+            </p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label className="text-sm font-normal text-muted-foreground">
@@ -531,7 +952,7 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {CURRENCIES.map((code) => (
+              {VENDOR_CURRENCIES.map((code) => (
                 <SelectItem key={code} value={code}>
                   {code}
                 </SelectItem>
@@ -540,60 +961,20 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
           </Select>
           <p className="text-xs text-muted-foreground/80">{t.servicesFieldCurrencyHint}</p>
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldModel}
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="svc-url" className="text-sm font-normal text-muted-foreground">
+            {t.servicesFieldBaseUrl}
           </Label>
-          <Select
-            value={model}
-            onValueChange={(next) => setModel(next as VendorBillingModel)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {BILLING_MODELS.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {t[MODEL_KEY[value]]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Input
+            id="svc-url"
+            autoComplete="off"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://comfy.example.com"
+            className="max-w-xl"
+          />
+          <p className="text-xs text-muted-foreground/80">{t.servicesFieldBaseUrlHint}</p>
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldDelivery}
-          </Label>
-          <Select
-            value={delivery}
-            onValueChange={(next) => setDelivery(next as VendorDelivery)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DELIVERIES.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {t[DELIVERY_KEY[value]]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <NumberField
-          id="svc-ttl"
-          label={t.servicesFieldTtl}
-          hint={t.servicesFieldTtlHint}
-          value={ttlHours}
-          onChange={setTtlHours}
-        />
-        <NumberField
-          id="svc-cap"
-          label={t.servicesFieldCap}
-          hint={t.servicesFieldCapHint}
-          value={cap}
-          onChange={setCap}
-        />
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="svc-secret" className="text-sm font-normal text-muted-foreground">
             {t.servicesFieldSecret}
@@ -610,10 +991,142 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
         </div>
       </div>
 
+      <Collapsible open={more} onOpenChange={setMore}>
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronRight
+              className={cn(
+                "h-4 w-4 transition-transform duration-150",
+                more && "rotate-90",
+              )}
+            />
+            {t.servicesMore}
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <p className="max-w-3xl py-3 text-xs text-muted-foreground/80">
+            {t.servicesMoreHint}
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="svc-slug" className="text-sm font-normal text-muted-foreground">
+                {t.servicesFieldSlug}
+              </Label>
+              <Input
+                id="svc-slug"
+                autoComplete="off"
+                value={effectiveSlug}
+                onChange={(e) => {
+                  setSlugTouched(true)
+                  setSlug(e.target.value.toLowerCase())
+                }}
+                placeholder="eleven-labs"
+              />
+              <p className="text-xs text-muted-foreground/80">{t.servicesFieldSlugHint}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="svc-adapter" className="text-sm font-normal text-muted-foreground">
+                {t.servicesFieldAdapter}
+              </Label>
+              <Input
+                id="svc-adapter"
+                autoComplete="off"
+                value={adapter}
+                onChange={(e) => setAdapter(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground/80">{t.servicesFieldAdapterHint}</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-normal text-muted-foreground">
+                {t.servicesFieldModel}
+              </Label>
+              <Select
+                value={model}
+                onValueChange={(next) => setModel(next as VendorBillingModel)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BILLING_MODELS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t[MODEL_KEY[value]]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-normal text-muted-foreground">
+                {t.servicesFieldDelivery}
+              </Label>
+              <Select
+                value={delivery}
+                onValueChange={(next) => setDelivery(next as VendorDelivery)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DELIVERIES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t[DELIVERY_KEY[value]]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <NumberField
+              id="svc-ttl"
+              label={t.servicesFieldTtl}
+              hint={t.servicesFieldTtlHint}
+              value={ttlHours}
+              onChange={setTtlHours}
+            />
+            <NumberField
+              id="svc-cap"
+              label={t.servicesFieldCap}
+              hint={t.servicesFieldCapHint}
+              value={cap}
+              onChange={setCap}
+            />
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="svc-fields"
+                className="text-sm font-normal text-muted-foreground"
+              >
+                {t.servicesFieldSecretFields}
+              </Label>
+              <Input
+                id="svc-fields"
+                autoComplete="off"
+                value={fieldKeys}
+                onChange={(e) => setFieldKeys(e.target.value)}
+                placeholder="apiKey"
+              />
+              <p className="text-xs text-muted-foreground/80">
+                {t.servicesFieldSecretFieldsHint}
+              </p>
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
       <Button
         type="button"
         onClick={submit}
-        disabled={saving || !name.trim() || !slug.trim() || secret.trim().length < 8}
+        // Ключ больше не обязателен: свой сервис может не требовать
+        // авторизации. Но заполненный наполовину — обязателен целиком, иначе
+        // обрезанный ключ уедет на машину и упадёт уже у вендора.
+        disabled={
+          saving ||
+          !name.trim() ||
+          !effectiveSlug ||
+          (secret.trim().length > 0 && secret.trim().length < 8)
+        }
       >
         {saving ? (
           <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />

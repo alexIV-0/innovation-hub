@@ -196,6 +196,7 @@ export const dict = {
     trialAlreadyUsed: "Тестовый период уже использован",
     trialUnavailable: "Тестовый период сейчас не выдаётся",
     trialOver: "Тестовый период завершён",
+    trialRevoked: "Тестовый период отозван. Проекты и файлы остались у вас — остановилась только обработка за подарочные деньги.",
     trialProvisioning: "Проекты копируются, это займёт несколько секунд",
     trialDialogTitle: "Тестовый период",
     trialDialogBody:
@@ -488,6 +489,23 @@ export const dict = {
     billingActivationActivated: "Активация",
     billingActivationLeft: "Остаток",
     billingActivationStatus: "Состояние",
+    billingActivationAttempt: "период №{n}",
+    billingActivationResetAt: "сброшен {date}",
+    billingActivationActions: "Команды",
+    billingTrialRevoke: "Отозвать",
+    billingTrialReset: "Разрешить заново",
+    billingTrialRevokeTitle: "Отозвать период у {email}?",
+    billingTrialRevokeDesc:
+      "Остаток {amount} будет погашен строкой в ленте, а не стёрт. Пробные проекты останутся у человека — это его файлы и его работа поверх шаблона; если своих денег нет, обработка в них встанет. Человек это увидит: баланс упадёт, проекты остановятся.",
+    billingTrialResetTitle: "Разрешить пройти период заново?",
+    billingTrialResetDesc:
+      "Кнопка «Попробовать» у {email} загорится снова, и следующая активация скопирует ТЕКУЩИЙ набор шаблонов. Проектов прошлого набора у него {count} — они останутся, список станет длиннее. Прежний период не удаляется: он остаётся в истории и в ленте.",
+    billingTrialRevoked: "Период отозван, погашено {amount}",
+    billingTrialResetDone: "Период сброшен — человек может пройти его заново",
+    billingTrialNotActive: "Отозвать можно только действующий период",
+    billingTrialStillOpen: "Сначала отзовите действующий период",
+    billingTrialAlreadyReset: "Этот период уже сброшен",
+    billingTrialActionError: "Не удалось выполнить команду",
     billingUnpricedTitle: "Проекты без единицы",
     billingUnpricedDesc:
       "У этих проектов оси тарификации не заданы на сайте. Список неполный: граф мог объявить их сам, и тогда проект попал сюда напрасно. Полный ответ даёт разовый прогон сборки в «Конвейере».",
@@ -530,8 +548,10 @@ export const dict = {
     billingPendingShort: "ждёт поле из программы",
     billingVendorTitle: "Себестоимость внешних сервисов",
     billingVendorDesc:
-      "Это НЕ валюта оплаты клиента — клиент платит рублями. Речь о деньгах, которые мы уже потратили за него на стороннем сервисе: плагин присылает сумму в своей валюте, а списываем мы рубли, поэтому её надо привести по курсу.",
+      "Это НЕ валюта оплаты клиента — клиент платит рублями. Речь о деньгах, которые мы уже потратили за него на стороннем сервисе. Наценка и поправка общие для всех вендоров: первая — наша маржа, вторая — свойство нашей карты. Валюта и прайс задаются у каждого сервиса отдельно, в инструменте «Внешние сервисы».",
     billingVendorCurrencyLabel: "В какой валюте приходит себестоимость",
+    billingVendorCurrencyFallback:
+      "Временное поле. Работает, только пока машина присылает себестоимость одним числом без валюты; у сервисов, перешедших на построчный учёт, валюта берётся из карточки сервиса.",
     billingRateNow: "Курс ЦБ на {day}: {rate} ₽",
     billingRateNone: "Курс ещё не загружен — подтянется часовым тиком",
     billingEstimateTitle: "Оценка на входе в очередь",
@@ -557,7 +577,7 @@ export const dict = {
     servicesEyebrow: "Сервисы",
     servicesTitle: "Внешние сервисы",
     servicesSub:
-      "Сейф: ключ хранится здесь, машина берёт его перед задачей и держит копию ограниченное время. Деньги считает сайт по прайсу — нода присылает потребление.",
+      "Сейф: ключ хранится здесь, машина берёт его перед задачей и держит копию ограниченное время. Прайс тоже здесь, и вот почему: вендор в ответе сообщает потребление — символы, секунды, токены, — а не списанные деньги. Деньги считает сайт: потребление × прайс.",
     servicesVaultMissing:
       "Сейф не настроен: в окружении нет VAULT_MASTER_KEY. Пока его нет, записанный ключ будет нечем прочитать, и завести сервис нельзя.",
     servicesAdd: "Добавить сервис",
@@ -568,8 +588,18 @@ export const dict = {
     servicesFieldName: "Название",
     servicesFieldSlug: "Слаг",
     servicesFieldSlugHint: "По нему машина просит ключ. Латиница, цифры и дефис; менять потом нельзя.",
+    servicesSlugAuto: "Слаг: {slug} — по нему машина просит ключ, и позже его не поменять.",
+    servicesMore: "Дополнительно",
+    servicesMoreHint:
+      "Здесь всё имеет верный ответ по умолчанию: предоплаченный кошелёк, ключ едет на машину, копия живёт 6 часов, потолка нет. Открывать стоит, только если у этого вендора иначе.",
     servicesFieldAdapter: "Адаптер",
     servicesFieldAdapterHint: "Какой код в программе умеет с ним разговаривать. Можно оставить пустым.",
+    servicesFieldBaseUrl: "Адрес сервиса",
+    servicesNoBaseUrl: "Адрес не задан — его знает сама нода",
+    servicesEditBaseUrl: "Изменить адрес",
+    servicesSetKey: "Задать ключ",
+    servicesFieldBaseUrlHint:
+      "Куда нода стучится. Пусто — адрес зашит в самой ноде. Заполненный адрес уезжает на машины вместе с ключами, и менять его можно здесь, не обходя парк.",
     servicesFieldCurrency: "Валюта прайса",
     servicesFieldCurrencyHint: "Валюта сервиса, а не кошелька: кошелёк рублёвый всегда.",
     servicesFieldModel: "Как платим вендору",
@@ -578,8 +608,32 @@ export const dict = {
     servicesFieldTtlHint: "Копия без срока — это вечная копия, и тогда отзыв ничего не отзывает.",
     servicesFieldCap: "Дневной потолок расхода, ₽",
     servicesFieldCapHint: "0 — без потолка. Страховка от зацикленного графа и от утёкшего ключа.",
+    servicesAccounts: "Учётки",
+    servicesAccountsEmpty:
+      "Учёток нет. Сервису без авторизации они и не нужны; если ключ нужен — заведите учётку.",
+    servicesAccountAdd: "Добавить учётку",
+    servicesAccountLabel: "Метка",
+    servicesAccountOwner: "Владелец",
+    servicesAccountOwnerPlaceholder: "почта клиента, пусто — наша",
+    servicesAccountOwnerHint:
+      "Пусто — учётка наша: расход по ней идёт в себестоимость ролика. Указан клиент — расход его, и в цену нашей работы он не попадает.",
+    servicesAccountOurs: "наша",
+    servicesAccountOwned: "клиент: {email}",
+    servicesAccountSecretHint:
+      "Поля спрашиваются те, что объявлены у сервиса. Записываются шифрованными; показать обратно нельзя — только заменить.",
+    servicesAccountCreate: "Завести учётку",
+    servicesAccountCreated: "Учётка заведена",
+    servicesAccountLabelTaken: "Такая метка у этого сервиса уже есть",
+    servicesAccountOwnerMissing: "Пользователь с такой почтой не найден",
+    servicesAccountRevokeConfirm:
+      "Отозвать учётку? Ключи по ней выдаваться перестанут, а прошлый расход останется.",
+    servicesSaved: "Сохранено",
+    servicesFieldSecretFields: "Поля секрета",
+    servicesFieldSecretFieldsHint:
+      "Через запятую, если у вендора их несколько: login, password. Пусто — одно поле apiKey.",
     servicesFieldSecret: "Ключ вендора",
-    servicesFieldSecretHint: "Записывается шифрованным. Показать его обратно нельзя — только заменить.",
+    servicesFieldSecretHint:
+      "Записывается шифрованным. Показать его обратно нельзя — только заменить. Можно оставить пустым: свой сервис, поднятый рядом, может не требовать авторизации.",
     servicesCreate: "Завести",
     servicesCreated: "Сервис заведён",
     servicesSlugTaken: "Такой слаг уже занят",
@@ -1340,6 +1394,7 @@ export const dict = {
     trialAlreadyUsed: "The trial period has already been used",
     trialUnavailable: "The trial period is not being issued right now",
     trialOver: "Trial period is over",
+    trialRevoked: "The trial period was revoked. Your projects and files stay with you — only processing paid from the gift has stopped.",
     trialProvisioning: "Copying projects, this takes a few seconds",
     trialDialogTitle: "Trial period",
     trialDialogBody:
@@ -1631,6 +1686,23 @@ export const dict = {
     billingActivationActivated: "Activated",
     billingActivationLeft: "Left",
     billingActivationStatus: "Status",
+    billingActivationAttempt: "period #{n}",
+    billingActivationResetAt: "reset on {date}",
+    billingActivationActions: "Commands",
+    billingTrialRevoke: "Revoke",
+    billingTrialReset: "Allow again",
+    billingTrialRevokeTitle: "Revoke the trial for {email}?",
+    billingTrialRevokeDesc:
+      "The remaining {amount} will be written off as a ledger line, not erased. The trial projects stay with the person — they are their files and their work on top of the template; with no own funds, processing there will stop. They will notice: the balance drops and projects halt.",
+    billingTrialResetTitle: "Allow the trial to be taken again?",
+    billingTrialResetDesc:
+      "The «Try it» button for {email} lights up again, and the next activation copies the CURRENT set of templates. They already have {count} projects from the previous set — those stay, so the list gets longer. The old grant is not deleted: it remains in history and in the ledger.",
+    billingTrialRevoked: "Trial revoked, {amount} written off",
+    billingTrialResetDone: "Trial reset — the person can take it again",
+    billingTrialNotActive: "Only an active trial can be revoked",
+    billingTrialStillOpen: "Revoke the active trial first",
+    billingTrialAlreadyReset: "This trial has already been reset",
+    billingTrialActionError: "The command failed",
     billingUnpricedTitle: "Projects without a unit",
     billingUnpricedDesc:
       "These projects have no billing axes set on the site. The list is incomplete: the graph may declare them itself, in which case the project is here for nothing. The full answer comes from a one-off collect run in Pipeline.",
@@ -1673,8 +1745,10 @@ export const dict = {
     billingPendingShort: "waiting for a field from the program",
     billingVendorTitle: "Cost of external services",
     billingVendorDesc:
-      "This is NOT the client's payment currency — clients pay in rubles. It is about money we already spent on their behalf at a third-party service: the plugin reports it in its own currency, while we charge rubles, so it has to be converted.",
+      "This is NOT the client's payment currency — clients pay in rubles. It is about money we already spent on their behalf at a third-party service. The markup and the rate adjustment are shared across all vendors: the first is our margin, the second a property of our card. Currency and prices are set per service, in «External services».",
     billingVendorCurrencyLabel: "Currency the cost arrives in",
+    billingVendorCurrencyFallback:
+      "A temporary field. It applies only while machines report cost as a single number with no currency; for services already reporting per-line usage the currency comes from the service card.",
     billingRateNow: "CBR rate on {day}: {rate} ₽",
     billingRateNone: "Rate not fetched yet — the hourly tick will pull it",
     billingEstimateTitle: "Estimate when queuing",
@@ -1700,7 +1774,7 @@ export const dict = {
     servicesEyebrow: "Services",
     servicesTitle: "External services",
     servicesSub:
-      "The vault: the key is stored here, a machine takes it before a task and keeps a copy for a limited time. Money is computed by the site from the price list — the node reports usage.",
+      "The vault: the key is stored here, a machine takes it before a task and keeps a copy for a limited time. The price list lives here too, and here is why: a vendor's response reports usage — characters, seconds, tokens — not the money it charged. The site does the math: usage × price.",
     servicesVaultMissing:
       "The vault is not configured: VAULT_MASTER_KEY is missing from the environment. Until it is set, a stored key could not be read back, and services cannot be added.",
     servicesAdd: "Add service",
@@ -1710,10 +1784,20 @@ export const dict = {
     servicesSaveError: "Failed to save",
     servicesFieldName: "Name",
     servicesFieldSlug: "Slug",
+    servicesSlugAuto: "Slug: {slug} — machines ask for the key by it, and it cannot be changed later.",
+    servicesMore: "Advanced",
+    servicesMoreHint:
+      "Everything here has a correct default: prepaid wallet, key travels to the machine, the copy lives 6 hours, no cap. Worth opening only when this vendor differs.",
     servicesFieldSlugHint: "Machines ask for the key by it. Latin letters, digits and dashes; cannot be changed later.",
     servicesFieldAdapter: "Adapter",
     servicesFieldAdapterHint: "Which code in the app knows how to talk to it. May be left empty.",
     servicesFieldCurrency: "Price currency",
+    servicesFieldBaseUrl: "Service address",
+    servicesNoBaseUrl: "No address set — the node knows it itself",
+    servicesEditBaseUrl: "Change address",
+    servicesSetKey: "Set a key",
+    servicesFieldBaseUrlHint:
+      "Where the node connects. Empty — the address is baked into the node itself. A filled address travels to machines along with the keys, so it can be changed here instead of touring the fleet.",
     servicesFieldCurrencyHint: "The service’s currency, not the wallet’s: the wallet is always in roubles.",
     servicesFieldModel: "How we pay the vendor",
     servicesFieldDelivery: "How the key reaches the worker",
@@ -1721,8 +1805,32 @@ export const dict = {
     servicesFieldTtlHint: "A copy without a lifetime is a permanent copy, and then revocation revokes nothing.",
     servicesFieldCap: "Daily spending cap, ₽",
     servicesFieldCapHint: "0 — no cap. Insurance against a looping graph and against a leaked key.",
+    servicesAccounts: "Accounts",
+    servicesAccountsEmpty:
+      "No accounts. A service without authorization needs none; add one if a key is required.",
+    servicesAccountAdd: "Add account",
+    servicesAccountLabel: "Label",
+    servicesAccountOwner: "Owner",
+    servicesAccountOwnerPlaceholder: "client email, empty — ours",
+    servicesAccountOwnerHint:
+      "Empty — the account is ours: its spending goes into the cost of the video. With a client set, the spending is theirs and stays out of our price.",
+    servicesAccountOurs: "ours",
+    servicesAccountOwned: "client: {email}",
+    servicesAccountSecretHint:
+      "The fields asked for are the ones declared on the service. Stored encrypted; they cannot be shown back — only replaced.",
+    servicesAccountCreate: "Create account",
+    servicesAccountCreated: "Account created",
+    servicesAccountLabelTaken: "That label already exists on this service",
+    servicesAccountOwnerMissing: "No user with that email",
+    servicesAccountRevokeConfirm:
+      "Revoke the account? Keys will stop being issued for it, past spending stays.",
+    servicesSaved: "Saved",
+    servicesFieldSecretFields: "Secret fields",
+    servicesFieldSecretFieldsHint:
+      "Comma-separated when a vendor has several: login, password. Empty — a single apiKey field.",
     servicesFieldSecret: "Vendor key",
-    servicesFieldSecretHint: "Stored encrypted. It cannot be shown back — only replaced.",
+    servicesFieldSecretHint:
+      "Stored encrypted. It cannot be shown back — only replaced. May be left empty: a service of your own, running nearby, may need no authorization at all.",
     servicesCreate: "Add",
     servicesCreated: "Service added",
     servicesSlugTaken: "This slug is already taken",

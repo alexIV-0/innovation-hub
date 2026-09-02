@@ -31,11 +31,65 @@ export type VendorPrice = {
   effectiveFrom: Date
 }
 
+/**
+ * Из чего состоит секрет этого сервиса: `apiKey`, либо `login` + `password`,
+ * либо `client_id` + `client_secret`.
+ *
+ * Описание живёт у сервиса, поэтому форма заведения учётки одна на все сервисы
+ * и рисуется по данным, а не по коду: новый вендор — строка в каталоге, а не
+ * новое окно и пересборка программы с обеих сторон.
+ */
+export type SecretFieldSpec = {
+  /** Ключ в объекте секрета. Он же приезжает на машину. */
+  key: string
+  /** Подпись в форме. Пусто — показываем сам ключ. */
+  label: string
+  /** Прятать ли ввод: логин прятать незачем, пароль — обязательно. */
+  secret: boolean
+}
+
+/** Состав секрета по умолчанию: один ключ. Так у большинства вендоров. */
+export const DEFAULT_SECRET_FIELDS: SecretFieldSpec[] = [
+  { key: "apiKey", label: "", secret: true },
+]
+
+/**
+ * Учётка под сервисом: своя пара «чем авторизоваться» и «чей расход».
+ *
+ * Их несколько, потому что требование пришло с двух сторон сразу: «тест и
+ * прод» на одном вендоре и «клиент принёс свой ключ». Оба решаются владельцем
+ * у учётки, а прайс при этом остаётся у сервиса — цена вендора не зависит от
+ * того, чьим ключом позвали.
+ */
+export type VendorAccount = {
+  id: string
+  serviceId: string
+  /** Метка: «main», «test», «ключ Иванова». Именно она уезжает в проект. */
+  label: string
+  /** NULL — наша учётка: расход наш и идёт в себестоимость. */
+  ownerUserId: string | null
+  /** Почта владельца, чтобы не искать её по id глазами. */
+  ownerEmail: string | null
+  status: VendorStatus
+  createdAt: Date
+  updatedAt: Date
+  /** Живой секрет: версия и подсказка. Сами поля здесь не появляются никогда. */
+  secret: { version: number; hint: string; createdAt: Date } | null
+  /** Расход по этой учётке за 30 дней, копейки рублей. */
+  spentMonthCents: number
+}
+
 export type VendorService = {
   id: string
   slug: string
   name: string
   adapter: string
+  /**
+   * Адрес сервиса. Пусто — адрес знает сама нода (О5): так у вендоров, чей
+   * эндпоинт зашит в адаптере, и так останется. Заполненный адрес уезжает на
+   * машину вместе с ключами, и менять его можно здесь, а не обходом парка.
+   */
+  baseUrl: string
   billingModel: VendorBillingModel
   currency: string
   delivery: VendorDelivery
@@ -44,8 +98,14 @@ export type VendorService = {
   status: VendorStatus
   createdAt: Date
   updatedAt: Date
-  /** Живой ключ: версия и подсказка. Сам ключ здесь не появляется никогда. */
-  secret: { version: number; hint: string; createdAt: Date } | null
+  /** Из чего состоит секрет учётки. Пусто — одно поле `apiKey`. */
+  secretFields: SecretFieldSpec[]
+  /**
+   * Учётки сервиса. Пустой список — законное состояние: свой сервис, поднятый
+   * рядом, может не требовать авторизации вовсе, и тогда у него есть только
+   * адрес.
+   */
+  accounts: VendorAccount[]
   prices: VendorPrice[]
   /** Расход за 30 дней по нашему учёту, копейки рублей. */
   spentMonthCents: number

@@ -57,8 +57,12 @@ export async function POST(request: NextRequest) {
       targetLabel: parsed.data.name,
       meta: {
         slug: parsed.data.slug,
+        baseUrl: parsed.data.baseUrl,
         currency: parsed.data.currency,
         delivery: parsed.data.delivery,
+        // Учётки нет — это решение, а не пропуск, и в журнале оно должно быть
+        // видно: сервис без авторизации отвечает всем, кто знает адрес.
+        account: parsed.data.account?.label ?? null,
       },
     })
 

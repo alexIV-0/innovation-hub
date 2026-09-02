@@ -4,7 +4,7 @@ import { apiError, apiOk } from "@/lib/machine-api/http"
 import { recordAuditEvent } from "@/lib/repositories/admin-audit"
 import { isMachineAuth, type StorageApiAuth } from "@/lib/storage/auth"
 import type { vendorKeysSchema, vendorUsageSchema } from "@/lib/vault/schemas"
-import { issueKeysForMachine } from "@/lib/vault/services"
+import { findTaskOwner, issueKeysForMachine } from "@/lib/vault/services"
 import { recordUsage } from "@/lib/vault/usage"
 
 /**
@@ -38,9 +38,16 @@ export async function handleVendorKeys(
     return apiError("Vendor keys are issued to machines only.", 403)
   }
 
+  // Владельца задачи разрешает САЙТ, а не машина: проект пользователя А на
+  // воркере парка должен работать ключом А. У машины выбирать не из чего — по
+  // правилу «выдаём только нужное» чужих учёток на ней лежать не должно.
+  const ownerUserId = props.taskId ? await findTaskOwner(props.taskId) : null
+
   const issue = await issueKeysForMachine({
     slugs: props.services,
     known: props.known ?? {},
+    accounts: props.accounts,
+    ownerUserId,
   })
 
   // В журнал пишем только НАСТОЯЩУЮ выдачу. Подтверждение «версия у тебя
@@ -54,7 +61,11 @@ export async function handleVendorKeys(
       targetType: "computer",
       targetId: auth.computerId,
       meta: {
-        services: issue.issued.map((key) => `${key.slug}@${key.version}`),
+        // Учётка в записи обязательна: «выдали ключ ElevenLabs» без неё не
+        // отвечает на вопрос, чей ключ уехал — наш или клиентский.
+        services: issue.issued.map(
+          (key) => `${key.slug}/${key.account}@${key.version}`,
+        ),
         // Чем машина опозналась: у `rc_…` есть компьютер, у `mch_…` — только
         // токен. Без этого в журнале осталась бы выдача без адресата.
         machineTokenId: auth.machineTokenId,
@@ -66,6 +77,13 @@ export async function handleVendorKeys(
     keys: issue.issued,
     fresh: issue.fresh,
     unavailable: issue.unavailable,
+    // Платформенных учёток несколько, а метка не названа. Молча выбрать одну
+    // значило бы однажды увести боевой прогон на отладочный ключ.
+    ambiguous: issue.ambiguous,
+    // Адрес, выбранная учётка и наличие ключа по каждому пригодному сервису.
+    // Отдельно от `keys`: секрет приходит только при смене версии, а адрес
+    // нужен всегда — иначе правка адреса без ротации до машины не доедет.
+    services: issue.services,
     vaultRevision: issue.revision,
   })
 }
@@ -86,6 +104,7 @@ export async function handleVendorUsage(
       serviceSlug: entry.service,
       unit: entry.unit,
       units: entry.units,
+      account: entry.account ?? null,
     })),
   })
 

@@ -23,14 +23,22 @@ export type Activation = {
    *  однотипных аккаунтов была видна глазом. */
   registeredAt: Date
   projectCount: number
+  /** Сброшен ли период — тогда человеку кнопка доступна снова (П9.1). */
+  resetAt: Date | null
+  /**
+   * Который это период у человека по счёту. Серия сбросов у одного должна быть
+   * видна глазом — как и серия однотипных регистраций рядом.
+   */
+  attempt: number
 }
 
 export async function listTrialActivations(limit = 200): Promise<Activation[]> {
   const result = await query<
-    Omit<Activation, "amountCents" | "remainingCents" | "projectCount"> & {
+    Omit<Activation, "amountCents" | "remainingCents" | "projectCount" | "attempt"> & {
       amountCents: string
       remainingCents: string
       projectCount: number
+      attempt: number
     }
   >(
     `SELECT g.id                 AS "grantId",
@@ -47,7 +55,11 @@ export async function listTrialActivations(limit = 200): Promise<Activation[]> {
             g.expires_at         AS "expiresAt",
             u.created_at         AS "registeredAt",
             (SELECT COUNT(*)::int FROM billing_grant_projects gp
-              WHERE gp.grant_id = g.id) AS "projectCount"
+              WHERE gp.grant_id = g.id) AS "projectCount",
+            g.reset_at           AS "resetAt",
+            ROW_NUMBER() OVER (
+              PARTITION BY g.user_id ORDER BY g.created_at
+            )::int               AS attempt
        FROM billing_grants g
        JOIN users u ON u.id = g.user_id
       WHERE g.kind = 'trial'

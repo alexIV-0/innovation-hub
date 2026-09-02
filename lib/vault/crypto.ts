@@ -102,3 +102,61 @@ export function secretHint(plain: string): string {
   const tail = plain.trim().slice(-4)
   return tail ? `••••${tail}` : "••••"
 }
+
+// ─── Секрет учётки: набор именованных полей ──────────────────────────────────
+
+/**
+ * Секрет учётки — не строка, а набор полей: `apiKey`, либо `login` +
+ * `password`, либо `client_id` + `client_secret`. Одной строкой их пришлось бы
+ * разделять символом, а разделитель однажды встретится внутри пароля.
+ */
+export type SecretFields = Record<string, string>
+
+/** Поле по умолчанию, когда сервис не описал состав секрета. */
+export const DEFAULT_SECRET_FIELD = "apiKey"
+
+export function encryptFields(fields: SecretFields): string {
+  return encryptSecret(JSON.stringify(fields))
+}
+
+/**
+ * Расшифровать секрет учётки.
+ *
+ * Понимает ДВА формата, и это не запас на будущее, а необходимость: секреты,
+ * перенесённые из `vendor_service_secrets`, лежат прежней одной строкой —
+ * перешифровать их миграцией нельзя, мастер-ключ в SQL недоступен. Строка
+ * читается как `{ apiKey: <строка> }`, и при первой же ротации запись сама
+ * переезжает в новый формат.
+ *
+ * Разбираем через try/catch, а не по первому символу: ключ вендора вполне
+ * может начинаться с `{`, и тогда проверка по символу приняла бы его за JSON.
+ */
+export function decryptFields(packed: string): SecretFields {
+  const plain = decryptSecret(packed)
+  try {
+    const parsed: unknown = JSON.parse(plain)
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Object.values(parsed).every((value) => typeof value === "string")
+    ) {
+      return parsed as SecretFields
+    }
+  } catch {
+    // Не JSON — значит прежний формат. Обрабатываем ниже.
+  }
+  return { [DEFAULT_SECRET_FIELD]: plain }
+}
+
+/**
+ * Подсказка по главному полю секрета.
+ *
+ * Главное — первое из описанных сервисом, а без описания `apiKey`. Показывать
+ * хвост пароля рядом с логином не стоит: подсказка нужна, чтобы отличить две
+ * учётки, и хвоста ключа для этого достаточно.
+ */
+export function fieldsHint(fields: SecretFields, primary?: string): string {
+  const key = primary && fields[primary] != null ? primary : Object.keys(fields)[0]
+  return secretHint(key ? (fields[key] ?? "") : "")
+}

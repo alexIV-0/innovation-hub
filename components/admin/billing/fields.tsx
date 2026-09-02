@@ -68,6 +68,11 @@ export function NumberField({
       <Input
         id={id}
         inputMode="decimal"
+        // В формах области «Деньги» рядом живёт поле `type="password"` — ключ
+        // вендора. Браузер по нему принимает всю форму за форму входа и
+        // заполняет соседей: в «Дневной потолок расхода» так приезжала почта.
+        // Потолок — страховка от утёкшего ключа, и мусор в нём не косметика.
+        autoComplete="off"
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}

@@ -86,9 +86,9 @@ import {
   findEntry,
   loadSrtSources,
   useDocPeaks,
-  useSignedUrl,
   useSignedUrls,
   useTaskFolder,
+  useTaskVideo,
 } from "../shared/use-task-folder"
 import { SrtSettingsDialog } from "./settings-dialog"
 import { SaveBadge } from "../shared/save-badge"
@@ -197,8 +197,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
   const projectId = tool.source?.projectId ?? null
   const folderPath = tool.source?.folderPath ?? null
   const entries = state.kind === "ready" ? state.entries : []
-  const videoEntry = doc && folderPath ? findEntry(entries, folderPath, doc.media.video) : null
-  const videoUrl = useSignedUrl(projectId, videoEntry?.s3Key ?? null)
+  const video = useTaskVideo(projectId, folderPath, entries, doc)
   const peaks = useDocPeaks(projectId, folderPath, entries, doc)
 
   /**
@@ -468,8 +467,9 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
 
   /** Сырьё титров из папки — по запросу окна восстановления. */
   const loadSources = useCallback(
-    (paths: string[]) => loadSrtSources(projectId, folderPath, entries, paths),
-    [entries, folderPath, projectId],
+    (paths: string[]) =>
+      loadSrtSources(projectId, folderPath, entries, paths, doc?.languages.original ?? null),
+    [doc?.languages.original, entries, folderPath, projectId],
   )
 
   /**
@@ -598,7 +598,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
           },
         })),
       clock,
-      videoUrl,
+      video,
       soundMode,
       audibleTrackIds: trackAudioEntries.map((item) => item.id),
       mainMuted: soundMode !== "main",
@@ -644,7 +644,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
     loadSources,
     trackAudioUrls,
     trackQuery,
-    videoUrl,
+    video,
     visibleTracks,
   ])
 

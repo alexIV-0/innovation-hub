@@ -67,9 +67,9 @@ import {
   signGet,
   useDocPeaks,
   usePeaksByPath,
-  useSignedUrl,
   useSignedUrls,
   useTaskFolder,
+  useTaskVideo,
   type FolderEntry,
 } from "../shared/use-task-folder"
 import { useTools, type ToolInstance } from "../tools-context"
@@ -171,8 +171,7 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
   const projectId = tool.source?.projectId ?? null
   const folderPath = tool.source?.folderPath ?? null
   const entries = state.kind === "ready" ? state.entries : []
-  const videoEntry = doc && folderPath ? findEntry(entries, folderPath, doc.media.video) : null
-  const videoUrl = useSignedUrl(projectId, videoEntry?.s3Key ?? null)
+  const video = useTaskVideo(projectId, folderPath, entries, doc)
   const peaks = useDocPeaks(projectId, folderPath, entries, doc)
 
   useEffect(() => {
@@ -466,7 +465,7 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
       trackMode,
       setTrackMode,
       clock,
-      videoUrl,
+      video,
       peaksFor: (trackId) => {
         const own = peaks.byTrack[trackId]
         return own ? { peaks: own, own: true } : { peaks: peaks.main, own: false }
@@ -532,7 +531,7 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
     taskName,
     trackMode,
     trackQuery,
-    videoUrl,
+    video,
     visibleTracks,
   ])
 

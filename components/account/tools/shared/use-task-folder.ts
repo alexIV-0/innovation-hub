@@ -11,6 +11,7 @@ import {
   type DocWarning,
 } from "@/lib/tools/dialog/dialog-doc"
 import { parsePeaks, type Peaks } from "@/lib/tools/dialog/peaks"
+import { pickSrtName, wantFromSourcePath } from "@/lib/tools/dialog/srt-files"
 import { parseSrt, type SrtCue } from "@/lib/tools/dialog/srt-parse"
 import type { ToolInstance } from "../tools-context"
 
@@ -22,6 +23,8 @@ export type FolderEntry = {
   isFolder: boolean
   s3Key: string | null
   sizeBytes: number | null
+  /** Тип из каталога. У залитого мимо браузера файла бывает пустым. */
+  contentType?: string | null
 }
 
 export type FolderState =
@@ -93,6 +96,132 @@ export function findEntry(
   const dir = full.slice(0, slash)
   const name = full.slice(slash + 1)
   return entries.find((e) => !e.isFolder && e.folderPath === dir && e.name === name) ?? null
+}
+
+/**
+ * Видео в корне папки задачи: расширение или тип из каталога.
+ *
+ * Расширение — не украшение к типу, а замена ему: тип проставляется при заливке
+ * через браузер, а файл, пришедший в хранилище другим путём, лежит с пустым
+ * `contentType`, и по одному типу такое видео было бы не найти.
+ */
+const VIDEO_EXTENSION = /\.(mp4|m4v|mov|webm|mkv|avi|mxf)$/i
+
+function looksLikeVideo(entry: FolderEntry): boolean {
+  if (entry.isFolder || !entry.s3Key) return false
+  if (entry.contentType?.toLowerCase().startsWith("video/")) return true
+  return VIDEO_EXTENSION.test(entry.name)
+}
+
+/**
+ * Видео задачи подбором, когда путь из документа не сошёлся.
+ *
+ * Имя исходника контрактом не закреплено: обработка кладёт в корень папки то,
+ * что пришло от заказчика, а `media.video` может отставать или не быть вовсе.
+ * Ищем только в корне папки задачи — глубже лежат дорожки и сырьё, и видео
+ * оттуда было бы не тем файлом.
+ *
+ * `mp4` первым: его и ждём от обработки, и играют его все браузеры. Дальше — по
+ * имени, чтобы выбор не зависел от порядка строк каталога и не менялся сам по
+ * себе между открытиями задачи.
+ */
+export function pickVideoEntry(
+  entries: FolderEntry[],
+  folderPath: string,
+): FolderEntry | null {
+  const own = entries.filter((e) => e.folderPath === folderPath && looksLikeVideo(e))
+  const rank = (e: FolderEntry) => (/\.mp4$/i.test(e.name) ? 0 : 1)
+  return (
+    own
+      .slice()
+      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))[0] ?? null
+  )
+}
+
+/**
+ * Что с видео задачи — со всеми отказами по отдельности.
+ *
+ * Раньше на месте кадра стояла одна надпись «в папке не найдено», и её же
+ * человек видел, когда файл лежал на месте, а ссылку не выдало хранилище.
+ * Отказы разные, и чинятся они по-разному, поэтому и состояний несколько.
+ */
+export type TaskVideo =
+  /** Видео нет ни в документе, ни в папке. */
+  | { kind: "none" }
+  /** Документ называет файл, а в папке нет ни его, ни другого видео. */
+  | { kind: "missing"; file: string }
+  /** Файл нашли, ссылку ещё подписываем. */
+  | { kind: "loading"; entry: FolderEntry }
+  /** Файл есть, ссылка выдана — играем. */
+  | { kind: "ready"; entry: FolderEntry; url: string }
+  /** Файл есть, а ссылки нет: хранилище отказало. */
+  | { kind: "unavailable"; entry: FolderEntry }
+
+/** Надпись вместо кадра — по состоянию, а не по наличию поля в документе. */
+export function videoNoticeText(
+  t: {
+    srtNoVideo: string
+    srtPreviewMissing: string
+    srtVideoOpening: string
+    srtVideoUnavailable: string
+  },
+  video: TaskVideo,
+): string {
+  switch (video.kind) {
+    case "missing":
+      return tf(t.srtPreviewMissing, { file: video.file })
+    case "loading":
+      return t.srtVideoOpening
+    case "unavailable":
+      return tf(t.srtVideoUnavailable, { file: video.entry.name })
+    default:
+      return t.srtNoVideo
+  }
+}
+
+/**
+ * Видео задачи: поиск в папке плюс подписанная ссылка.
+ *
+ * Путь из документа — подсказка, а не единственный источник: не сошёлся —
+ * берём видео из корня папки. Документ при этом не правим: `media.video`
+ * принадлежит контракту с программой, и переписывать его из-за того, что мы
+ * подобрали файл сами, значило бы менять общий файл своей догадкой.
+ */
+export function useTaskVideo(
+  projectId: string | null,
+  folderPath: string | null,
+  entries: FolderEntry[],
+  doc: DialogDoc | null,
+): TaskVideo {
+  const declared = doc?.media.video ?? null
+  const entry =
+    doc && folderPath
+      ? (findEntry(entries, folderPath, declared) ?? pickVideoEntry(entries, folderPath))
+      : null
+  const s3Key = entry?.s3Key ?? null
+  const [signed, setSigned] = useState<{ s3Key: string; url: string | null } | null>(null)
+
+  useEffect(() => {
+    if (!projectId || !s3Key) {
+      setSigned(null)
+      return
+    }
+    let cancelled = false
+    setSigned(null)
+    void (async () => {
+      const url = await signGet(projectId, s3Key)
+      if (!cancelled) setSigned({ s3Key, url })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, s3Key])
+
+  if (!entry || !s3Key) {
+    return declared ? { kind: "missing", file: declared } : { kind: "none" }
+  }
+  if (!signed || signed.s3Key !== s3Key) return { kind: "loading", entry }
+  return signed.url ? { kind: "ready", entry, url: signed.url } : { kind: "unavailable", entry }
 }
 
 /**
@@ -186,27 +315,6 @@ export async function signGet(projectId: string, s3Key: string): Promise<string 
     // Медиа не критично: без ссылки остаются титры и таймлиния (§15.1).
     return null
   }
-}
-
-export function useSignedUrl(projectId: string | null, s3Key: string | null): string | null {
-  const [url, setUrl] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!projectId || !s3Key) {
-      setUrl(null)
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      const signed = await signGet(projectId, s3Key)
-      if (!cancelled) setUrl(signed)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [projectId, s3Key])
-
-  return url
 }
 
 /**
@@ -309,6 +417,32 @@ export function useDocPeaks(
 }
 
 /**
+ * Файл титров в папке дорожки, когда точного имени в ней нет.
+ *
+ * Имена сырья контрактом не закреплены — обработка кладёт `original.srt` или
+ * `dialog_rus.srt`, — поэтому язык ищется в имени (`lib/tools/dialog/srt-files.ts`).
+ * Ищем строго в той папке, которую назвал путь: сосед по другой дорожке — это
+ * чужой текст, и подставить его молча нельзя.
+ */
+function resolveSrtEntry(
+  entries: FolderEntry[],
+  folderPath: string,
+  relative: string,
+  originalLang: string | null,
+): FolderEntry | null {
+  const want = wantFromSourcePath(relative, originalLang)
+  if (!want) return null
+  const full = `${folderPath}/${relative}`.replace(/\/+/g, "/")
+  const dir = full.slice(0, full.lastIndexOf("/"))
+  const inDir = entries.filter((e) => !e.isFolder && e.folderPath === dir && e.s3Key)
+  const picked = pickSrtName(
+    inDir.map((e) => e.name),
+    want,
+  )
+  return picked ? (inDir.find((e) => e.name === picked) ?? null) : null
+}
+
+/**
  * Сырьё титров из папки — для восстановления.
  *
  * Читается по требованию, а не при открытии задачи: файлы нужны только когда
@@ -317,18 +451,26 @@ export function useDocPeaks(
  *
  * Чего нет в папке, того нет и в ответе: вызывающий по разнице путей видит, что
  * восстанавливать было не из чего, и говорит об этом человеку.
+ *
+ * Ключи ответа — те же пути, что просили, даже когда файл нашёлся под другим
+ * именем: восстановление сопоставляет реплики по `origin.file`, и подменять ему
+ * ключи на настоящие имена значило бы чинить поиск ценой поломки сопоставления.
  */
 export async function loadSrtSources(
   projectId: string | null,
   folderPath: string | null,
   entries: FolderEntry[],
   paths: string[],
+  /** Язык оригинала из документа: по нему узнаётся `..._eng.srt` без слова «original». */
+  originalLang: string | null = null,
 ): Promise<Map<string, SrtCue[]>> {
   const out = new Map<string, SrtCue[]>()
   if (!projectId || !folderPath) return out
 
   for (const relative of paths) {
-    const entry = findEntry(entries, folderPath, relative)
+    const entry =
+      findEntry(entries, folderPath, relative) ??
+      resolveSrtEntry(entries, folderPath, relative, originalLang)
     if (!entry?.s3Key) continue
     try {
       const url = await signGet(projectId, entry.s3Key)

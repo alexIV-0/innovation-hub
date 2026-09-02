@@ -5,6 +5,7 @@ import { createContext, useContext } from "react"
 import type { Cue, DialogDoc, Track } from "@/lib/tools/dialog/dialog-doc"
 import type { SrtCue } from "@/lib/tools/dialog/srt-parse"
 import type { Peaks } from "@/lib/tools/dialog/peaks"
+import type { TaskVideo } from "../shared/use-task-folder"
 import type {
   EditorClock,
   SoundMode,
@@ -70,7 +71,8 @@ export type SrtApi = {
   setTrackMode: (mode: TrackMode) => void
 
   clock: EditorClock
-  videoUrl: string | null
+  /** Видео задачи: файл в папке, ссылка на него или причина, почему кадра нет. */
+  video: TaskVideo
   /** Как сведён звук: основная дорожка, только solo или всё кроме mute (§15.3). */
   soundMode: SoundMode
   /**

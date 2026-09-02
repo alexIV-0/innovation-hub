@@ -1002,6 +1002,8 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
     { key: "apiKey", value: "" },
   ])
   const [ttlHours, setTtlHours] = useState("6")
+  /** Вендор просит несколько полей. Редкий случай, поэтому за ссылкой. */
+  const [namedFields, setNamedFields] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const effectiveSlug = slugTouched ? slug.trim() : slugify(name)
@@ -1140,20 +1142,6 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
               </Select>
               <p className="text-xs text-muted-foreground/80">{t.servicesFieldCurrencyHint}</p>
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="svc-url" className="text-sm font-normal text-muted-foreground">
-                {t.servicesFieldBaseUrl}
-              </Label>
-              <Input
-                id="svc-url"
-                autoComplete="off"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.elevenlabs.io"
-                className="max-w-xl"
-              />
-              <p className="text-xs text-muted-foreground/80">{t.servicesFieldBaseUrlHint}</p>
-            </div>
           </div>
 
           <Button type="button" disabled={!canGoOn} onClick={() => setStep(2)}>
@@ -1182,66 +1170,119 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
             <p className="text-xs text-muted-foreground/80">{t.servicesLabelHint}</p>
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="svc-url" className="text-sm font-normal text-muted-foreground">
+              {t.servicesFieldBaseUrl}
+            </Label>
+            <Input
+              id="svc-url"
+              autoComplete="off"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://x.kraslance.ru/v2/run"
+              className="max-w-xl"
+            />
+            <p className="max-w-2xl text-xs text-muted-foreground/80">
+              {t.servicesFieldBaseUrlHint}
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label className="text-sm font-normal text-muted-foreground">
               {t.servicesKeyFields}
             </Label>
-            {fields.map((field, index) => (
-              <div key={index} className="flex flex-wrap items-center gap-2">
-                {/* Имя поля правится, потому что у вендоров они разные: где-то
-                    apiKey, где-то client_id + client_secret. Из этих имён и
-                    складывается состав секрета сервиса. */}
-                <Input
-                  autoComplete="off"
-                  value={field.key}
-                  onChange={(e) =>
-                    setFields((prev) =>
-                      prev.map((f, i) =>
-                        i === index ? { ...f, key: e.target.value } : f,
-                      ),
-                    )
-                  }
-                  placeholder="apiKey"
-                  className="max-w-[12rem] font-mono text-[13px]"
-                />
+            {/* По умолчанию поле ОДНО и без имени: у подавляющего
+                большинства вендоров это просто ключ. Прежняя раскладка «имя
+                слева, значение справа» с первого же раза заставила вписать
+                токен в поле имени — то есть провоцировала ровно ту ошибку,
+                которую должна была предотвращать. */}
+            {!namedFields ? (
+              <>
                 <Input
                   autoComplete="off"
                   type="password"
-                  value={field.value}
+                  value={fields[0]?.value ?? ""}
                   onChange={(e) =>
-                    setFields((prev) =>
-                      prev.map((f, i) =>
-                        i === index ? { ...f, value: e.target.value } : f,
-                      ),
-                    )
+                    setFields([{ key: "apiKey", value: e.target.value }])
                   }
-                  className="max-w-sm"
+                  placeholder="Bearer test-token"
+                  className="max-w-xl"
                 />
-                {fields.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setFields((prev) => prev.filter((_, i) => i !== index))
-                    }
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                ) : null}
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setFields((prev) => [...prev, { key: "", value: "" }])}
-            >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              {t.servicesKeyFieldAdd}
-            </Button>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  onClick={() => setNamedFields(true)}
+                >
+                  {t.servicesKeyManyFields}
+                </button>
+              </>
+            ) : (
+              <>
+                {/* В режиме нескольких полей колонки подписаны: без подписей
+                    непонятно, что слева имя, а что справа значение. */}
+                <div className="flex flex-wrap gap-2">
+                  <span className="w-[12rem] text-xs text-muted-foreground/80">
+                    {t.servicesKeyFieldName}
+                  </span>
+                  <span className="text-xs text-muted-foreground/80">
+                    {t.servicesKeyFieldValue}
+                  </span>
+                </div>
+                {fields.map((field, index) => (
+                  <div key={index} className="flex flex-wrap items-center gap-2">
+                    <Input
+                      autoComplete="off"
+                      value={field.key}
+                      onChange={(e) =>
+                        setFields((prev) =>
+                          prev.map((f, i) =>
+                            i === index ? { ...f, key: e.target.value } : f,
+                          ),
+                        )
+                      }
+                      placeholder="login"
+                      className="w-[12rem] font-mono text-[13px]"
+                    />
+                    <Input
+                      autoComplete="off"
+                      type="password"
+                      value={field.value}
+                      onChange={(e) =>
+                        setFields((prev) =>
+                          prev.map((f, i) =>
+                            i === index ? { ...f, value: e.target.value } : f,
+                          ),
+                        )
+                      }
+                      className="max-w-sm"
+                    />
+                    {fields.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setFields((prev) => prev.filter((_, i) => i !== index))
+                        }
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFields((prev) => [...prev, { key: "", value: "" }])}
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  {t.servicesKeyFieldAdd}
+                </Button>
+              </>
+            )}
             <p className="max-w-2xl text-xs text-muted-foreground/80">
-              {t.servicesKeyFieldsHint}
+              {namedFields ? t.servicesKeyFieldsHint : t.servicesKeyOneHint}
             </p>
           </div>
 

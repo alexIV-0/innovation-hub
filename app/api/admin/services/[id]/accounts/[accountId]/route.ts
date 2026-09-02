@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { auditFrom } from "@/lib/audit"
 import { updateAccountSchema } from "@/lib/vault/schemas"
-import { findAccountService, updateAccount } from "@/lib/vault/services"
+import {
+  deleteAccount,
+  findAccountService,
+  updateAccount,
+} from "@/lib/vault/services"
 
 export const runtime = "nodejs"
 
@@ -57,6 +61,29 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   const found = await findAccountService(accountId)
   if (!found) {
     return NextResponse.json({ message: "Account not found." }, { status: 404 })
+  }
+
+  /**
+   * `?hard=1` — удалить насовсем, а не отозвать.
+   *
+   * Разрешено, только если по учётке ничего не потрачено: `vendor_usage`
+   * ссылается на неё через `ON DELETE SET NULL`, и удаление осиротило бы
+   * движения денег. Проверку делает репозиторий, а не этот роут: экран может
+   * отстать от жизни на те секунды, за которые придёт отчёт о расходе.
+   */
+  if (request.nextUrl.searchParams.get("hard") === "1") {
+    const result = await deleteAccount(accountId)
+    if (!result.ok) {
+      return NextResponse.json({ code: result.reason }, { status: 409 })
+    }
+    await auditFrom(request, auth)({
+      action: "service.account_updated",
+      targetType: "service",
+      targetId: found.service.id,
+      targetLabel: `${found.service.name} / ${found.account.label}`,
+      meta: { deleted: true },
+    })
+    return NextResponse.json({ ok: true })
   }
 
   await updateAccount(accountId, { status: "revoked" })

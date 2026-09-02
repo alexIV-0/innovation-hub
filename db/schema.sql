@@ -484,6 +484,14 @@ CREATE TABLE IF NOT EXISTS tasks (
   attempts          INTEGER NOT NULL DEFAULT 0,
   max_attempts      INTEGER NOT NULL DEFAULT 3,
   error             TEXT,
+  -- Какая машина последней держала задачу. Отдельно от claimed_by, потому что
+  -- тот зануляется на каждом терминальном переходе (на нём держится аренда), и
+  -- имя машины исчезало ровно у упавшей задачи — там, где оно и нужно.
+  last_machine_id   TEXT REFERENCES remote_computers(id) ON DELETE SET NULL,
+  -- Когда исходник унесли из IN в папку ошибок. NULL — файл всё ещё в IN.
+  -- Путь не храним: папка ошибок одна на проект и переименовывается на дату
+  -- последней ошибки, записанное имя устарело бы на следующем падении.
+  quarantined_at    TIMESTAMPTZ,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -3,6 +3,7 @@ import { VENDOR_CURRENCIES } from "@/lib/billing/types"
 import {
   BILLING_MODELS,
   DELIVERIES,
+  INCIDENT_CODES,
   PRICE_UNITS,
   VENDOR_STATUSES,
 } from "@/lib/vault/types"
@@ -87,6 +88,8 @@ export const createServiceSchema = z.object({
     .object({
       label: accountLabelSchema.default("main"),
       fields: secretValuesSchema,
+      /** Срок копии этого ключа. Пусто — как у сервиса. */
+      keyTtlSec: z.number().int().min(60).max(604_800).nullable().default(null),
     })
     .nullable()
     .default(null),
@@ -94,6 +97,9 @@ export const createServiceSchema = z.object({
 
 export const createAccountSchema = z.object({
   label: accountLabelSchema,
+  /** Адрес этой установки. Пусто — как у сервиса. */
+  baseUrl: baseUrlSchema,
+  keyTtlSec: z.number().int().min(60).max(604_800).nullable().default(null),
   /**
    * Владелец — ПОЧТОЙ, а не id: id клиента админ наизусть не помнит, а почта
    * это и есть то, чем человека называют в разговоре. Роут переводит её в id и
@@ -108,6 +114,8 @@ export const createAccountSchema = z.object({
 export const updateAccountSchema = z.object({
   label: accountLabelSchema.optional(),
   status: z.enum(VENDOR_STATUSES).optional(),
+  baseUrl: baseUrlSchema.optional(),
+  keyTtlSec: z.number().int().min(60).max(604_800).nullable().optional(),
 })
 
 export const rotateAccountSecretSchema = z.object({
@@ -152,18 +160,15 @@ export const vendorKeysSchema = z.object({
    */
   known: z
     .record(
-      slugSchema,
+      // Ключ — `слаг` или `слаг/метка`: по одному сервису машина держит теперь
+      // несколько учёток, и без метки в ключе вторая затирала бы первую.
+      z.string().trim().min(2).max(120),
       z.object({
         account: accountLabelSchema,
         version: z.number().int().positive(),
       }),
     )
     .optional(),
-  /**
-   * Метка учётки, если нода знает её из поля проекта. Не знает — сайт выберет
-   * сам по владельцу задачи либо по единственной платформенной.
-   */
-  accounts: z.record(slugSchema, accountLabelSchema).optional(),
   /**
    * Под какую задачу просят ключи. Нужно, чтобы выдать учётку ВЛАДЕЛЬЦА задачи:
    * проект пользователя А на воркере парка должен работать ключом А, а не
@@ -209,3 +214,25 @@ export const vendorUsageSchema = z
   .refine((value) => (value.taskId != null) !== (value.runId != null), {
     message: "Provide either taskId or runId, not both.",
   })
+
+/**
+ * Инцидент в контуре ключей, замеченный машиной (пункт 8 запроса клиента).
+ *
+ * Узкое API, а не слив логов: код, слаг сервиса и, если известно, учётка,
+ * задача и проект. Ошибки этого контура возникают НА МАШИНЕ — ключ протух в
+ * момент вызова, вендор отказал, у клиента кончились деньги, — и не попади они
+ * в журнал, половина картины осталась бы в логах, а треугольник на карточке
+ * проекта знал бы только то, что заметили мы.
+ */
+export const vendorIncidentSchema = z.object({
+  code: z.enum(INCIDENT_CODES),
+  service: slugSchema,
+  account: accountLabelSchema.optional(),
+  taskId: z.string().uuid().optional(),
+  projectId: z.string().trim().max(64).optional(),
+  /**
+   * Ответ вендора одной строкой — для человека, который будет разбираться.
+   * Решения по нему не принимаются: для этого есть `code`.
+   */
+  detail: z.string().trim().max(500).optional(),
+})

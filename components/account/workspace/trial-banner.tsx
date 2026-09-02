@@ -71,10 +71,15 @@ export function TrialBanner() {
   if (!stopped && (!inTrial || hidden)) return null
 
   const runtime = data?.purchasing?.runtimeSec ?? 0
+  // Причина решает не только текст, но и что человеку делать: при деньгах он
+  // пополняет баланс, при ключе — идёт на «Мои ключи». Показать здесь
+  // «пополните баланс» значило бы послать его не туда.
   const message = stopped
     ? pausedReason === "trial-over"
       ? t.trialBannerOver
-      : t.trialBannerNoFunds
+      : pausedReason === "no-vendor-key"
+        ? t.trialBannerNoVendorKey
+        : t.trialBannerNoFunds
     : tf(t.trialBannerRemaining, { runtime: formatRuntime(runtime) })
 
   return (

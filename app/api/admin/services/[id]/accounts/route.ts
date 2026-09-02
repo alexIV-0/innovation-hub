@@ -53,6 +53,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       label: parsed.data.label,
       ownerUserId,
       fields: parsed.data.fields,
+      baseUrl: parsed.data.baseUrl,
+      keyTtlSec: parsed.data.keyTtlSec,
       actorId: auth.userId,
     })
     if (!result) {

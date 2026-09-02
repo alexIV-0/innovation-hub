@@ -6,9 +6,11 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  FolderInput,
   Loader2,
   RefreshCw,
   Trash2,
+  Undo2,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -114,14 +116,17 @@ export function TasksPanel({
    * Снятие и удаление. Оба ответа приносят свежий список — перезапрашивать
    * отдельно не нужно, и таблица не мигает загрузкой.
    */
-  const mutate = async (taskId: string, mode: "cancel" | "delete") => {
+  const mutate = async (
+    taskId: string,
+    mode: "cancel" | "delete" | "requeue",
+  ) => {
     if (mode === "delete" && !window.confirm(t.pipelineTaskDeleteConfirm)) return
     setBusyId(taskId)
     try {
       const res =
-        mode === "cancel"
+        mode === "cancel" || mode === "requeue"
           ? await fetch("/api/admin/pipeline/tasks", {
-              method: "PATCH",
+              method: mode === "cancel" ? "PATCH" : "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ taskId }),
             })
@@ -139,7 +144,11 @@ export function TasksPanel({
       // что строка просто исчезла.
       if (mode === "cancel") setHistoryOpen(true)
       toast.success(
-        mode === "cancel" ? t.pipelineTaskCancelled : t.pipelineTaskDeleted,
+        mode === "cancel"
+          ? t.pipelineTaskCancelled
+          : mode === "requeue"
+            ? t.pipelineTaskRequeued
+            : t.pipelineTaskDeleted,
       )
     } catch {
       toast.error(t.pipelineServerUnavailable)
@@ -325,7 +334,7 @@ function TaskTable({
   expanded: Set<string>
   onToggle: (taskId: string) => void
   busyId: string | null
-  onMutate: (taskId: string, mode: "cancel" | "delete") => void
+  onMutate: (taskId: string, mode: "cancel" | "delete" | "requeue") => void
 }) {
   const t = useAdminI18n()
   const { lang } = useI18n()
@@ -384,6 +393,15 @@ function TaskTable({
                   {task.error ? (
                     <span className="mt-0.5 block text-[11.5px] text-destructive">
                       {task.error}
+                    </span>
+                  ) : null}
+                  {task.quarantinedAt ? (
+                    <span
+                      title={t.pipelineQuarantinedTitle}
+                      className="mt-0.5 flex items-center gap-1 text-[11.5px] text-ws-4"
+                    >
+                      <FolderInput className="h-3 w-3 shrink-0" />
+                      {t.pipelineQuarantined}
                     </span>
                   ) : null}
                 </td>
@@ -457,6 +475,18 @@ function TaskTable({
                         ) : (
                           <Ban className="h-3.5 w-3.5" />
                         )}
+                      </button>
+                    ) : null}
+                    {task.quarantinedAt ? (
+                      <button
+                        type="button"
+                        onClick={() => void onMutate(task.id, "requeue")}
+                        disabled={busyId === task.id}
+                        title={t.pipelineTaskRequeueTitle}
+                        aria-label={t.pipelineTaskRequeue}
+                        className="flex h-7 w-7 items-center justify-center rounded-[7px] text-ws-4 hover:bg-white/5 hover:text-ws-1 disabled:opacity-40"
+                      >
+                        <Undo2 className="h-3.5 w-3.5" />
                       </button>
                     ) : null}
                     <button

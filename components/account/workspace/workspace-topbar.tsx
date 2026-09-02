@@ -2,7 +2,6 @@
 
 import {
   ArrowLeft,
-  ArrowUpRight,
   Columns3,
   LayoutGrid,
   List,
@@ -14,6 +13,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { Density, ViewMode } from "./types"
 import { useWorkspace } from "./workspace-context"
+import { ProcessingIndicator } from "@/components/account/processing-indicator"
 
 function SegButton({
   active,
@@ -135,15 +135,7 @@ export function WorkspaceTopbar() {
 
       <div className="flex shrink-0 items-center gap-3 md:gap-4">
         <DensitySwitch />
-        <a
-          href="/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hidden items-center gap-1 text-[13px] text-ws-2 hover:text-ws-1 lg:flex"
-        >
-          {t.viewSite}
-          <ArrowUpRight className="h-[15px] w-[15px]" />
-        </a>
+        <ProcessingIndicator />
       </div>
     </header>
   )

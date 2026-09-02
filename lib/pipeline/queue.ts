@@ -1,4 +1,5 @@
 import { query, withTransaction } from "@/lib/db"
+import { quarantineQuietly } from "@/lib/pipeline/quarantine"
 import { isElevated } from "@/lib/admin-roles"
 
 /**
@@ -78,6 +79,10 @@ export async function claimNextTask(
     `UPDATE tasks t
         SET status           = 'claimed',
             claimed_by       = $1,
+            -- Дубль claimed_by, который никто не занулит: аренду терминальные
+            -- переходы снимают, а «на какой машине это было» должно пережить
+            -- падение — иначе у упавшей задачи колонка «Машина» пустая.
+            last_machine_id  = $1,
             claimed_at       = NOW(),
             lease_expires_at = NOW() + ($2 || ' minutes')::interval,
             attempts         = t.attempts + 1,
@@ -285,6 +290,68 @@ export async function failTask(input: {
     )
   })
 
+  // Исходник уносим из IN в папку ошибок. `failed` — состояние терминальное:
+  // назад в очередь эту задачу никто не вернёт, а пока файл лежит в IN, он для
+  // конвейера невидим (обход берёт только элементы без задач). Перенос делает
+  // это видимым в дереве и оставляет дорогу назад.
+  await quarantineQuietly(input.taskId)
+
+  return { ok: true }
+}
+
+/**
+ * Задача снята из-за отсутствующего ключа внешнего сервиса (пункт 5 запроса).
+ *
+ * Третий исход рядом с `failTask` и `releaseTask`, и отличается от обоих:
+ *
+ * - `failTask` — «эта попытка не удалась»; задача уйдёт на повтор, и следующая
+ *   машина упрётся в то же самое, пока не кончатся `maxAttempts`. Умрёт она
+ *   тогда как «превышены попытки», хотя причина была известна с первой машины;
+ * - `releaseTask` — «верните её кому-нибудь»; здесь это заведомо бесполезно,
+ *   ключа нет ни у кого.
+ *
+ * Поэтому задача закрывается сразу и с кодом, а не с текстом: состояние проекта
+ * показывают обе стороны, и разбирать строку ради значка — гарантированное
+ * расхождение. Проект при этом гасится отдельно (`handleVendorIncident`), и
+ * следующий проход конвейера соберёт задачу заново, когда ключ появится:
+ * уникальность задач держится только на живых статусах, `failed` пересозданию
+ * не мешает.
+ *
+ * Попытку не считаем: машина отработала честно, ей просто нечем было работать.
+ */
+export async function blockTaskOnVendorKey(input: {
+  /** Кто держит задачу. Сейф зовёт это с `auth.computerId`, без полного caller. */
+  computerId: string
+  taskId: string
+  code: string
+  service: string
+}): Promise<QueueMutationResult> {
+  const holder = await assertHolder(input.taskId, input.computerId)
+  if (!holder.ok) return holder
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE tasks
+          SET status = 'failed',
+              error = $2,
+              -- Попытка не списывается: причина не в машине и не в попытке.
+              attempts = GREATEST(0, attempts - 1),
+              claimed_by = NULL,
+              lease_expires_at = NULL,
+              updated_at = NOW()
+        WHERE id = $1`,
+      [input.taskId, `${input.code}:${input.service}`],
+    )
+    // Машина не в ошибке: она исправна и готова к следующей задаче. Пометить её
+    // `error` значило бы вывести из парка исправный узел.
+    await client.query(
+      `UPDATE remote_computers
+          SET status = 'idle', current_task_id = NULL
+        WHERE id = $1`,
+      [input.computerId],
+    )
+  })
+
   return { ok: true }
 }
 
@@ -339,7 +406,7 @@ export async function releaseTask(input: {
  * помечаем failed, иначе задача крутилась бы по кругу вечно.
  */
 export async function reapExpiredLeases(): Promise<number> {
-  const result = await query(
+  const result = await query<{ id: string; status: string }>(
     `UPDATE tasks
         SET status = CASE
                        WHEN attempts < max_attempts THEN 'queued'
@@ -353,8 +420,17 @@ export async function reapExpiredLeases(): Promise<number> {
             lease_expires_at = NULL,
             updated_at = NOW()
       WHERE status IN ('claimed', 'running')
-        AND lease_expires_at < NOW()`,
+        AND lease_expires_at < NOW()
+      RETURNING id, status`,
   )
+
+  // Те, у кого попытки кончились, — такое же терминальное падение, как
+  // `taskFailed`, только сказать о нём было некому. Исходник уносим по тому же
+  // правилу, иначе файл молча остаётся в IN невидимым для обеих линий сборки.
+  for (const row of result.rows) {
+    if (row.status === "failed") await quarantineQuietly(row.id)
+  }
+
   return result.rowCount ?? 0
 }
 

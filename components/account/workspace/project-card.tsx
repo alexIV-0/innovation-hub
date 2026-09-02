@@ -171,7 +171,9 @@ export function ProjectCard({
                 <AlertTriangle className="h-3 w-3" />
                 {billingStop === "trial-over"
                   ? t.projectPausedTrialOver
-                  : t.projectPausedNoFunds}
+                  : billingStop === "no-vendor-key"
+                    ? t.projectPausedNoVendorKey
+                    : t.projectPausedNoFunds}
               </span>
             ) : null}
             {showArchivedBadge ? (

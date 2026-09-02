@@ -84,6 +84,14 @@ function coerce(
       if (typeof value !== "string") fail(change.path, "expects a string.")
       return value
 
+    case "vendorAccount":
+      // Метка, а не секрет. Существование учётки здесь НЕ проверяем: она могла
+      // быть отозвана между открытием вкладки и сохранением, и ронять из-за
+      // этого сохранение остальных параметров незачем — задачу всё равно не
+      // соберёт гейт, и человек увидит причину на карточке проекта.
+      if (typeof value !== "string") fail(change.path, "expects an account label.")
+      return value
+
     case "ddm": {
       if (typeof value !== "string") fail(change.path, "expects a string.")
       if (!option.freeInput && value !== "" && !option.options.includes(value)) {

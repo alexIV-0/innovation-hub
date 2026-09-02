@@ -2,8 +2,17 @@ import type { NextResponse } from "next/server"
 import type { z } from "zod"
 import { apiError, apiOk } from "@/lib/machine-api/http"
 import { recordAuditEvent } from "@/lib/repositories/admin-audit"
+import { query } from "@/lib/db"
+import { setPausedReason } from "@/lib/billing/admission"
+import { blockTaskOnVendorKey } from "@/lib/pipeline/queue"
+import { setProjectPaused } from "@/lib/project-automation"
 import { isMachineAuth, type StorageApiAuth } from "@/lib/storage/auth"
-import type { vendorKeysSchema, vendorUsageSchema } from "@/lib/vault/schemas"
+import { BLOCKING_INCIDENT_CODES, type IncidentCode } from "@/lib/vault/types"
+import type {
+  vendorIncidentSchema,
+  vendorKeysSchema,
+  vendorUsageSchema,
+} from "@/lib/vault/schemas"
 import { findTaskOwner, issueKeysForMachine } from "@/lib/vault/services"
 import { recordUsage } from "@/lib/vault/usage"
 
@@ -46,7 +55,6 @@ export async function handleVendorKeys(
   const issue = await issueKeysForMachine({
     slugs: props.services,
     known: props.known ?? {},
-    accounts: props.accounts,
     ownerUserId,
   })
 
@@ -77,12 +85,10 @@ export async function handleVendorKeys(
     keys: issue.issued,
     fresh: issue.fresh,
     unavailable: issue.unavailable,
-    // Платформенных учёток несколько, а метка не названа. Молча выбрать одну
-    // значило бы однажды увести боевой прогон на отладочный ключ.
-    ambiguous: issue.ambiguous,
-    // Адрес, выбранная учётка и наличие ключа по каждому пригодному сервису.
-    // Отдельно от `keys`: секрет приходит только при смене версии, а адрес
-    // нужен всегда — иначе правка адреса без ротации до машины не доедет.
+    // Адрес, доступные учётки и состав полей по каждому пригодному сервису.
+    // Отдельно от `keys`: секрет приходит только при смене версии, а адрес и
+    // список учёток нужны всегда — иначе правка адреса без ротации до машины
+    // не доедет, а выбрать ключ в настройках проекта будет не из чего.
     services: issue.services,
     vaultRevision: issue.revision,
   })
@@ -115,4 +121,123 @@ export async function handleVendorUsage(
   // записан, и машина должна знать об этом, чтобы повторить позже. Молчаливое
   // «принято» превратило бы потерянную себестоимость в невидимую.
   return apiOk(result)
+}
+
+/**
+ * Погасить проект, которому не хватает ключа.
+ *
+ * Владельца и `storage_owner_id` берём из базы, а не из запроса: машина о них
+ * знать не обязана, а пауза пишется в два места сразу — колонку и сайдкар
+ * `options/folderState.json`, — и промахнуться ключом сайдкара нельзя.
+ *
+ * `false` — проект не нашёлся либо уже стоял на паузе по этой же причине:
+ * повторный инцидент по той же поломке не должен переписывать состояние.
+ */
+async function pauseProjectForVendorKey(input: {
+  projectId: string
+  reason: IncidentCode
+  service: string
+}): Promise<boolean> {
+  const found = await query<{
+    ownerId: string
+    storageOwnerId: string
+    pausedReason: string | null
+  }>(
+    `SELECT user_id AS "ownerId",
+            COALESCE(storage_owner_id, user_id) AS "storageOwnerId",
+            paused_reason AS "pausedReason"
+       FROM projects WHERE id = $1`,
+    [input.projectId],
+  )
+  const project = found.rows[0]
+  if (!project) return false
+  if (project.pausedReason === "no-vendor-key") return false
+
+  try {
+    await setProjectPaused({
+      projectId: input.projectId,
+      ownerId: project.ownerId,
+      storageOwnerId: project.storageOwnerId,
+      paused: true,
+      updatedBy: "vault",
+    })
+    await setPausedReason(input.projectId, "no-vendor-key")
+    return true
+  } catch (error) {
+    // Не сумели погасить — инцидент всё равно записан, и это главное. Ронять
+    // ответ машине незачем: она уже сделала свою часть.
+    console.error("[vault] пауза по ключу не записалась", input.projectId, error)
+    return false
+  }
+}
+
+/**
+ * Инцидент в контуре ключей, замеченный машиной (пункт 8 запроса клиента).
+ *
+ * Две вещи сразу, и обе обязательны:
+ *
+ * 1. **запись в журнал.** Ошибки этого контура возникают на машине, и не попади
+ *    они сюда, половина картины осталась бы в логах машин, а треугольник на
+ *    карточке проекта знал бы только то, что заметили мы;
+ * 2. **пауза проекта** — но не на всякий код. `key-missing`, `key-rejected` и
+ *    `owner-out-of-funds` означают, что другие машины тоже не справятся, и
+ *    гонять задачу по парку до `maxAttempts` бессмысленно. `vendor-refused` и
+ *    `quota-exceeded` так не гасят: первое бывает разовым сбоем вендора, второе
+ *    проходит само со сменой суток.
+ */
+export async function handleVendorIncident(
+  auth: StorageApiAuth,
+  props: z.infer<typeof vendorIncidentSchema>,
+): Promise<NextResponse> {
+  if (!isMachineAuth(auth)) {
+    return apiError("Incidents are reported by machines only.", 403)
+  }
+
+  await recordAuditEvent({
+    actorId: auth.userId,
+    actorEmail: auth.email,
+    action: "service.incident",
+    targetType: props.projectId ? "project" : "service",
+    targetId: props.projectId ?? props.service,
+    targetLabel: props.service,
+    meta: {
+      code: props.code,
+      service: props.service,
+      account: props.account ?? null,
+      taskId: props.taskId ?? null,
+      projectId: props.projectId ?? null,
+      detail: props.detail ?? null,
+      computerId: auth.computerId,
+    },
+  })
+
+  const blocking = BLOCKING_INCIDENT_CODES.includes(props.code)
+  let paused = false
+  let taskClosed = false
+
+  if (blocking) {
+    // Задачу закрываем ПЕРВОЙ: она держит аренду, и пока держит — её никто не
+    // подхватит, а пауза проекта уже ни на что не влияет.
+    if (props.taskId && auth.computerId) {
+      const result = await blockTaskOnVendorKey({
+        computerId: auth.computerId,
+        taskId: props.taskId,
+        code: props.code,
+        service: props.service,
+      })
+      taskClosed = result.ok
+    }
+    if (props.projectId) {
+      paused = await pauseProjectForVendorKey({
+        projectId: props.projectId,
+        reason: props.code,
+        service: props.service,
+      })
+    }
+  }
+
+  // Отвечаем разбором, а не «ок». Машине надо знать три вещи: записали ли
+  // (записали всегда), считаем ли код блокирующим и что с задачей — иначе она
+  // не поймёт, ждать ли ей повтора по этой же задаче.
+  return apiOk({ recorded: true, blocking, taskClosed, paused })
 }

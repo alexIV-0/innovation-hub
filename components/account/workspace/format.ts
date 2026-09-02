@@ -81,6 +81,30 @@ export function findChildByName(files: DriveFile[], name: string) {
   return files.find((f) => f.isFolder && f.name.toLowerCase() === lower) ?? null
 }
 
+/**
+ * Логический путь строкой («IN», «Errors (2026-09-02)/сырьё») → цепочка узлов.
+ *
+ * Нужен для перехода по ссылке снаружи дерева: индикатор обработки знает, в
+ * какой папке лежит файл, но не знает id её узлов — их знает только загруженное
+ * дерево. Папки нет — пустая цепочка, то есть корень проекта: файл могли
+ * удалить или перенести, и ронять переход из-за этого незачем.
+ */
+export function resolveFolderPathByName(
+  root: DriveFile[],
+  folderPath: string,
+): DriveFile[] {
+  const segments = folderPath.split("/").filter(Boolean)
+  const nodes: DriveFile[] = []
+  let children = root
+  for (const segment of segments) {
+    const found = findChildByName(children, segment)
+    if (!found) return []
+    nodes.push(found)
+    children = found.children ?? []
+  }
+  return nodes
+}
+
 export function pathToFolderPath(nodes: DriveFile[]): string {
   return nodes.map((n) => n.name).join("/")
 }

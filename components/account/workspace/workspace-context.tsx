@@ -26,6 +26,7 @@ import {
   itemsAtPath,
   mapProject,
   pathToFolderPath,
+  resolveFolderPathByName,
   resolvePath,
   siblingFiles,
 } from "./format"
@@ -162,6 +163,19 @@ type WorkspaceValue = {
   openFolder: (f: DriveFile) => void
   goToCrumb: (index: number) => void
   goToPath: (nodes: DriveFile[]) => void
+  /**
+   * Куда просили перейти снаружи — цепочка папок от корня проекта.
+   *
+   * Отдельно от `path`, потому что общего пути на весь экран не существует: в
+   * простом режиме у панелей IN и OUT свои локальные пути, на мобильном —
+   * выбранная вкладка папки плюс путь внутри неё, и только в полном режиме путь
+   * один. Контекст поэтому не приказывает, а сообщает: «просили открыть вот
+   * это», а каждый вид укладывает цепочку в своё состояние.
+   *
+   * Новый объект на каждый переход — по нему виды и понимают, что просьба
+   * новая, даже если папка та же.
+   */
+  revealPath: DriveFile[] | null
 
   // выделение файлов
   /** Всё выделенное; последний элемент — тот, что показан в превью. */
@@ -398,6 +412,7 @@ export function WorkspaceProvider({
   const [driveAvailable, setDriveAvailable] = useState(true)
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [path, setPath] = useState<DriveFile[]>([])
+  const [revealPath, setRevealPath] = useState<DriveFile[] | null>(null)
   /**
    * Выделение — список, а не один файл: Cmd/Ctrl добавляет элементы.
    * Последний элемент считается активным и показывается в превью.
@@ -645,6 +660,9 @@ export function WorkspaceProvider({
   }, [searchParams])
 
   useEffect(() => {
+    // Просьба «открыть вот это» относилась к прежнему проекту — снимаем её, а
+    // не тащим в следующий: узлы там чужие, и вид всё равно их не узнает.
+    setRevealPath(null)
     if (!selectedId) {
       setRootFiles([])
       setPath([])
@@ -656,6 +674,55 @@ export function WorkspaceProvider({
     }
     void loadDrive(selectedId, false)
   }, [selectedId, loadDrive])
+
+  /**
+   * Переход по ссылке «прямо к этому файлу»: `?path=IN&file=clip.mp4`.
+   *
+   * Приходит из индикатора обработки в верхней панели — оттуда человек попадает
+   * не «в проект», а в ту папку, где его файл лежит сейчас, с выделенной
+   * строкой. Ждём загруженного дерева: путь в ссылке текстовый, а узлы с их id
+   * знает только оно.
+   *
+   * Параметры одноразовые — после применения снимаем их с адреса. Иначе
+   * повторный клик по той же строке был бы переходом на тот же URL, то есть
+   * ничем, а «назад» возвращало бы к выделению, которого человек уже не ждёт.
+   */
+  const deepLinkFolder = searchParams.get("path")
+  const deepLinkFile = searchParams.get("file")
+  const deepLinkDone = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedId || deepLinkFolder === null) return
+    if (rootFiles.length === 0) return
+
+    // Ровно один раз на ссылку. Дерево перечитывается по таймеру, и без этой
+    // отметки очередное чтение возвращало бы человека в папку из адреса, откуда
+    // он уже ушёл, — пока адрес не успел очиститься.
+    const token = `${selectedId}\u0000${deepLinkFolder}\u0000${deepLinkFile ?? ""}`
+    if (deepLinkDone.current === token) return
+    deepLinkDone.current = token
+
+    const nodes = resolveFolderPathByName(rootFiles, deepLinkFolder)
+    setPath(nodes)
+    setRevealPath(nodes)
+
+    const here = nodes.length ? (nodes[nodes.length - 1].children ?? []) : rootFiles
+    const target = deepLinkFile
+      ? (here.find((f) => f.name === deepLinkFile) ??
+        here.find((f) => f.name.toLowerCase() === deepLinkFile.toLowerCase()) ??
+        null)
+      : null
+    setSelection(target ? [target] : [])
+
+    router.replace(buildUrl(selectedId, projectTab), { scroll: false })
+  }, [
+    selectedId,
+    rootFiles,
+    deepLinkFolder,
+    deepLinkFile,
+    router,
+    buildUrl,
+    projectTab,
+  ])
 
   useEffect(() => {
     if (!selectedId || !driveAvailable) return
@@ -1462,6 +1529,7 @@ export function WorkspaceProvider({
     openFolder,
     goToCrumb,
     goToPath,
+    revealPath,
     selection,
     selectedFile,
     isSelected,

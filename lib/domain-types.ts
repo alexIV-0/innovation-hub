@@ -63,7 +63,7 @@ export type ProjectRecord = {
    * Почему проект стоит. NULL — остановил человек; иначе биллинг, и тумблер
    * обратно не включится, пока платить нечем (lib/billing/admission.ts).
    */
-  pausedReason: "no-funds" | "trial-over" | null
+  pausedReason: "no-funds" | "trial-over" | "no-vendor-key" | null
   /** Soft-deleted into project trash; purged after retention. */
   deletedAt: Date | null
   /** Optional client grouping (UI hierarchy; not part of R2 keys). */

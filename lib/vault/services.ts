@@ -71,6 +71,8 @@ type AccountRow = {
   status: VendorStatus
   createdAt: string
   updatedAt: string
+  baseUrl: string | null
+  keyTtlSec: number | null
   secretVersion: number | null
   secretHint: string | null
   secretCreatedAt: string | null
@@ -132,6 +134,8 @@ const SERVICE_FIELDS = `
              'status', a.status,
              'createdAt', a.created_at,
              'updatedAt', a.updated_at,
+             'baseUrl', a.base_url,
+             'keyTtlSec', a.key_ttl_sec,
              'secretVersion', live.version,
              'secretHint', live.hint,
              'secretCreatedAt', live.created_at,
@@ -180,6 +184,8 @@ function toAccount(row: AccountRow): VendorAccount {
     status: row.status,
     createdAt: new Date(row.createdAt),
     updatedAt: new Date(row.updatedAt),
+    baseUrl: row.baseUrl,
+    keyTtlSec: row.keyTtlSec,
     secret:
       row.secretVersion == null
         ? null
@@ -265,7 +271,12 @@ export type CreateServiceInput = {
    * законный случай для своего сервиса, поднятого рядом, которому авторизация
    * не нужна вовсе.
    */
-  account: { label: string; fields: SecretFields } | null
+  account: {
+    label: string
+    fields: SecretFields
+    /** Срок копии этого ключа. `null` — как у сервиса. */
+    keyTtlSec?: number | null
+  } | null
   createdBy: string
 }
 
@@ -317,9 +328,16 @@ export async function createService(
     if (ciphertext && input.account) {
       const accountId = randomUUID()
       await client.query(
-        `INSERT INTO vendor_accounts (id, service_id, label, created_by)
-         VALUES ($1, $2, $3, $4)`,
-        [accountId, id, input.account.label, input.createdBy],
+        `INSERT INTO vendor_accounts
+           (id, service_id, label, key_ttl_sec, created_by)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          accountId,
+          id,
+          input.account.label,
+          input.account.keyTtlSec ?? null,
+          input.createdBy,
+        ],
       )
       await client.query(
         `INSERT INTO vendor_account_secrets
@@ -393,6 +411,10 @@ export async function createAccount(input: {
   label: string
   ownerUserId: string | null
   fields: SecretFields
+  /** Адрес этой установки. `null` — как у сервиса. */
+  baseUrl?: string | null
+  /** Срок копии этого ключа. `null` — как у сервиса. */
+  keyTtlSec?: number | null
   actorId: string
 }): Promise<{ id: string } | { conflict: "label" } | null> {
   const service = await findService(input.serviceId)
@@ -406,11 +428,21 @@ export async function createAccount(input: {
     const id = randomUUID()
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO vendor_accounts
-         (id, service_id, label, owner_user_id, created_by)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (service_id, label) DO NOTHING
+         (id, service_id, label, owner_user_id, base_url, key_ttl_sec, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       -- Метка уникальна в пределах ВЛАДЕЛЬЦА: у двух клиентов может быть своя
+       -- «main», и занимать это имя первому пришедшему нельзя.
+       ON CONFLICT (service_id, COALESCE(owner_user_id, ''), label) DO NOTHING
        RETURNING id`,
-      [id, input.serviceId, input.label, input.ownerUserId, input.actorId],
+      [
+        id,
+        input.serviceId,
+        input.label,
+        input.ownerUserId,
+        input.baseUrl || null,
+        input.keyTtlSec ?? null,
+        input.actorId,
+      ],
     )
     // Ноль строк — метка занята. По ней ссылается поле проекта, и вторая такая
     // же сделала бы ссылку двусмысленной.
@@ -430,7 +462,13 @@ export async function createAccount(input: {
 /** Пауза, отзыв и переименование учётки. Секрет сюда не входит — он ротацией. */
 export async function updateAccount(
   id: string,
-  patch: { label?: string; status?: VendorStatus; ownerUserId?: string | null },
+  patch: {
+    label?: string
+    status?: VendorStatus
+    ownerUserId?: string | null
+    baseUrl?: string | null
+    keyTtlSec?: number | null
+  },
 ): Promise<boolean> {
   const sets: string[] = []
   const params: unknown[] = [id]
@@ -442,6 +480,8 @@ export async function updateAccount(
   if (patch.label != null) put("label", patch.label)
   if (patch.status != null) put("status", patch.status)
   if (patch.ownerUserId !== undefined) put("owner_user_id", patch.ownerUserId)
+  if (patch.baseUrl !== undefined) put("base_url", patch.baseUrl)
+  if (patch.keyTtlSec !== undefined) put("key_ttl_sec", patch.keyTtlSec)
   if (sets.length === 0) return false
 
   const result = await query(
@@ -560,6 +600,59 @@ export async function addPrice(input: {
       input.actorId,
     ],
   )
+}
+
+/**
+ * Удаление учётки и сервиса — насовсем, а не отзывом.
+ *
+ * Отзыв оставляет строку, потому что на неё ссылается расход: `vendor_usage`
+ * держит `service_id` и `account_id` через `ON DELETE SET NULL`, и снеси мы
+ * строку — движения денег остались бы без адресата. Отчёт «сколько мы
+ * потратили у кого» ровно на этих ссылках и держится.
+ *
+ * Но если расхода по ней НЕТ, терять нечего. А случай этот самый частый:
+ * ошиблись в ключе или в слаге, отозвали, и хочется убрать с глаз — тем более
+ * что слаг уникален и до удаления остаётся занятым навсегда.
+ *
+ * Отсюда правило: **удаляем, если по ней ничего не потрачено; иначе только
+ * отзыв.** Проверка в базе, а не в интерфейсе: экран может отстать от жизни на
+ * те секунды, за которые придёт отчёт о расходе.
+ */
+
+export type PurgeResult = { ok: true } | { ok: false; reason: "not-found" | "has-usage" }
+
+export async function deleteAccount(accountId: string): Promise<PurgeResult> {
+  const used = await query(
+    `SELECT 1 FROM vendor_usage WHERE account_id = $1 LIMIT 1`,
+    [accountId],
+  )
+  if ((used.rowCount ?? 0) > 0) return { ok: false, reason: "has-usage" }
+
+  // Секреты уедут каскадом: они принадлежат учётке и без неё не значат ничего.
+  const result = await query(`DELETE FROM vendor_accounts WHERE id = $1`, [accountId])
+  if ((result.rowCount ?? 0) === 0) return { ok: false, reason: "not-found" }
+  await bumpVaultRevision()
+  return { ok: true }
+}
+
+/**
+ * Удалить сервис вместе с его учётками, секретами и прайсом.
+ *
+ * Проверяем расход по СЕРВИСУ, а не по учёткам: `vendor_usage.service_id`
+ * заполнен и тогда, когда учётку уже удалили, и упусти мы его — осиротела бы
+ * как раз та строка, ради которой всё и затевалось.
+ */
+export async function deleteService(serviceId: string): Promise<PurgeResult> {
+  const used = await query(
+    `SELECT 1 FROM vendor_usage WHERE service_id = $1 LIMIT 1`,
+    [serviceId],
+  )
+  if ((used.rowCount ?? 0) > 0) return { ok: false, reason: "has-usage" }
+
+  const result = await query(`DELETE FROM vendor_services WHERE id = $1`, [serviceId])
+  if ((result.rowCount ?? 0) === 0) return { ok: false, reason: "not-found" }
+  await bumpVaultRevision()
+  return { ok: true }
 }
 
 // ─── Учётки глазами их владельца (7.1) ───────────────────────────────────────
@@ -730,8 +823,25 @@ export type ServiceEndpoint = {
   slug: string
   /** Пусто — адрес знает сама нода (О5). */
   baseUrl: string
-  /** Какая учётка выбрана для этого запроса. `null` — ни одной не подошло. */
-  account: string | null
+  /**
+   * Учётки, доступные машине по этому сервису: все НАШИ плюс учётка владельца
+   * задачи, если задача названа. Чужие клиентские сюда не попадают никогда.
+   *
+   * Список, а не одна выбранная: без него нельзя настроить флоу — прогнать
+   * локально тестовым ключом и отправить в работу основным. Какую взять,
+   * решает метка в настройках проекта.
+   */
+  accounts: {
+    label: string
+    /**
+     * Адрес ЭТОЙ установки. У вендора с одним API совпадает с сервисным; у
+     * своих, поднятых на разных машинах, различается — и звать надо именно его.
+     */
+    baseUrl: string
+    /** Чей ключ. При совпадении меток нода берёт `client`: задача его. */
+    owner: "platform" | "client"
+    hasSecret: boolean
+  }[]
   /**
    * Из чего состоит секрет этого сервиса.
    *
@@ -742,12 +852,6 @@ export type ServiceEndpoint = {
    * же новом вендоре.
    */
   secretFields: SecretFieldSpec[]
-  /**
-   * Есть ли у сервиса ключ. `false` — законное состояние, а не поломка: свой
-   * сервис, поднятый рядом, может не требовать авторизации. Ноде это надо
-   * знать явно, иначе отсутствие ключа она примет за сбой выдачи.
-   */
-  hasSecret: boolean
 }
 
 export type KeyIssue = {
@@ -756,11 +860,6 @@ export type KeyIssue = {
   fresh: FreshKey[]
   /** Слаги, которых нет, они на паузе, отозваны или помечены `proxy`. */
   unavailable: string[]
-  /**
-   * Платформенных учёток несколько, а метка не названа. Не ошибка вызова, но и
-   * не повод выбрать за ноду: `main` вместо `test` заметили бы по счёту.
-   */
-  ambiguous: string[]
   /** Адрес и наличие ключа по каждому доступному сервису — в любом случае. */
   services: ServiceEndpoint[]
   revision: number
@@ -818,21 +917,12 @@ export async function issueKeysForMachine(input: {
   slugs: string[]
   /** Что уже лежит в сейфе машины: слаг → учётка и её версия. */
   known: Record<string, { account: string; version: number }>
-  /** Метка, названная нодой явно: слаг → учётка. */
-  accounts?: Record<string, string>
   /** Владелец задачи, под которую просят ключи. */
   ownerUserId?: string | null
 }): Promise<KeyIssue> {
   const revision = await readVaultRevision()
   if (input.slugs.length === 0) {
-    return {
-      issued: [],
-      fresh: [],
-      unavailable: [],
-      ambiguous: [],
-      services: [],
-      revision,
-    }
+    return { issued: [], fresh: [], unavailable: [], services: [], revision }
   }
 
   const result = await query<{
@@ -840,6 +930,7 @@ export async function issueKeysForMachine(input: {
     status: VendorStatus
     delivery: VendorDelivery
     baseUrl: string
+    accountBaseUrl: string
     keyTtlSec: number
     secretFields: SecretFieldSpec[] | null
     accountId: string | null
@@ -852,7 +943,9 @@ export async function issueKeysForMachine(input: {
             s.status,
             s.delivery,
             s.base_url      AS "baseUrl",
-            s.key_ttl_sec   AS "keyTtlSec",
+            -- Срок учётки главнее сервисного: у клиентского ключа он может
+            -- быть короче, и общий по сервису это бы затёр.
+            COALESCE(a.key_ttl_sec, s.key_ttl_sec) AS "keyTtlSec",
             s.secret_fields AS "secretFields",
             a.id            AS "accountId",
             a.label,
@@ -881,32 +974,46 @@ export async function issueKeysForMachine(input: {
   const issued: IssuedKey[] = []
   const fresh: FreshKey[] = []
   const services: ServiceEndpoint[] = []
-  const ambiguous: string[] = []
 
   for (const [slug, rows] of bySlug) {
     const first = rows[0]!
     const live = rows.filter((row) => row.accountId != null)
 
-    const wanted = input.accounts?.[slug]
-    const owned = input.ownerUserId
-      ? live.find((row) => row.ownerUserId === input.ownerUserId)
-      : undefined
-    const platform = live.filter((row) => row.ownerUserId == null)
-
-    const picked = wanted
-      ? live.find((row) => row.label === wanted)
-      : (owned ?? (platform.length === 1 ? platform[0] : undefined))
-
-    // Метка названа, но такой живой учётки нет — это не двусмысленность, а
-    // отсутствие: сервис уедет в `unavailable` ниже вместе с бесключевыми.
-    if (!picked && wanted) continue
-    if (!picked && platform.length > 1) ambiguous.push(slug)
+    /**
+     * Что уезжает на машину по этому сервису:
+     *
+     * - **все НАШИ учётки.** Иначе не собрать флоу: разработчик плагина для
+     *   11labs должен уметь прогнать локально тестовым ключом, а в работу
+     *   отправить основным, и переключение это происходит в настройках проекта,
+     *   а не заведением новой машины;
+     * - **учётка ВЛАДЕЛЬЦА задачи**, если задача названа. Его ключ — его
+     *   расход, и работать он должен именно им.
+     *
+     * Чужие клиентские не уезжают никогда. Правило «выдаём только нужное» (С4)
+     * ограничивает именно это: одна скомпрометированная машина не должна
+     * означать утечку ключей всех клиентов. Наши же ключи на машине и так
+     * лежат — вопрос лишь в том, один или все по запрошенному сервису, и
+     * разница в риске здесь несопоставима с ценой неработающей отладки.
+     */
+    const mine = live.filter((row) => row.ownerUserId == null)
+    const owners = input.ownerUserId
+      ? live.filter((row) => row.ownerUserId === input.ownerUserId)
+      : []
+    const grant = [...mine, ...owners]
 
     services.push({
       slug,
       baseUrl: first.baseUrl,
-      account: picked?.label ?? null,
-      hasSecret: picked?.version != null && picked?.ciphertext != null,
+      accounts: grant.map((row) => ({
+        label: row.label!,
+        // Адрес именно этой установки. Совпадает с сервисным у вендоров с
+        // одним публичным API и различается у своих, поднятых по-разному.
+        baseUrl: row.accountBaseUrl,
+        // Чей ключ. При совпадении меток у нашей и клиентской нода берёт
+        // клиентскую: задача его, расход его.
+        owner: row.ownerUserId == null ? ("platform" as const) : ("client" as const),
+        hasSecret: row.version != null && row.ciphertext != null,
+      })),
       // Пустой массив в базе означает «состав по умолчанию»: разворачиваем его
       // здесь, чтобы машине не пришлось знать про это соглашение.
       secretFields:
@@ -915,23 +1022,25 @@ export async function issueKeysForMachine(input: {
           : DEFAULT_SECRET_FIELDS,
     })
 
-    if (!picked || picked.version == null || picked.ciphertext == null) continue
+    for (const row of grant) {
+      if (row.version == null || row.ciphertext == null) continue
 
-    // Свежесть — по паре «учётка + версия». Одной версии мало: у разных учёток
-    // нумерация своя, и `v3` у `main` совпал бы с `v3` у `test`.
-    const cached = input.known[slug]
-    if (cached && cached.account === picked.label && cached.version === picked.version) {
-      fresh.push({ slug, account: picked.label! })
-      continue
+      // Свежесть — по паре «учётка + версия». Одной версии мало: у разных
+      // учёток нумерация своя, и `v3` у `main` совпал бы с `v3` у `test`.
+      const cached = input.known[`${slug}/${row.label}`] ?? input.known[slug]
+      if (cached && cached.account === row.label && cached.version === row.version) {
+        fresh.push({ slug, account: row.label! })
+        continue
+      }
+
+      issued.push({
+        slug,
+        account: row.label!,
+        version: row.version,
+        fields: decryptFields(row.ciphertext),
+        ttlSec: row.keyTtlSec,
+      })
     }
-
-    issued.push({
-      slug,
-      account: picked.label!,
-      version: picked.version,
-      fields: decryptFields(picked.ciphertext),
-      ttlSec: first.keyTtlSec,
-    })
   }
 
   // Недоступные считаем по каталогу, а не по «не выдали ключ»: сервис без
@@ -942,5 +1051,5 @@ export async function issueKeysForMachine(input: {
     (slug) => !services.some((entry) => entry.slug === slug),
   )
 
-  return { issued, fresh, unavailable, ambiguous, services, revision }
+  return { issued, fresh, unavailable, services, revision }
 }

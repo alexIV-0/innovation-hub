@@ -1,7 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireStorageApi } from "@/lib/storage/auth"
-import { handleVendorKeys, handleVendorUsage } from "@/lib/vault/endpoint"
-import { vendorKeysSchema, vendorUsageSchema } from "@/lib/vault/schemas"
+import {
+  handleVendorIncident,
+  handleVendorKeys,
+  handleVendorUsage,
+} from "@/lib/vault/endpoint"
+import {
+  vendorIncidentSchema,
+  vendorKeysSchema,
+  vendorUsageSchema,
+} from "@/lib/vault/schemas"
 
 export const runtime = "nodejs"
 
@@ -17,6 +25,7 @@ export const runtime = "nodejs"
 const HANDLERS = {
   keys: { schema: vendorKeysSchema, run: handleVendorKeys },
   usage: { schema: vendorUsageSchema, run: handleVendorUsage },
+  incident: { schema: vendorIncidentSchema, run: handleVendorIncident },
 } as const
 
 type Action = keyof typeof HANDLERS

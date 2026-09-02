@@ -17,6 +17,7 @@ import {
 } from "@/lib/account-schemas"
 import type { UserRole } from "@/lib/domain-types"
 import { avatarInitials, useI18n } from "@/components/account/i18n"
+import { ProcessingIndicator } from "@/components/account/processing-indicator"
 
 export type ProfileUser = {
   id: string
@@ -145,12 +146,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
           <span className="text-[#4a5060]"> / </span>
           <span className="text-[#eef1f6]">{t.profileTitle}</span>
         </div>
-        <a
-          href="/"
-          className="flex items-center gap-1 text-[13px] text-[#c3c8d2] hover:text-[#eef1f6]"
-        >
-          {t.viewSite}
-        </a>
+        <ProcessingIndicator />
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-8 md:px-6 md:py-8">

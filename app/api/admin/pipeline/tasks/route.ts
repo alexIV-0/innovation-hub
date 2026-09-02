@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireAdminApi } from "@/lib/admin-auth"
+import { restoreTaskSource } from "@/lib/pipeline/quarantine"
 import {
   cancelPipelineTask,
   countPipelineTasksByStatus,
@@ -59,6 +60,41 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       { message: "Task not found or already failed." },
       { status: 404 },
+    )
+  }
+
+  return NextResponse.json(await queueSnapshot())
+}
+
+/**
+ * Вернуть исходник упавшей задачи из папки ошибок обратно в IN.
+ *
+ * Строку задачи не трогаем — она остаётся упавшей, это история. Новую заведёт
+ * событийная линия: перенос в IN журналируется как `move` с ключом внутри IN, и
+ * сканер подберёт его на ближайшем тике. Обход бы не помог, для него этот ключ
+ * «известен».
+ */
+export async function POST(request: NextRequest) {
+  const auth = await requireAdminApi(request, "pipeline.operate")
+  if (auth instanceof NextResponse) return auth
+
+  const body = await request.json().catch(() => null)
+  const parsed = taskIdSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ message: "Invalid input." }, { status: 400 })
+  }
+
+  const restored = await restoreTaskSource(parsed.data.taskId)
+  if (!restored.ok) {
+    const message =
+      restored.reason === "no-source"
+        ? "Source file is gone — nothing to move back."
+        : restored.reason === "not-quarantined"
+          ? "Source is already in IN."
+          : "Task not found."
+    return NextResponse.json(
+      { message },
+      { status: restored.reason === "no-task" ? 404 : 409 },
     )
   }
 

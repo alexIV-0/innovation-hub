@@ -115,9 +115,12 @@ export const dict = {
     allProjects: "Все проекты",
     trialBannerRemaining: "Тестовый период: осталось ≈ {runtime}",
     trialBannerNoFunds: "Средства закончились. Пополните баланс, чтобы продолжить",
+    trialBannerNoVendorKey:
+      "Обработка остановлена: нет ключа от внешнего сервиса. Подключите его в разделе «Мои ключи»",
     trialBannerOver: "Тестовый период завершён. Пополните баланс, чтобы продолжить",
     trialBannerDismiss: "Скрыть",
     projectPausedNoFunds: "Нет средств",
+    projectPausedNoVendorKey: "Нет ключа внешнего сервиса",
     projectPausedTrialOver: "Период завершён",
     projectTrialBadge: "Пробный",
     spendTitle: "Баланс и расход",
@@ -586,9 +589,10 @@ export const dict = {
     servicesLoadError: "Не удалось загрузить сервисы",
     servicesSaveError: "Не удалось сохранить",
     servicesFieldName: "Название",
-    servicesFieldSlug: "Слаг",
-    servicesFieldSlugHint: "По нему машина просит ключ. Латиница, цифры и дефис; менять потом нельзя.",
-    servicesSlugAuto: "Слаг: {slug} — по нему машина просит ключ, и позже его не поменять.",
+    servicesFieldSlug: "Имя, которое ждёт плагин",
+    servicesFieldSlugHint:
+      "Под этим именем сервис знает программа: по нему машина просит ключ, и оно же попадает в настройки чужих проектов. Заполняется само из названия. Латиница, цифры и дефис; менять потом нельзя.",
+    servicesSlugAuto: "Плагин будет искать сервис по имени {slug} — позже его не поменять.",
     servicesMore: "Дополнительно",
     servicesMoreHint:
       "Здесь всё имеет верный ответ по умолчанию: предоплаченный кошелёк, ключ едет на машину, копия живёт 6 часов, потолка нет. Открывать стоит, только если у этого вендора иначе.",
@@ -604,10 +608,15 @@ export const dict = {
     servicesFieldCurrencyHint: "Валюта сервиса, а не кошелька: кошелёк рублёвый всегда.",
     servicesFieldModel: "Как платим вендору",
     servicesFieldDelivery: "Как ключ попадает к исполнителю",
-    servicesFieldTtl: "Срок копии на машине, часов",
-    servicesFieldTtlHint: "Копия без срока — это вечная копия, и тогда отзыв ничего не отзывает.",
+    servicesFieldTtl: "Сколько живёт копия на машине, часов",
+    servicesFieldTtlHint:
+      "Через это время машина спросит ключ заново. Копия без срока — вечная, и тогда отзыв ничего не отзывает. Клиентскому ключу срок разумно ставить короче нашего.",
     servicesFieldCap: "Дневной потолок расхода, ₽",
     servicesFieldCapHint: "0 — без потолка. Страховка от зацикленного графа и от утёкшего ключа.",
+    optionsAccountPick: "Выберите ключ",
+    optionsAccountManage: "Управлять ключами",
+    optionsAccountNone: "Своих ключей нет — подключить",
+    optionsAccountMissing: "ключ отключён",
     vendorKeysNav: "Мои ключи",
     vendorKeysTitle: "Мои ключи",
     vendorKeysSub:
@@ -631,6 +640,32 @@ export const dict = {
     vendorKeysRevoked: "Ключ отключён",
     vendorKeysLoadError: "Не удалось загрузить ключи",
     vendorKeysSaveError: "Не удалось сохранить",
+    servicesDelete: "Удалить",
+    servicesDeleted: "Сервис удалён",
+    servicesDeleteConfirm:
+      "Удалить сервис насовсем вместе с учётками, ключами и прайсом? Имя освободится, и завести его заново можно будет с нуля.",
+    servicesAccountDeleted: "Учётка удалена",
+    servicesAccountDeleteConfirm: "Удалить учётку насовсем вместе с её ключами?",
+    servicesHasUsage:
+      "Удалить нельзя: по нему уже записан расход. Иначе в отчёте «сколько потратили у кого» появились бы движения без адресата. Отозванным он остаётся.",
+    servicesSlugEdit: "изменить",
+    servicesStepService: "Сервис",
+    servicesStepKey: "Ключ",
+    servicesStepNext: "Дальше",
+    servicesStepBack: "Назад",
+    servicesStepSkipKey: "Без ключа",
+    servicesStepKeyHint:
+      "Чем авторизоваться у этого сервиса. Свой сервис, поднятый рядом, может не требовать ничего — тогда «Без ключа»; ключ всегда можно добавить позже.",
+    servicesLabelHint:
+      "Как отличать этот ключ от других у того же сервиса: «main», «test», «ключ Иванова». Метка уезжает в настройки проекта — секрет туда не попадает.",
+    servicesKeyFields: "Ключ",
+    servicesKeyFieldAdd: "Ещё поле",
+    servicesKeyFieldsHint:
+      "Слева имя поля так, как его называет вендор, справа значение. У большинства одно поле apiKey; если вендор просит пару — добавьте вторую строку, например client_id и client_secret. По этим именам сайт потом спрашивает ключи у вас и у клиентов.",
+    servicesAccountBaseUrl: "Адрес этой установки",
+    servicesAccountBaseUrlSame: "как у сервиса",
+    servicesAccountBaseUrlHint:
+      "Пусто — берётся адрес сервиса. Заполняйте, когда за одним сервисом стоит несколько установок: два своих ComfyUI на разных машинах — это один сервис и две учётки с разными адресами.",
     servicesAccounts: "Учётки",
     servicesAccountsEmpty:
       "Учёток нет. Сервису без авторизации они и не нужны; если ключ нужен — заведите учётку.",
@@ -659,7 +694,7 @@ export const dict = {
       "Записывается шифрованным. Показать его обратно нельзя — только заменить. Можно оставить пустым: свой сервис, поднятый рядом, может не требовать авторизации.",
     servicesCreate: "Завести",
     servicesCreated: "Сервис заведён",
-    servicesSlugTaken: "Такой слаг уже занят",
+    servicesSlugTaken: "Сервис с таким именем для плагина уже есть",
     servicesVaultError: "Сейф не настроен: нет VAULT_MASTER_KEY",
     servicesModelPrepaid: "Предоплаченный кошелёк",
     servicesModelPostpaid: "Постоплата по счёту",
@@ -1227,6 +1262,8 @@ export const dict = {
       "Слева — список проектов. Откройте любой, чтобы увидеть файлы, описание и чат.",
     paneInSub: "Сюда кладите исходные файлы",
     paneOutSub: "Здесь готовые результаты",
+    paneFolderSub: "Папка проекта",
+    paneFolderPick: "Показать папку",
     driveUnavailable: "Хранилище недоступно для этого проекта",
     driveEmpty: "Папок пока нет — загрузите файлы или дождитесь синхронизации",
 
@@ -1251,6 +1288,17 @@ export const dict = {
     projectSharedWith: "Проект расшарен: {users}",
     userHasNoProjects: "У пользователя нет проектов",
     newProjectName: "Новый проект {number}",
+
+    // всплывающее окно обработки
+    processingTitle: "Обработка",
+    processingHide: "Свернуть",
+    processingShow: "Показать обработку",
+    processingQueued: "в очереди",
+    processingRunning: "в работе",
+    processingDone: "готово",
+    processingFailed: "ошибка",
+    processingFailedHint: "Файл отложен — мы разберёмся и вернём его в работу.",
+    processingActive: "в работе: {count}",
   },
   en: {
     langName: "EN",
@@ -1336,9 +1384,12 @@ export const dict = {
     allProjects: "All projects",
     trialBannerRemaining: "Trial period: ≈ {runtime} left",
     trialBannerNoFunds: "Out of funds. Top up the balance to continue",
+    trialBannerNoVendorKey:
+      "Processing stopped: an external service key is missing. Connect it under «My keys»",
     trialBannerOver: "Trial period is over. Top up the balance to continue",
     trialBannerDismiss: "Dismiss",
     projectPausedNoFunds: "No funds",
+    projectPausedNoVendorKey: "External service key missing",
     projectPausedTrialOver: "Trial over",
     projectTrialBadge: "Trial",
     spendTitle: "Balance and spending",
@@ -1806,8 +1857,8 @@ export const dict = {
     servicesLoadError: "Failed to load services",
     servicesSaveError: "Failed to save",
     servicesFieldName: "Name",
-    servicesFieldSlug: "Slug",
-    servicesSlugAuto: "Slug: {slug} — machines ask for the key by it, and it cannot be changed later.",
+    servicesFieldSlug: "Name the plugin expects",
+    servicesSlugAuto: "The plugin will look for the service by the name {slug} — it cannot be changed later.",
     servicesMore: "Advanced",
     servicesMoreHint:
       "Everything here has a correct default: prepaid wallet, key travels to the machine, the copy lives 6 hours, no cap. Worth opening only when this vendor differs.",
@@ -1828,6 +1879,10 @@ export const dict = {
     servicesFieldTtlHint: "A copy without a lifetime is a permanent copy, and then revocation revokes nothing.",
     servicesFieldCap: "Daily spending cap, ₽",
     servicesFieldCapHint: "0 — no cap. Insurance against a looping graph and against a leaked key.",
+    optionsAccountPick: "Pick a key",
+    optionsAccountManage: "Manage keys",
+    optionsAccountNone: "No keys of your own — connect one",
+    optionsAccountMissing: "key disconnected",
     vendorKeysNav: "My keys",
     vendorKeysTitle: "My keys",
     vendorKeysSub:
@@ -1851,6 +1906,32 @@ export const dict = {
     vendorKeysRevoked: "Key disconnected",
     vendorKeysLoadError: "Failed to load keys",
     vendorKeysSaveError: "Failed to save",
+    servicesDelete: "Delete",
+    servicesDeleted: "Service deleted",
+    servicesDeleteConfirm:
+      "Delete the service for good, together with its accounts, keys and prices? The slug is freed and can be used again from scratch.",
+    servicesAccountDeleted: "Account deleted",
+    servicesAccountDeleteConfirm: "Delete the account for good, together with its keys?",
+    servicesHasUsage:
+      "Cannot delete: spending has already been recorded against it. Otherwise the «who we spent with» report would show movements with no addressee. It stays revoked.",
+    servicesSlugEdit: "change",
+    servicesStepService: "Service",
+    servicesStepKey: "Key",
+    servicesStepNext: "Next",
+    servicesStepBack: "Back",
+    servicesStepSkipKey: "No key",
+    servicesStepKeyHint:
+      "How to authorize with this service. A service of your own running nearby may need nothing — then choose «No key»; a key can always be added later.",
+    servicesLabelHint:
+      "How to tell this key apart from others on the same service: «main», «test», «Ivanov's key». The label travels into project settings — the secret never does.",
+    servicesKeyFields: "Key",
+    servicesKeyFieldAdd: "Another field",
+    servicesKeyFieldsHint:
+      "On the left the field name as the vendor calls it, on the right the value. Most have a single apiKey; if a vendor asks for a pair, add a second row, e.g. client_id and client_secret. The site asks for keys by these names later, from you and from clients.",
+    servicesAccountBaseUrl: "Address of this installation",
+    servicesAccountBaseUrlSame: "same as the service",
+    servicesAccountBaseUrlHint:
+      "Empty — the service address is used. Fill it when one service has several installations: two ComfyUI boxes of your own are one service and two accounts with different addresses.",
     servicesAccounts: "Accounts",
     servicesAccountsEmpty:
       "No accounts. A service without authorization needs none; add one if a key is required.",
@@ -1879,7 +1960,7 @@ export const dict = {
       "Stored encrypted. It cannot be shown back — only replaced. May be left empty: a service of your own, running nearby, may need no authorization at all.",
     servicesCreate: "Add",
     servicesCreated: "Service added",
-    servicesSlugTaken: "This slug is already taken",
+    servicesSlugTaken: "A service with that plugin name already exists",
     servicesVaultError: "The vault is not configured: VAULT_MASTER_KEY is missing",
     servicesModelPrepaid: "Prepaid balance",
     servicesModelPostpaid: "Postpaid invoice",
@@ -2445,6 +2526,8 @@ export const dict = {
       "The project list is on the left. Open any of them to see files, description and chat.",
     paneInSub: "Drop your source files here",
     paneOutSub: "Pick up finished results here",
+    paneFolderSub: "Project folder",
+    paneFolderPick: "Show folder",
     driveUnavailable: "Storage is unavailable for this project",
     driveEmpty: "No folders yet — upload files or wait for sync",
 
@@ -2470,6 +2553,17 @@ export const dict = {
     projectSharedWith: "Shared with: {users}",
     userHasNoProjects: "This user has no projects",
     newProjectName: "New project {number}",
+
+    // processing popover
+    processingTitle: "Processing",
+    processingHide: "Collapse",
+    processingShow: "Show processing",
+    processingQueued: "queued",
+    processingRunning: "running",
+    processingDone: "done",
+    processingFailed: "error",
+    processingFailedHint: "The file is set aside — we will look into it and put it back.",
+    processingActive: "running: {count}",
   },
 } as const
 

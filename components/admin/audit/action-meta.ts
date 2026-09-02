@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   FolderTree,
   Gift,
+  TriangleAlert,
   KeyRound,
   Monitor,
   Plug,
@@ -162,6 +163,13 @@ export const ACTION_META: Record<
   "service.account_updated": {
     labelKey: "auditServiceAccountUpdated",
     icon: Plug,
+    tone: "neutral",
+  },
+  // Не «danger»: инцидент — это сообщение о поломке, а не опасное действие
+  // человека. Красным он бы соревновался за внимание с выдачей ключей.
+  "service.incident": {
+    labelKey: "auditServiceIncident",
+    icon: TriangleAlert,
     tone: "neutral",
   },
   // Оба — «danger»: отзыв забирает у человека деньги, сброс их раздаёт. Тихим

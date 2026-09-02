@@ -40,26 +40,29 @@ export type PipelineTask = {
   /**
    * Шаги в порядке processingQueue со наложенным прогрессом.
    *
-   * Пусто у завершённых: taskDone заменяет payload итогом и удаляет строки
-   * прогресса, поэтому у done цепочку показывать уже нечем — как и в живом виде
-   * лог-окна, которое про работу «прямо сейчас».
+   * Пусто у `done`: taskDone заменяет payload итогом и удаляет строки прогресса.
+   * А вот у `failed` они есть — failTask их намеренно не чистит, и это
+   * единственный способ увидеть, на каком шаге всё встало.
    */
   steps: TaskStep[]
-  /** Машина, взявшая задачу; null — ещё никто не взял. */
+  /** Машина, на которой задача была последний раз; null — её никто не брал. */
   machineName: string | null
   claimedAt: string | null
   leaseExpiresAt: string | null
   attempts: number
   error: string | null
+  /** Когда исходник унесли из IN в папку ошибок; null — он всё ещё в IN. */
+  quarantinedAt: string | null
   createdAt: string
 }
 
 type TaskRow = Omit<
   PipelineTask,
-  "claimedAt" | "leaseExpiresAt" | "createdAt" | "steps"
+  "claimedAt" | "leaseExpiresAt" | "createdAt" | "quarantinedAt" | "steps"
 > & {
   claimedAt: Date | null
   leaseExpiresAt: Date | null
+  quarantinedAt: Date | null
   createdAt: Date
   /** Порядок шагов из payload.processingQueue. */
   stepIds: string[] | null
@@ -129,11 +132,15 @@ export async function listPipelineTasks(
             t.lease_expires_at AS "leaseExpiresAt",
             t.attempts,
             t.error,
+            t.quarantined_at AS "quarantinedAt",
             t.created_at AS "createdAt"
        FROM tasks t
        JOIN projects p ON p.id = t.project_id
        JOIN users u ON u.id = p.user_id
-       LEFT JOIN remote_computers c ON c.id = t.claimed_by
+       -- По last_machine_id, а не по claimed_by: аренда снимается на любом
+       -- терминальном переходе, и джойн по ней оставлял упавшую задачу без
+       -- машины. last_machine_id ставится при захвате и не чистится.
+       LEFT JOIN remote_computers c ON c.id = t.last_machine_id
       WHERE t.status = ANY($1)
       ORDER BY
         -- Живые задачи выше завершённых: в работе интересует то, что происходит.
@@ -149,10 +156,17 @@ export async function listPipelineTasks(
     [statuses, limit],
   )
 
-  // Прогресс — одним запросом на всю выборку, а не по задаче: строк там столько
-  // же, сколько живых шагов, и join на каждую задачу отдельно ничего не выиграет.
-  const liveIds = result.rows
-    .filter((r) => r.status === "claimed" || r.status === "running")
+  /**
+   * Прогресс — одним запросом на всю выборку, а не по задаче: строк там столько
+   * же, сколько шагов, и join на каждую задачу отдельно ничего не выиграет.
+   *
+   * Берём и упавшие. `taskDone` строки прогресса удаляет, `failTask` — нет, и
+   * это ровно то, что нужно для разбора: цепочка упавшей задачи показывает, на
+   * каком шаге всё встало и что он успел сказать. `queued` спрашивать незачем —
+   * по ней ещё никто не отчитывался.
+   */
+  const reportedIds = result.rows
+    .filter((r) => r.status !== "queued" && r.status !== "done")
     .map((r) => r.id)
 
   const progress = new Map<
@@ -160,7 +174,7 @@ export async function listPipelineTasks(
     Map<string, { status: TaskStepStatus; message: string | null; updatedAt: Date }>
   >()
 
-  if (liveIds.length > 0) {
+  if (reportedIds.length > 0) {
     const rows = await query<{
       taskId: string
       stepId: string
@@ -172,7 +186,7 @@ export async function listPipelineTasks(
               updated_at AS "updatedAt"
          FROM task_progress
         WHERE task_id = ANY($1)`,
-      [liveIds],
+      [reportedIds],
     )
     for (const row of rows.rows) {
       const byStep = progress.get(row.taskId) ?? new Map()
@@ -217,6 +231,7 @@ export async function listPipelineTasks(
       error: row.error,
       claimedAt: row.claimedAt?.toISOString() ?? null,
       leaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null,
+      quarantinedAt: row.quarantinedAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
     }
   })

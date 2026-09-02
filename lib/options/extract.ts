@@ -149,6 +149,10 @@ function readValue(
       // Обычная строка, но у ddm бывает и массив: программа в этом случае
       // берёт первый элемент (`DDMonly`), и расходиться с ней здесь незачем.
       return typeof cp.value === "string" ? cp.value : (stringList(cp.value)[0] ?? "")
+    case "vendorAccount":
+      // Метка учётки. Пусто — «не выбрана»; такой параметр покажем, но задача
+      // по нему не соберётся: гейт увидит, что учётки нет.
+      return typeof cp.value === "string" ? cp.value : ""
     default:
       // textedit — просто текст.
       return typeof cp.value === "string" ? cp.value : ""
@@ -216,6 +220,9 @@ export function readExposedOption(
     optionsOnly: cp.optionsOnly === true,
     allowDuplicates: cp.allowDuplicates === true,
     language: str(cp.language),
+    // Слаг сервиса берём только у своего контрола: у остальных поле `service` в
+    // controlProps означало бы что угодно, и подхватывать его вслепую нельзя.
+    service: control === "vendorAccount" ? (str(cp.service) ?? "") : null,
   }
 }
 

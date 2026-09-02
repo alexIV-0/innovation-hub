@@ -1364,8 +1364,8 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
       en: "Advance a step and extend the lease.",
     },
     description: {
-      ru: "Первый отчёт переводит задачу из claimed в running. Каждый отчёт продлевает аренду на 15 минут, поэтому долгий шаг обязан отчитываться — иначе задачу вернут в очередь как брошенную. Шаги самоочищаются: при завершении задачи строки прогресса удаляются.",
-      en: "The first report moves the task from claimed to running. Every report extends the lease by 15 minutes, so a long step must keep reporting — otherwise the task is returned to the queue as abandoned. Progress rows are self-cleaning: they are deleted when the task finishes.",
+      ru: "Первый отчёт переводит задачу из claimed в running. Каждый отчёт продлевает аренду на 15 минут, поэтому долгий шаг обязан отчитываться — иначе задачу вернут в очередь как брошенную. Строки прогресса удаляются при УСПЕШНОМ завершении (taskDone); у упавшей задачи они остаются — это единственное, по чему на сайте видно, на каком шаге всё встало. Отсюда уговор: перед taskFailed отчитайтесь по упавшему шагу status: \"error\" со своим message. taskFailed несёт один текст на всю задачу и не говорит, где именно сломалось.",
+      en: "The first report moves the task from claimed to running. Every report extends the lease by 15 minutes, so a long step must keep reporting — otherwise the task is returned to the queue as abandoned. Progress rows are deleted on SUCCESSFUL completion (taskDone); on a failed task they are kept — they are the only thing that shows the site which step broke. Hence the convention: before taskFailed, report the broken step with status: \"error\" and your own message. taskFailed carries one text for the whole task and does not say where it broke.",
     },
     props: [
       {
@@ -1447,8 +1447,8 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
     group: "queue",
     summary: { ru: "Задача упала.", en: "Task failed." },
     description: {
-      ru: "В отличие от taskDone, payload **сохраняется**: без него нельзя ни переретраить задачу, ни разобраться в причине.",
-      en: "Unlike taskDone, the payload is **kept**: without it the task can neither be retried nor investigated.",
+      ru: "В отличие от taskDone, payload **сохраняется**: без него нельзя ни переретраить задачу, ни разобраться в причине. Состояние терминальное — назад в очередь эта задача сама не вернётся. Сайт при этом уносит исходник из папки IN в папку ошибок проекта `Errors (дата)`: пока файл лежит в IN, он для конвейера невидим (обход берёт только элементы, по которым задачи не было), и его отсутствие в очереди нельзя объяснить, не заглянув в базу. Перед этим вызовом отчитайтесь по упавшему шагу через taskProgress со status: \"error\" — иначе на сайте не видно, где именно сломалось.",
+      en: "Unlike taskDone, the payload is **kept**: without it the task can neither be retried nor investigated. The state is terminal — this task will not return to the queue by itself. The site also moves the source out of IN into the project's `Errors (date)` folder: while the file sits in IN it is invisible to the pipeline (the sweep only takes elements that never had a task), and its absence from the queue cannot be explained without opening the database. Before this call, report the broken step via taskProgress with status: \"error\" — otherwise the site cannot show where it broke.",
     },
     props: [
       {
@@ -1597,13 +1597,18 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
         "В known передайте версии, которые уже лежат в локальном сейфе: совпало — " +
         "сервис попадёт в fresh, и ключ не поедет по сети. Копию храните " +
         "шифрованной и не дольше ttlSec. Сверяйте vaultRevision с тем, что " +
-        "приходит в ответе на heartbeat: разошлось — спросите ключи заново.",
+        "приходит в ответе на heartbeat: разошлось — спросите ключи заново. " +
+        "Приезжают ВСЕ наши учётки по запрошенным сервисам плюс, если назван " +
+        "taskId, учётка владельца задачи — чужие клиентские никогда. Какую взять, " +
+        "решает метка в настройках проекта.",
       en:
         "Ask BEFORE a task and only for the services it needs. Pass the versions " +
         "already in your local vault via known: on a match the service comes back " +
         "in fresh and no key travels. Store the copy encrypted and no longer than " +
         "ttlSec. Compare vaultRevision with the one returned by heartbeat: if they " +
-        "differ, ask for keys again.",
+        "differ, ask for keys again. You receive ALL our accounts for the requested " +
+        "services plus, when taskId is given, the task owner's own — never another " +
+        "client's. Which one to use is decided by the label in the project settings.",
     },
     props: [
       {
@@ -1621,28 +1626,15 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
         required: false,
         notes: {
           ru:
-            "Что лежит в локальном сейфе: { \"eleven-labs\": { account: \"main\", " +
-            "version: 7 } }. Пара, а не одна версия: нумерация у каждой учётки " +
-            "своя, и v3 у main совпал бы с v3 у test.",
+            "Что лежит в локальном сейфе. Ключ — \"слаг/метка\": " +
+            "{ \"eleven-labs/main\": { account: \"main\", version: 7 } }. По одному " +
+            "сервису учёток теперь несколько, и без метки в ключе вторая затёрла " +
+            "бы первую. Голый слаг тоже принимается — для одной учётки.",
           en:
-            "What the local vault holds: { \"eleven-labs\": { account: \"main\", " +
-            "version: 7 } }. A pair, not a bare version: each account numbers its " +
-            "own versions, so v3 of main would collide with v3 of test.",
-        },
-      },
-      {
-        name: "accounts",
-        type: "Record<string, string>",
-        required: false,
-        notes: {
-          ru:
-            "Метка учётки, если она известна из поля проекта: { \"eleven-labs\": " +
-            "\"test\" }. Не названа — сайт выберет по владельцу задачи либо по " +
-            "единственной платформенной.",
-          en:
-            "Account label when the project field names one: { \"eleven-labs\": " +
-            "\"test\" }. Omitted — the site picks by task owner, or the single " +
-            "platform account.",
+            "What the local vault holds. The key is \"slug/label\": " +
+            "{ \"eleven-labs/main\": { account: \"main\", version: 7 } }. A service " +
+            "now has several accounts, and without the label the second would " +
+            "overwrite the first. A bare slug is still accepted for a single one.",
         },
       },
       {
@@ -1661,28 +1653,29 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
     ],
     exampleProps: {
       services: ["eleven-labs"],
-      known: { "eleven-labs": { account: "main", version: 6 } },
+      known: { "eleven-labs/main": { account: "main", version: 6 } },
       taskId: "0f5c…",
     },
     exampleResponse: {
       keys: [
         {
           slug: "eleven-labs",
-          account: "main",
-          version: 7,
+          account: "test",
+          version: 2,
           fields: { apiKey: "sk_…" },
           ttlSec: 21600,
         },
       ],
-      fresh: [],
+      fresh: [{ slug: "eleven-labs", account: "main" }],
       unavailable: [],
-      ambiguous: [],
       services: [
         {
           slug: "eleven-labs",
-          baseUrl: "",
-          account: "main",
-          hasSecret: true,
+          baseUrl: "https://api.elevenlabs.io",
+          accounts: [
+            { label: "main", owner: "platform", hasSecret: true },
+            { label: "test", owner: "platform", hasSecret: true },
+          ],
           secretFields: [{ key: "apiKey", label: "", secret: true }],
         },
       ],
@@ -1772,6 +1765,110 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
       unknown: [],
       unpriced: [],
       noRate: [],
+    },
+  },
+  {
+    action: "vendorIncident",
+    group: "vault",
+    summary: {
+      ru: "Сбой в контуре ключей: код и слаг сервиса, не текст.",
+      en: "A failure in the key contour: a code and a service slug, not text.",
+    },
+    description: {
+      ru:
+        "Шлите, когда работа сорвалась из-за внешнего сервиса: ключ протух в " +
+        "момент вызова, вендор отказал, у клиента кончились деньги. Коды " +
+        "key-missing, key-rejected и owner-out-of-funds считаются блокирующими: " +
+        "другие машины тоже не справятся, поэтому сайт закроет задачу (если " +
+        "прислали taskId) и погасит проект (если прислали projectId). " +
+        "vendor-refused и quota-exceeded так не гасят: первое бывает разовым " +
+        "сбоем, второе проходит со сменой суток — по ним просто запись в журнал. " +
+        "Разбирайте ответ: taskClosed говорит, ждать ли повтора по этой задаче.",
+      en:
+        "Send this when work broke because of an external service: the key " +
+        "expired mid-call, the vendor refused, the client ran out of money. The " +
+        "codes key-missing, key-rejected and owner-out-of-funds count as " +
+        "blocking: other machines will fail too, so the site closes the task (if " +
+        "taskId is given) and pauses the project (if projectId is given). " +
+        "vendor-refused and quota-exceeded do not: the first can be a one-off, " +
+        "the second clears at midnight — those are journal entries only. Read the " +
+        "response: taskClosed tells you whether to expect a retry of this task.",
+    },
+    props: [
+      {
+        name: "code",
+        type: "string",
+        required: true,
+        notes: {
+          ru:
+            "key-missing | key-rejected | vendor-refused | owner-out-of-funds | " +
+            "quota-exceeded. Список закрытый: состояние проекта показываем и мы, " +
+            "и вы, и разбирать текст ради значка — гарантированное расхождение.",
+          en:
+            "key-missing | key-rejected | vendor-refused | owner-out-of-funds | " +
+            "quota-exceeded. A closed list: both sides render project state, and " +
+            "parsing free text for a badge is a guaranteed divergence.",
+        },
+      },
+      {
+        name: "service",
+        type: "string",
+        required: true,
+        notes: { ru: "Слаг сервиса.", en: "The service slug." },
+      },
+      {
+        name: "account",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Метка учётки, если ключ уже был получен.",
+          en: "The account label, when a key had already been issued.",
+        },
+      },
+      {
+        name: "taskId",
+        type: "uuid",
+        required: false,
+        notes: {
+          ru:
+            "Задача, на которой сорвалось. При блокирующем коде сайт закроет её " +
+            "и НЕ спишет попытку — причина не в машине.",
+          en:
+            "The task it broke on. On a blocking code the site closes it and does " +
+            "NOT spend an attempt — the machine is not at fault.",
+        },
+      },
+      {
+        name: "projectId",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Проект. При блокирующем коде встанет на паузу с причиной no-vendor-key.",
+          en: "The project. On a blocking code it is paused with reason no-vendor-key.",
+        },
+      },
+      {
+        name: "detail",
+        type: "string",
+        required: false,
+        notes: {
+          ru: "Ответ вендора одной строкой — для человека. Решения по нему не принимаются.",
+          en: "The vendor’s reply in one line, for a human. No decisions are made from it.",
+        },
+      },
+    ],
+    exampleProps: {
+      code: "key-rejected",
+      service: "eleven-labs",
+      account: "main",
+      taskId: "0f5c…",
+      projectId: "prj_…",
+    },
+    exampleResponse: {
+      recorded: true,
+      blocking: true,
+      taskClosed: true,
+      paused: true,
     },
   },
 ]

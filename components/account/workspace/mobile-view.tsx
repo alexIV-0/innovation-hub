@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Download,
   FileText,
@@ -54,11 +54,25 @@ export function MobileWorkspace() {
     createFolder,
     triggerUpload,
     uploading,
+    revealPath,
   } = useWorkspace()
 
   const [tab, setTab] = useState<MobileTab>("files")
   const [folderName, setFolderName] = useState<string | null>(null)
   const [path, setPath] = useState<DriveFile[]>([])
+
+  /**
+   * Переход «открыть файл» снаружи. Здесь, как и в простом режиме, общего пути
+   * нет: есть вкладка папки верхнего уровня и путь внутри неё. Первый узел
+   * цепочки задаёт вкладку, остальное — путь.
+   */
+  useEffect(() => {
+    if (!revealPath || revealPath.length === 0) return
+    const [head, ...rest] = revealPath
+    setTab("files")
+    setFolderName(head.name)
+    setPath(rest)
+  }, [revealPath])
 
   const folders = useMemo(() => {
     const all = rootFiles.filter((f) => f.isFolder)

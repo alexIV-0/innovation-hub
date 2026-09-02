@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import { keyLabel } from "../shared/editor-state"
 import { PreviewPane as SharedPreviewPane } from "../shared/preview-pane"
 import { TrackAudio } from "../shared/track-audio"
+import { videoNoticeText } from "../shared/use-task-folder"
 import { useVoice } from "./voice-context"
 
 /**
@@ -34,12 +35,8 @@ export function PreviewPane({ videoRef }: { videoRef: React.RefObject<HTMLVideoE
   return (
     <SharedPreviewPane
       videoRef={videoRef}
-      videoUrl={voice.videoUrl}
-      missing={
-        voice.doc.media.video
-          ? tf(t.srtPreviewMissing, { file: voice.doc.media.video })
-          : t.srtNoVideo
-      }
+      videoUrl={voice.video.kind === "ready" ? voice.video.url : null}
+      missing={videoNoticeText(t, voice.video)}
       muted={voice.mainMuted}
       durationMs={voice.durationMs}
       clock={voice.clock}

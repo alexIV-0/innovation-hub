@@ -105,6 +105,8 @@ async function inviteOne(input: {
   projectOwnerId: string
   actorUserId: string
   actorRole: ProjectAccessRole
+  /** Доступ у зовущего от админского тега, а не от владения или участия. */
+  actorViaCapability: boolean
   inviterName: string
   email: string
   role: ProjectMemberRole
@@ -153,7 +155,14 @@ async function inviteOne(input: {
     }
   }
 
-  if (user.id === input.actorUserId) {
+  // Админ из «Папок пользователей» распоряжается чужим проектом по тегу
+  // `projects.manage`, а не по участию: записи в project_members у него нет, и
+  // проект не появляется у него в «Расшаренных» — а значит недоступен и
+  // инструментам кабинета вроде редактора субтитров. Выдать доступ себе для
+  // него не бессмыслица, а единственный способ открыть проект как обычный
+  // участник, поэтому «у вас уже есть доступ» остаётся только владельцу и
+  // участникам, у которых этот доступ действительно есть.
+  if (user.id === input.actorUserId && !input.actorViaCapability) {
     return {
       email: input.email,
       ok: false,
@@ -334,6 +343,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         projectOwnerId: access.project.userId,
         actorUserId: auth.userId,
         actorRole: access.role,
+        actorViaCapability: access.viaCapability === true,
         inviterName,
         email,
         role: parsed.data.role,
@@ -416,7 +426,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       { status: 400 },
     )
   }
-  if (parsed.data.userId === auth.userId) {
+  // Себе роль не меняют — кроме админа, который пришёл сюда по тегу: свой
+  // доступ к чужому проекту он и так может переписать, сняв его и выдав заново
+  // (POST выше), так что запрет здесь ничего не защищал бы, а только заставлял
+  // ходить кругом.
+  if (parsed.data.userId === auth.userId && !access.viaCapability) {
     return NextResponse.json(
       { message: "You cannot change your own access." },
       { status: 400 },

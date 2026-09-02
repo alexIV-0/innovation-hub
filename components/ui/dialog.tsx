@@ -29,6 +29,20 @@ const DialogOverlay = React.forwardRef<
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
+/**
+ * Про `aria-describedby={undefined}` в вызовах.
+ *
+ * Radix всегда ставит содержимому `aria-describedby` с идентификатором
+ * DialogDescription — и предупреждает в консоли, если описания в разметке нет:
+ * ссылка ведёт в пустоту, и читалка экрана молчит там, где обещала текст.
+ *
+ * У большинства наших диалогов описания и не должно быть: смысл несёт
+ * заголовок, а у окон ввода — подпись рядом с полем (она привязана к полю
+ * через htmlFor и читается точнее). Такому диалогу передают
+ * `aria-describedby={undefined}` — это явный отказ, он снимает атрибут и
+ * заодно предупреждение. Есть настоящее описание — не передавайте ничего,
+ * Radix свяжет его сам.
+ */
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>

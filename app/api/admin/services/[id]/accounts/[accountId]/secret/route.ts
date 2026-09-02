@@ -2,15 +2,19 @@ import { NextResponse, type NextRequest } from "next/server"
 import { requireAdminApi } from "@/lib/admin-auth"
 import { auditFrom } from "@/lib/audit"
 import { VaultKeyError } from "@/lib/vault/crypto"
-import { rotateSecretSchema } from "@/lib/vault/schemas"
-import { findService, revokeOldSecrets, rotateSecret } from "@/lib/vault/services"
+import { rotateAccountSecretSchema } from "@/lib/vault/schemas"
+import {
+  findAccountService,
+  revokeOldAccountSecrets,
+  rotateAccountSecret,
+} from "@/lib/vault/services"
 
 export const runtime = "nodejs"
 
-type RouteContext = { params: Promise<{ id: string }> }
+type RouteContext = { params: Promise<{ id: string; accountId: string }> }
 
 /**
- * Ротация ключа и гашение прежних версий.
+ * Ротация секрета учётки и гашение прежних версий.
  *
  * Две операции, а не одна, и это намеренно: новая версия появляется сразу, а
  * старая живёт до отдельного решения. Погаси мы её тем же движением — задачи,
@@ -20,8 +24,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const auth = await requireAdminApi(request, "services.manage")
   if (auth instanceof NextResponse) return auth
 
-  const { id } = await context.params
-  const parsed = rotateSecretSchema.safeParse(await request.json())
+  const { accountId } = await context.params
+  const parsed = rotateAccountSecretSchema.safeParse(await request.json())
   if (!parsed.success) {
     return NextResponse.json(
       { message: "Invalid payload.", issues: parsed.error.issues },
@@ -29,27 +33,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
     )
   }
 
-  const service = await findService(id)
-  if (!service) {
-    return NextResponse.json({ message: "Service not found." }, { status: 404 })
+  const found = await findAccountService(accountId)
+  if (!found) {
+    return NextResponse.json({ message: "Account not found." }, { status: 404 })
   }
 
   try {
-    const version = await rotateSecret({
-      serviceId: id,
-      secret: parsed.data.secret,
+    const version = await rotateAccountSecret({
+      accountId,
+      fields: parsed.data.fields,
       actorId: auth.userId,
     })
     if (version == null) {
-      return NextResponse.json({ message: "Service not found." }, { status: 404 })
+      return NextResponse.json({ message: "Account not found." }, { status: 404 })
     }
 
     await auditFrom(request, auth)({
       action: "service.secret_rotated",
       targetType: "service",
-      targetId: id,
-      targetLabel: service.name,
-      meta: { version },
+      targetId: found.service.id,
+      targetLabel: `${found.service.name} / ${found.account.label}`,
+      meta: { account: found.account.label, version },
     })
 
     return NextResponse.json({ version })
@@ -66,20 +70,20 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
   const auth = await requireAdminApi(request, "services.manage")
   if (auth instanceof NextResponse) return auth
 
-  const { id } = await context.params
-  const service = await findService(id)
-  if (!service) {
-    return NextResponse.json({ message: "Service not found." }, { status: 404 })
+  const { accountId } = await context.params
+  const found = await findAccountService(accountId)
+  if (!found) {
+    return NextResponse.json({ message: "Account not found." }, { status: 404 })
   }
 
-  const revoked = await revokeOldSecrets(id)
+  const revoked = await revokeOldAccountSecrets(accountId)
 
   await auditFrom(request, auth)({
     action: "service.secrets_revoked",
     targetType: "service",
-    targetId: id,
-    targetLabel: service.name,
-    meta: { revoked },
+    targetId: found.service.id,
+    targetLabel: `${found.service.name} / ${found.account.label}`,
+    meta: { account: found.account.label, revoked },
   })
 
   return NextResponse.json({ revoked })

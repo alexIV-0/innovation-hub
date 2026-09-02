@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { Loader2, Plus, Search, X } from "lucide-react"
 import { toast } from "sonner"
-import { formatBalance, useI18n } from "@/components/account/i18n"
+import { formatBalance, tf, useI18n } from "@/components/account/i18n"
 import {
   NumberField,
   Section,
   centsToRubles,
   rublesToCents,
 } from "@/components/admin/billing/fields"
+import { AdminConfirmDialog } from "@/components/admin/admin-confirm-dialog"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,7 +42,15 @@ type ActivationRow = {
   remainingCents: number
   activatedAt: string
   registeredAt: string
+  projectCount: number
+  /** Сброшен — значит кнопка «Попробовать» у человека доступна снова (П9.1). */
+  resetAt: string | null
+  /** Который это период у него по счёту: серия сбросов должна быть видна. */
+  attempt: number
 }
+
+/** Что подтверждает открытый диалог. `null` — диалога нет. */
+type PendingAction = { row: ActivationRow; action: "revoke" | "reset" }
 
 type PickRow = {
   projectId: string
@@ -60,6 +69,7 @@ export function AdminBillingTrial() {
   const [picks, setPicks] = useState<PickRow[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [pending, setPending] = useState<PendingAction | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -148,6 +158,56 @@ export function AdminBillingTrial() {
       toast.error(t.billingSaveError)
     } finally {
       setBusy(null)
+    }
+  }
+
+  /**
+   * Отзыв и сброс (П9.1).
+   *
+   * Одна функция на две команды: они ходят на один адрес и различаются только
+   * телом запроса. Разводить их по двум обработчикам значило бы дважды писать
+   * один и тот же разбор ответа.
+   */
+  const runTrialAction = async ({ row, action }: PendingAction) => {
+    setBusy(row.grantId)
+    try {
+      const res = await fetch(`/api/admin/billing/trial/grants/${row.grantId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      })
+      if (res.status === 409) {
+        // 409 — грант не в том состоянии. Говорим, в каком именно: «не
+        // получилось» тут бесполезно, человек не поймёт, что делать дальше.
+        const body = (await res.json()) as { code?: string }
+        toast.error(
+          body.code === "not-active"
+            ? t.billingTrialNotActive
+            : body.code === "still-open"
+              ? t.billingTrialStillOpen
+              : body.code === "already-reset"
+                ? t.billingTrialAlreadyReset
+                : t.billingTrialActionError,
+        )
+        return
+      }
+      if (!res.ok) throw new Error(String(res.status))
+      if (action === "revoke") {
+        const body = (await res.json()) as { burnedCents: number }
+        toast.success(
+          tf(t.billingTrialRevoked, {
+            amount: formatBalance(body.burnedCents, lang),
+          }),
+        )
+      } else {
+        toast.success(t.billingTrialResetDone)
+      }
+      await load()
+    } catch {
+      toast.error(t.billingTrialActionError)
+    } finally {
+      setBusy(null)
+      setPending(null)
     }
   }
 
@@ -329,13 +389,27 @@ export function AdminBillingTrial() {
                   </th>
                   <th className="pb-2 font-medium">{t.billingActivationLeft}</th>
                   <th className="pb-2 font-medium">{t.billingActivationStatus}</th>
+                  <th className="pb-2 text-right font-medium">
+                    {t.billingActivationActions}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {activations.map((row) => (
                   <tr key={row.grantId}>
                     <td className="py-2.5 pr-4">
-                      <div className="truncate text-foreground">{row.email}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-foreground">{row.email}</span>
+                        {/* Номер попытки рядом с почтой, а не отдельной
+                            колонкой: серия сбросов у одного человека должна
+                            бросаться в глаза так же, как серия однотипных
+                            регистраций. */}
+                        {row.attempt > 1 ? (
+                          <span className="shrink-0 rounded border border-amber-500/40 px-1.5 py-0.5 text-[11px] text-amber-500">
+                            {tf(t.billingActivationAttempt, { n: row.attempt })}
+                          </span>
+                        ) : null}
+                      </div>
                       {row.fullName ? (
                         <div className="truncate text-xs text-muted-foreground">
                           {row.fullName}
@@ -354,7 +428,45 @@ export function AdminBillingTrial() {
                         / {formatBalance(row.amountCents, lang)}
                       </span>
                     </td>
-                    <td className="py-2.5 text-muted-foreground">{row.status}</td>
+                    <td className="py-2.5 pr-4 text-muted-foreground">
+                      {row.status}
+                      {row.resetAt ? (
+                        <div className="text-xs text-amber-500/80">
+                          {tf(t.billingActivationResetAt, {
+                            date: date(row.resetAt),
+                          })}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="py-2.5 text-right">
+                      {/* Две команды, а не одна кнопка с двумя смыслами: отзыв
+                          про деньги сейчас, сброс про право на будущее. Самый
+                          частый сценарий — нажать обе по очереди. */}
+                      <div className="flex justify-end gap-1">
+                        {row.status === "active" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy === row.grantId}
+                            onClick={() => setPending({ row, action: "revoke" })}
+                          >
+                            {t.billingTrialRevoke}
+                          </Button>
+                        ) : null}
+                        {!row.resetAt &&
+                        row.status !== "active" &&
+                        row.status !== "provisioning" ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy === row.grantId}
+                            onClick={() => setPending({ row, action: "reset" })}
+                          >
+                            {t.billingTrialReset}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -362,6 +474,42 @@ export function AdminBillingTrial() {
           </div>
         )}
       </Section>
+
+      {/* Диалог, а не window.confirm: подтверждение обязано назвать числа —
+          сколько сгорит и сколько проектов уже есть. Без них человек нажимает
+          «ок» вслепую, а обе команды двигают чужие деньги. */}
+      <AdminConfirmDialog
+        open={pending !== null}
+        destructive
+        title={
+          pending?.action === "revoke"
+            ? tf(t.billingTrialRevokeTitle, { email: pending.row.email })
+            : pending
+              ? t.billingTrialResetTitle
+              : ""
+        }
+        description={
+          pending?.action === "revoke"
+            ? tf(t.billingTrialRevokeDesc, {
+                amount: formatBalance(pending.row.remainingCents, lang),
+              })
+            : pending
+              ? tf(t.billingTrialResetDesc, {
+                  email: pending.row.email,
+                  count: pending.row.projectCount,
+                })
+              : undefined
+        }
+        confirmLabel={
+          pending?.action === "revoke" ? t.billingTrialRevoke : t.billingTrialReset
+        }
+        onConfirm={() => {
+          if (pending) void runTrialAction(pending)
+        }}
+        onOpenChange={(open) => {
+          if (!open) setPending(null)
+        }}
+      />
     </div>
   )
 }

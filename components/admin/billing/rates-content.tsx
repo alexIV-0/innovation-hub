@@ -328,6 +328,13 @@ export function AdminBillingRates() {
                   })
                 : t.billingRateNone}
             </p>
+            {/* Поле живёт только ради старого пути, где нода присылает
+                `total_cost` одним числом. У сервисов с построчным учётом валюта
+                берётся из карточки сервиса, и это надо говорить прямо: иначе
+                вопрос «почему валюта задаётся в двух местах» возвращается. */}
+            <p className="text-xs text-amber-500/80">
+              {t.billingVendorCurrencyFallback}
+            </p>
           </div>
           <NumberField
             id="fx-adjust"

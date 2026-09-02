@@ -36,6 +36,7 @@ import {
   putSettingsAction,
 } from "@/lib/machine-api/actions/settings"
 import {
+  vendorIncidentAction,
   vendorKeysAction,
   vendorUsageAction,
 } from "@/lib/machine-api/actions/vault"
@@ -79,6 +80,7 @@ export const ACTION_REGISTRY: Record<string, MachineActionHandler> = {
   putSettings: putSettingsAction,
   vendorKeys: vendorKeysAction,
   vendorUsage: vendorUsageAction,
+  vendorIncident: vendorIncidentAction,
   machinePing: machinePingAction,
   claimTask: claimTaskAction,
   taskProgress: taskProgressAction,

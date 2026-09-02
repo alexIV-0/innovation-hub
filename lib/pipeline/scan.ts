@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto"
-import { admitItem, setPausedReason } from "@/lib/billing/admission"
+import { admitItem, setPausedReason, type PauseReason } from "@/lib/billing/admission"
+import {
+  checkAccounts,
+  collectRequirements,
+  isBlocking,
+  type GateProblem,
+} from "@/lib/vault/gate"
 import { estimateItem } from "@/lib/billing/estimate"
 import { getFunds, type Funds } from "@/lib/billing/funds"
 import type { PayUnitProblem } from "@/lib/billing/pay-unit"
@@ -71,6 +77,8 @@ export type SkipReason =
   | "no-pay-unit"
   | "unsupported-pay-pair"
   | "pay-unit-mismatch"
+  /** Нет учётки внешнего сервиса, которую требует граф (VENDOR_SERVICES, С4). */
+  | "no-vendor-account"
 
 export type SkippedProject = {
   projectId: string
@@ -158,6 +166,12 @@ async function writeCursor(seq: number): Promise<void> {
  */
 export function isHeldBack(name: string): boolean {
   return name.startsWith("-")
+}
+
+/** Лежит ли логический путь внутри IN — сама папка или что-то в ней. */
+export function isInsideIn(folderPath: string): boolean {
+  const clean = folderPath.replace(/^\/+|\/+$/g, "")
+  return clean === "IN" || clean.startsWith("IN/")
 }
 
 /** Элемент верхнего уровня в IN, к которому относится событие. */
@@ -408,6 +422,26 @@ export async function collectTasks(): Promise<CollectResult> {
     // остальными, из-за чего готовая папка так и не попадала в очередь.
     if (change.op === "delete") continue
 
+    /**
+     * Но move, уводящий элемент ЗА пределы IN, — это удаление с точки зрения
+     * конвейера, и работы оно не создаёт.
+     *
+     * Проверять приходится по payload, а не по ключу: ключ в журнале физический
+     * и остаётся прежним (`.../IN/{uuid}-имя.mp4`) даже после того, как файл
+     * логически переехал в другую папку — переименование каталога объектов в R2
+     * не двигает. То есть `resolveInEntry` по такому событию честно ответит
+     * «элемент в IN», хотя в IN его уже нет.
+     *
+     * Без этой проверки перенос упавшего исходника в папку ошибок
+     * (lib/pipeline/quarantine.ts) сам бы и заводил по нему новую задачу:
+     * уникальный индекс не помеха, он держится только на живых статусах, а
+     * старая задача упала. Карантин отменял бы сам себя.
+     */
+    if (change.op === "move") {
+      const to = change.payload?.to?.folderPath ?? change.payload?.folderPath
+      if (typeof to === "string" && !isInsideIn(to)) continue
+    }
+
     const project = watchedById.get(change.projectId)
     if (!project) continue
 
@@ -588,6 +622,12 @@ export async function materializeCandidates(input: {
   /** options.json читается один раз на проект, а не на каждое событие. */
   const optionsCache = new Map<string, unknown | null>()
   /**
+   * Гейт учёток считается один раз на проект: граф у всех файлов проекта общий,
+   * а материализация идёт по каждому файлу. Проверять по файлу значило бы
+   * дёргать сейф десятки раз ради одного и того же ответа.
+   */
+  const gateCache = new Map<string, GateProblem[]>()
+  /**
    * Общий словарь типов читается лениво и один раз на проход: он нужен только
    * как запасной путь для проектов без снимка fileTypes в графе.
    */
@@ -648,6 +688,36 @@ export async function materializeCandidates(input: {
     const exts = readSearchExts(optionsJson, await fileTypeFallback())
     if (!exts.ok) {
       noteSkip(project.projectId, project.name, exts.reason)
+      continue
+    }
+
+    /**
+     * Учётки внешних сервисов — до постановки в очередь (пункт 5 запроса
+     * клиента). Задача без ключа, попавшая в очередь, обойдёт весь парк и умрёт
+     * как «превышены попытки», хотя причина была известна здесь.
+     *
+     * Пустой список проблем — штатный случай: граф без свойств учётки ничего не
+     * требует, и гейт его не трогает.
+     */
+    let gate = gateCache.get(project.projectId)
+    if (gate === undefined) {
+      gate = await checkAccounts({
+        requirements: collectRequirements(optionsJson),
+        ownerId: project.ownerId,
+      })
+      gateCache.set(project.projectId, gate)
+      // Предупреждения в журнал, а не в отказ: поле открыто клиенту, но
+      // указывает на нашу учётку — работать будет, деньги поедут наши.
+      for (const problem of gate.filter((p) => !isBlocking(p))) {
+        console.warn(
+          `[pipeline] ${project.projectId}: ${problem.code} ${problem.service}`,
+        )
+      }
+    }
+    const blocked = gate.filter(isBlocking)
+    if (blocked.length > 0) {
+      noteSkip(project.projectId, project.name, "no-vendor-account")
+      await pauseForBilling(project, "no-vendor-key")
       continue
     }
 
@@ -852,7 +922,7 @@ export async function materializeCandidates(input: {
  */
 async function pauseForBilling(
   project: WatchedProject,
-  reason: "no-funds" | "trial-over",
+  reason: PauseReason,
 ): Promise<void> {
   try {
     await setProjectPaused({

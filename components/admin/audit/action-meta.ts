@@ -3,6 +3,8 @@
 import {
   ArrowLeftRight,
   FolderTree,
+  Gift,
+  TriangleAlert,
   KeyRound,
   Monitor,
   Plug,
@@ -151,6 +153,29 @@ export const ACTION_META: Record<
     icon: KeyRound,
     tone: "danger",
   },
+  // Заведение учётки — «danger»: в базу лёг чужой ключ, и это событие того же
+  // веса, что выдача доступа.
+  "service.account_created": {
+    labelKey: "auditServiceAccountCreated",
+    icon: KeyRound,
+    tone: "danger",
+  },
+  "service.account_updated": {
+    labelKey: "auditServiceAccountUpdated",
+    icon: Plug,
+    tone: "neutral",
+  },
+  // Не «danger»: инцидент — это сообщение о поломке, а не опасное действие
+  // человека. Красным он бы соревновался за внимание с выдачей ключей.
+  "service.incident": {
+    labelKey: "auditServiceIncident",
+    icon: TriangleAlert,
+    tone: "neutral",
+  },
+  // Оба — «danger»: отзыв забирает у человека деньги, сброс их раздаёт. Тихим
+  // ни то ни другое быть не должно.
+  "trial.revoked": { labelKey: "auditTrialRevoked", icon: Gift, tone: "danger" },
+  "trial.reset": { labelKey: "auditTrialReset", icon: Gift, tone: "danger" },
 }
 
 export const TONE_CLASS = {

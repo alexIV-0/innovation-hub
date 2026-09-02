@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowLeft, ArrowUpRight, Monitor } from "lucide-react"
+import { ArrowLeft, Monitor } from "lucide-react"
 
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
 import { DensitySwitch } from "@/components/account/workspace/workspace-topbar"
@@ -8,6 +8,7 @@ import { CatalogDialog } from "./catalog-dialog"
 import { ToolHost } from "./tool-host"
 import { NoToolSelected, ToolsColumn, ToolsGrid, useToolTitle } from "./tools-list"
 import { ToolsProvider, useTools } from "./tools-context"
+import { ProcessingIndicator } from "@/components/account/processing-indicator"
 
 /**
  * Верхняя панель раздела — та же анатомия, что у рабочей области проектов:
@@ -48,15 +49,7 @@ function ToolsTopbar() {
 
       <div className="flex shrink-0 items-center gap-3 md:gap-4">
         <DensitySwitch />
-        <a
-          href="/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hidden items-center gap-1 text-[13px] text-ws-2 hover:text-ws-1 lg:flex"
-        >
-          {t.viewSite}
-          <ArrowUpRight className="h-[15px] w-[15px]" />
-        </a>
+        <ProcessingIndicator />
       </div>
     </header>
   )

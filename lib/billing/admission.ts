@@ -22,7 +22,13 @@ import type { PayMeter, PayPair, Wallet } from "@/lib/billing/types"
  * нулевые, тарифа нет, и первое же включение остановило бы обработку у всех.
  */
 
-export type PauseReason = "no-funds" | "trial-over"
+/**
+ * Почему проект остановлен. Причины разные, потому что разное действие человека:
+ * при `no-funds` он пополняет баланс, при `no-vendor-key` — подключает ключ на
+ * «Моих ключах». Свести их в одну значило бы показать кнопку «пополнить» там,
+ * где деньги ни при чём.
+ */
+export type PauseReason = "no-funds" | "trial-over" | "no-vendor-key"
 
 export type Admission =
   | {

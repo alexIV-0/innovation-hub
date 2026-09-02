@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { keyLabel } from "../shared/editor-state"
 import { PreviewPane as SharedPreviewPane } from "../shared/preview-pane"
 import { TrackAudio } from "../shared/track-audio"
+import { videoNoticeText } from "../shared/use-task-folder"
 import { useSrt } from "./srt-context"
 
 /**
@@ -30,10 +31,8 @@ export function PreviewPane({ videoRef }: { videoRef: React.RefObject<HTMLVideoE
   return (
     <SharedPreviewPane
       videoRef={videoRef}
-      videoUrl={srt.videoUrl}
-      missing={
-        srt.doc.media.video ? tf(t.srtPreviewMissing, { file: srt.doc.media.video }) : t.srtNoVideo
-      }
+      videoUrl={srt.video.kind === "ready" ? srt.video.url : null}
+      missing={videoNoticeText(t, srt.video)}
       // Звук видео — это «основная дорожка». Молчит, когда включён solo или
       // mute: тогда слушают дорожки персонажей, а не микс, где те же голоса
       // уже сведены.

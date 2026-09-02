@@ -282,7 +282,10 @@ export function PreviewDialog() {
 
   return (
     <Dialog open onOpenChange={(next) => !next && closePreview()}>
-      <DialogContent className="flex h-[min(88vh,920px)] w-[min(1180px,94vw)] max-w-none flex-col gap-0 overflow-hidden border-white/10 bg-ws-raised p-0 sm:rounded-2xl">
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex h-[min(88vh,920px)] w-[min(1180px,94vw)] max-w-none flex-col gap-0 overflow-hidden border-white/10 bg-ws-raised p-0 sm:rounded-2xl"
+      >
         <div className="flex flex-none items-center gap-3 border-b border-white/[0.07] px-5 py-3.5 pr-14">
           <Icon className={cn("h-5 w-5 shrink-0", fileIconClass(file))} />
           <div className="min-w-0 flex-1">

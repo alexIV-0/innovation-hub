@@ -1,13 +1,27 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { KeyRound, Loader2, Plug, Plus } from "lucide-react"
+import {
+  ChevronRight,
+  KeyRound,
+  Link2,
+  Loader2,
+  Plug,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
 import { formatBalance, tf, useI18n, type DictKey } from "@/components/account/i18n"
 import { NumberField, Section, rublesToCents } from "@/components/admin/billing/fields"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -17,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { VENDOR_CURRENCIES } from "@/lib/billing/types"
+import { slugify } from "@/lib/vault/slug"
 import {
   BILLING_MODELS,
   DELIVERIES,
@@ -44,14 +59,39 @@ type Service = {
   slug: string
   name: string
   adapter: string
+  /** Пусто — адрес зашит в самой ноде (О5). */
+  baseUrl: string
   billingModel: VendorBillingModel
   currency: string
   delivery: VendorDelivery
   keyTtlSec: number
   dailyCapCents: number
   status: "active" | "paused" | "revoked"
-  secret: { version: number; hint: string; createdAt: string } | null
+  /** Из чего состоит секрет учётки: `apiKey` либо `login` + `password`. */
+  secretFields: { key: string; label: string; secret: boolean }[]
+  accounts: Account[]
   prices: { unit: PriceUnit; priceMicros: number; effectiveFrom: string }[]
+  spentMonthCents: number
+}
+
+/**
+ * Учётка под сервисом. Их несколько, потому что на одном вендоре живут «тест и
+ * прод», а клиент может принести свой ключ — и тогда расход его, а не наш.
+ */
+type Account = {
+  id: string
+  serviceId: string
+  label: string
+  ownerUserId: string | null
+  ownerEmail: string | null
+  status: "active" | "paused" | "revoked"
+  createdAt: string
+  updatedAt: string
+  /** Свой адрес установки. `null` — как у сервиса. */
+  baseUrl: string | null
+  /** Свой срок копии. `null` — как у сервиса. */
+  keyTtlSec: number | null
+  secret: { version: number; hint: string; createdAt: string } | null
   spentMonthCents: number
 }
 
@@ -199,8 +239,8 @@ function ServiceCard({
   onReload: () => Promise<void>
 }) {
   const { t } = useI18n()
-  const [rotating, setRotating] = useState(false)
-  const [secret, setSecret] = useState("")
+  const [editingUrl, setEditingUrl] = useState(false)
+  const [urlDraft, setUrlDraft] = useState(service.baseUrl)
   const [unit, setUnit] = useState<PriceUnit>("token")
   const [price, setPrice] = useState("")
 
@@ -210,39 +250,6 @@ function ServiceCard({
       month: "short",
       day: "numeric",
     })
-
-  const rotate = async () => {
-    if (secret.trim().length < 8) return
-    try {
-      const res = await fetch(`/api/admin/services/${service.id}/secret`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: secret.trim() }),
-      })
-      if (!res.ok) throw new Error(String(res.status))
-      const body = (await res.json()) as { version: number }
-      toast.success(tf(t.servicesRotated, { version: body.version }))
-      setSecret("")
-      setRotating(false)
-      await onReload()
-    } catch {
-      toast.error(t.servicesSaveError)
-    }
-  }
-
-  const retireOld = async () => {
-    try {
-      const res = await fetch(`/api/admin/services/${service.id}/secret`, {
-        method: "DELETE",
-      })
-      if (!res.ok) throw new Error(String(res.status))
-      const body = (await res.json()) as { revoked: number }
-      toast.success(tf(t.servicesRevokedOld, { count: body.revoked }))
-      await onReload()
-    } catch {
-      toast.error(t.servicesSaveError)
-    }
-  }
 
   const addPrice = async () => {
     // Цена вводится в валюте сервиса, хранится в микроединицах: 0.000002 в
@@ -280,12 +287,12 @@ function ServiceCard({
         >
           {t[STATUS_KEY[service.status]]}
         </span>
+        {service.baseUrl ? (
+          <span className="font-mono text-[11px]">{service.baseUrl}</span>
+        ) : null}
         <span>{service.currency}</span>
         <span>{t[MODEL_KEY[service.billingModel]]}</span>
         <span>{t[DELIVERY_KEY[service.delivery]]}</span>
-        <span>
-          {tf(t.servicesTtlHours, { hours: Math.round(service.keyTtlSec / 3600) })}
-        </span>
         <span>
           {service.dailyCapCents > 0
             ? formatBalance(service.dailyCapCents, lang)
@@ -296,58 +303,60 @@ function ServiceCard({
         </span>
       </div>
 
-      {/* Ключ: версия и подсказка. Самого ключа здесь нет и быть не может. */}
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5">
-        <KeyRound className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm">
-          {service.secret ? (
-            <>
-              <span className="font-mono">{service.secret.hint}</span>
-              <span className="ml-2 text-xs text-muted-foreground">
-                {tf(t.servicesKeyVersion, {
-                  version: service.secret.version,
-                  date: date(service.secret.createdAt),
-                })}
-              </span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">{t.servicesNoKey}</span>
-          )}
-        </span>
-        <div className="ml-auto flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setRotating((prev) => !prev)}
-          >
-            {t.servicesRotate}
-          </Button>
-          {(service.secret?.version ?? 0) > 1 ? (
-            <Button type="button" variant="ghost" size="sm" onClick={retireOld}>
-              {t.servicesRevokeOld}
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      {/* Учётки: подсказка, версия и владелец. Самих полей секрета здесь нет
+          и быть не может — наружу они уходят только машинам. */}
+      <AccountsBlock service={service} busy={busy} lang={lang} onReload={onReload} />
 
-      {rotating ? (
-        <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
-          <p className="text-xs text-muted-foreground">{t.servicesRotateHint}</p>
-          <div className="flex flex-wrap gap-2">
+      {/* Адрес правится здесь, а не только при заведении: смена эндпоинта у
+          вендора не должна означать обход парка. Ревизия сейфа поднимется, и
+          машины заберут новый адрес блоком `services`. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5">
+        <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+        {editingUrl ? (
+          <>
             <Input
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-              type="password"
+              value={urlDraft}
+              onChange={(event) => setUrlDraft(event.target.value)}
               autoComplete="off"
+              placeholder="https://comfy.example.com"
               className="max-w-md"
             />
-            <Button type="button" size="sm" onClick={rotate}>
-              {t.servicesRotate}
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={async () => {
+                await onPatch(service.id, { baseUrl: urlDraft.trim() })
+                setEditingUrl(false)
+              }}
+            >
+              {t.billingSave}
             </Button>
-          </div>
-        </div>
-      ) : null}
+          </>
+        ) : (
+          <>
+            <span className="text-sm">
+              {service.baseUrl ? (
+                <span className="font-mono">{service.baseUrl}</span>
+              ) : (
+                <span className="text-muted-foreground">{t.servicesNoBaseUrl}</span>
+              )}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              onClick={() => {
+                setUrlDraft(service.baseUrl)
+                setEditingUrl(true)
+              }}
+            >
+              {t.servicesEditBaseUrl}
+            </Button>
+          </>
+        )}
+      </div>
 
       {/* Прайс: без него потребление записать нечем, и это сказано прямо. */}
       <div className="space-y-2">
@@ -435,41 +444,602 @@ function ServiceCard({
           >
             {t.servicesRevoke}
           </Button>
-        ) : null}
+        ) : (
+          /* Удалить сервис можно только отозванным и только пока по нему нет
+             расхода. Смысл — убрать ошибочно заведённый и освободить слаг: он
+             уникален и до удаления занят навсегда. */
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm(t.servicesDeleteConfirm)) return
+              void (async () => {
+                const res = await fetch(`/api/admin/services/${service.id}?hard=1`, {
+                  method: "DELETE",
+                })
+                if (res.status === 409) {
+                  toast.error(t.servicesHasUsage)
+                  return
+                }
+                if (!res.ok) {
+                  toast.error(t.servicesSaveError)
+                  return
+                }
+                toast.success(t.servicesDeleted)
+                await onReload()
+              })()
+            }}
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            {t.servicesDelete}
+          </Button>
+        )}
       </div>
     </Section>
   )
 }
 
+/**
+ * Форма заведения сервиса.
+ *
+ * На первом экране три поля: название, валюта и ключ. Остальное — под
+ * «Дополнительно», и не потому, что неважно, а потому, что у всего остального
+ * есть верный по умолчанию ответ (`prepaid`, `keys`, 6 часов, без потолка).
+ * Восемь полей подряд читаются как восемь решений, которых на самом деле нет.
+ */
+/**
+ * Учётки сервиса.
+ *
+ * Отдельным компонентом, а не куском карточки: у каждой строки своё состояние
+ * ротации, и держи мы его в карточке — открытие одной формы открывало бы все.
+ *
+ * Значений секрета здесь нет ни в каком виде: наружу они уходят ровно из одного
+ * места, и это выдача машинам.
+ */
+function AccountsBlock({
+  service,
+  busy,
+  lang,
+  onReload,
+}: {
+  service: Service
+  busy: boolean
+  lang: "ru" | "en"
+  onReload: () => Promise<void>
+}) {
+  const { t } = useI18n()
+  const [adding, setAdding] = useState(false)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-normal text-muted-foreground">
+          {t.servicesAccounts}
+        </Label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setAdding((prev) => !prev)}
+        >
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          {t.servicesAccountAdd}
+        </Button>
+      </div>
+
+      {service.accounts.length === 0 ? (
+        <p className="text-xs text-muted-foreground/80">{t.servicesAccountsEmpty}</p>
+      ) : (
+        <div className="space-y-2">
+          {service.accounts.map((account) => (
+            <AccountRow
+              key={account.id}
+              service={service}
+              account={account}
+              busy={busy}
+              lang={lang}
+              onReload={onReload}
+            />
+          ))}
+        </div>
+      )}
+
+      {adding ? (
+        <AccountForm
+          service={service}
+          onDone={async () => {
+            setAdding(false)
+            await onReload()
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/** Одна учётка: подсказка, версия, владелец, расход и её команды. */
+function AccountRow({
+  service,
+  account,
+  busy,
+  lang,
+  onReload,
+}: {
+  service: Service
+  account: Account
+  busy: boolean
+  lang: "ru" | "en"
+  onReload: () => Promise<void>
+}) {
+  const { t } = useI18n()
+  const [rotating, setRotating] = useState(false)
+
+  const date = (iso: string) =>
+    new Date(iso).toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
+
+  const call = async (path: string, init: RequestInit, done: (body: never) => void) => {
+    try {
+      const res = await fetch(
+        `/api/admin/services/${service.id}/accounts/${account.id}${path}`,
+        init,
+      )
+      if (!res.ok) throw new Error(String(res.status))
+      done((await res.json()) as never)
+      await onReload()
+    } catch {
+      toast.error(t.servicesSaveError)
+    }
+  }
+
+  const retireOld = () =>
+    call("/secret", { method: "DELETE" }, (body: { revoked: number }) => {
+      toast.success(tf(t.servicesRevokedOld, { count: body.revoked }))
+    })
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/60 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="text-sm font-medium">{account.label}</span>
+
+        {/* Чья учётка — самое важное в строке: от этого зависит, попадёт её
+            расход в себестоимость ролика или нет. */}
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[11px]",
+            account.ownerUserId ? "bg-amber-500/15 text-amber-500" : "bg-muted/60",
+          )}
+        >
+          {account.ownerUserId
+            ? tf(t.servicesAccountOwned, { email: account.ownerEmail ?? "—" })
+            : t.servicesAccountOurs}
+        </span>
+
+        {account.status !== "active" ? (
+          <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[11px]">
+            {t[STATUS_KEY[account.status]]}
+          </span>
+        ) : null}
+
+        <span className="text-sm">
+          {account.secret ? (
+            <>
+              <span className="font-mono">{account.secret.hint}</span>
+              <span className="ml-2 text-xs text-muted-foreground">
+                {tf(t.servicesKeyVersion, {
+                  version: account.secret.version,
+                  date: date(account.secret.createdAt),
+                })}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{t.servicesNoKey}</span>
+          )}
+        </span>
+
+        {/* Свой адрес показываем только когда он отличается от сервисного:
+            у вендора с одним API повторять его в каждой строке — шум. */}
+        {account.baseUrl && account.baseUrl !== service.baseUrl ? (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {account.baseUrl}
+          </span>
+        ) : null}
+
+        <span className="text-xs text-muted-foreground">
+          {tf(t.servicesTtlHours, {
+            hours: Math.round((account.keyTtlSec ?? service.keyTtlSec) / 3600),
+          })}
+        </span>
+
+        <span className="ml-auto text-xs text-muted-foreground">
+          {formatBalance(account.spentMonthCents, lang)}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setRotating((prev) => !prev)}
+        >
+          {account.secret ? t.servicesRotate : t.servicesSetKey}
+        </Button>
+        {(account.secret?.version ?? 0) > 1 ? (
+          <Button type="button" variant="ghost" size="sm" onClick={retireOld}>
+            {t.servicesRevokeOld}
+          </Button>
+        ) : null}
+        {account.status === "active" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              call("", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "paused" }),
+              }, () => toast.success(t.servicesSaved))
+            }
+          >
+            {t.servicesPause}
+          </Button>
+        ) : account.status === "paused" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              call("", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "active" }),
+              }, () => toast.success(t.servicesSaved))
+            }
+          >
+            {t.servicesResume}
+          </Button>
+        ) : null}
+        {account.status !== "revoked" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm(t.servicesAccountRevokeConfirm)) return
+              void call("", { method: "DELETE" }, () =>
+                toast.success(t.servicesSaved),
+              )
+            }}
+          >
+            {t.servicesRevoke}
+          </Button>
+        ) : (
+          /* Удаление предлагаем только у отозванной: пока учётка живая, речь
+             про «выключить», а не «стереть». Откажет сервер, если по ней есть
+             расход, — экран об этом знать не обязан. */
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm(t.servicesAccountDeleteConfirm)) return
+              void (async () => {
+                const res = await fetch(
+                  `/api/admin/services/${service.id}/accounts/${account.id}?hard=1`,
+                  { method: "DELETE" },
+                )
+                if (res.status === 409) {
+                  toast.error(t.servicesHasUsage)
+                  return
+                }
+                if (!res.ok) {
+                  toast.error(t.servicesSaveError)
+                  return
+                }
+                toast.success(t.servicesAccountDeleted)
+                await onReload()
+              })()
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+
+      {rotating ? (
+        <SecretFields
+          service={service}
+          hint={t.servicesRotateHint}
+          submitLabel={t.servicesRotate}
+          onSubmit={async (fields) => {
+            await call(
+              "/secret",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fields }),
+              },
+              (body: { version: number }) => {
+                toast.success(tf(t.servicesRotated, { version: body.version }))
+                setRotating(false)
+              },
+            )
+          }}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Поля секрета по описанию сервиса.
+ *
+ * Форма одна на все сервисы и рисуется по данным, а не по коду: новый вендор с
+ * парой `client_id` + `client_secret` — это строка в каталоге, а не новое окно.
+ */
+function SecretFields({
+  service,
+  hint,
+  submitLabel,
+  onSubmit,
+}: {
+  service: Service
+  hint: string
+  submitLabel: string
+  onSubmit: (fields: Record<string, string>) => Promise<void>
+}) {
+  const [values, setValues] = useState<Record<string, string>>({})
+  const specs =
+    service.secretFields.length > 0
+      ? service.secretFields
+      : [{ key: "apiKey", label: "", secret: true }]
+
+  const filled = specs.every((spec) => (values[spec.key] ?? "").trim().length > 0)
+
+  return (
+    <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
+      <p className="text-xs text-muted-foreground">{hint}</p>
+      <div className="flex flex-wrap items-end gap-2">
+        {specs.map((spec) => (
+          <div key={spec.key} className="space-y-1">
+            <Label className="text-xs font-normal text-muted-foreground">
+              {spec.label || spec.key}
+            </Label>
+            <Input
+              value={values[spec.key] ?? ""}
+              onChange={(event) =>
+                setValues((prev) => ({ ...prev, [spec.key]: event.target.value }))
+              }
+              // Логин прятать незачем — прячем только то, что объявлено секретом.
+              type={spec.secret ? "password" : "text"}
+              autoComplete="off"
+              className="max-w-xs"
+            />
+          </div>
+        ))}
+        <Button
+          type="button"
+          size="sm"
+          disabled={!filled}
+          onClick={() => void onSubmit(values)}
+        >
+          {submitLabel}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Заведение учётки: метка, владелец почтой и поля секрета. */
+function AccountForm({
+  service,
+  onDone,
+}: {
+  service: Service
+  onDone: () => Promise<void>
+}) {
+  const { t } = useI18n()
+  const [label, setLabel] = useState("")
+  const [ownerEmail, setOwnerEmail] = useState("")
+  const [ttlHours, setTtlHours] = useState(
+    String(Math.round(service.keyTtlSec / 3600)),
+  )
+  const [baseUrl, setBaseUrl] = useState("")
+
+  const submit = async (fields: Record<string, string>) => {
+    try {
+      const res = await fetch(`/api/admin/services/${service.id}/accounts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: label.trim(),
+          ownerEmail: ownerEmail.trim() || null,
+          keyTtlSec: Math.max(60, Math.round(Number(ttlHours || "6") * 3600)),
+          baseUrl: baseUrl.trim(),
+          fields,
+        }),
+      })
+      if (res.status === 409) {
+        toast.error(t.servicesAccountLabelTaken)
+        return
+      }
+      if (res.status === 404) {
+        toast.error(t.servicesAccountOwnerMissing)
+        return
+      }
+      if (!res.ok) throw new Error(String(res.status))
+      toast.success(t.servicesAccountCreated)
+      await onDone()
+    } catch {
+      toast.error(t.servicesSaveError)
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
+      <div className="flex flex-wrap gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs font-normal text-muted-foreground">
+            {t.servicesAccountLabel}
+          </Label>
+          <Input
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            autoComplete="off"
+            placeholder="main"
+            className="max-w-[12rem]"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs font-normal text-muted-foreground">
+            {t.servicesAccountOwner}
+          </Label>
+          <Input
+            value={ownerEmail}
+            onChange={(event) => setOwnerEmail(event.target.value)}
+            autoComplete="off"
+            placeholder={t.servicesAccountOwnerPlaceholder}
+            className="max-w-[18rem]"
+          />
+        </div>
+        <NumberField
+          id={`svc-acc-ttl-${service.id}`}
+          label={t.servicesFieldTtl}
+          value={ttlHours}
+          onChange={setTtlHours}
+        />
+        <div className="space-y-1">
+          <Label className="text-xs font-normal text-muted-foreground">
+            {t.servicesAccountBaseUrl}
+          </Label>
+          <Input
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            autoComplete="off"
+            placeholder={service.baseUrl || t.servicesAccountBaseUrlSame}
+            className="max-w-[20rem]"
+          />
+          <p className="max-w-[20rem] text-xs text-muted-foreground/80">
+            {t.servicesAccountBaseUrlHint}
+          </p>
+        </div>
+      </div>
+      <p className="max-w-2xl text-xs text-muted-foreground/80">
+        {t.servicesAccountOwnerHint}
+      </p>
+      <SecretFields
+        service={service}
+        hint={t.servicesAccountSecretHint}
+        submitLabel={t.servicesAccountCreate}
+        onSubmit={async (fields) => {
+          if (!label.trim()) return
+          await submit(fields)
+        }}
+      />
+    </div>
+  )
+}
+
+/**
+ * Заведение сервиса — два шага.
+ *
+ * Раньше это была одна простыня из десяти полей, и половина из них спрашивала
+ * то, чего человек в этот момент ещё не решал. Разделение повторяет порядок, в
+ * котором решения принимаются на самом деле: сперва «что за сервис и где он»,
+ * потом «чем к нему авторизоваться».
+ *
+ * Чего здесь больше НЕТ и почему:
+ *
+ * - **адаптер** — поле никто не читал: ни выдача ключей, ни гейт, ни расчёт.
+ *   Спрашивать то, что никуда не идёт, значит заставлять человека угадывать;
+ * - **как платим вендору** — на наш учёт не влияет вовсе. Пригодится сверке с
+ *   остатком у вендора (С6), и вернём поле тогда же, а не заранее;
+ * - **дневной потолок** — записывался, но нигде не применялся. Обещание без
+ *   механизма опаснее его отсутствия: на него понадеются;
+ * - **как ключ попадает к исполнителю** — `proxy` не реализован (`vendorCall`
+ *   не написан), и выбор этого режима молча прекратил бы выдачу ключей. Вернём
+ *   вместе с реализацией;
+ * - **поля секрета** отдельной строкой — их больше не нужно объявлять заранее:
+ *   на втором шаге человек вводит сами поля, а состав выводится из них.
+ */
 function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
   const { t } = useI18n()
+  const [step, setStep] = useState<1 | 2>(1)
+
+  // ── Шаг 1: сервис ──────────────────────────────────────────────────────────
   const [name, setName] = useState("")
   const [slug, setSlug] = useState("")
-  const [adapter, setAdapter] = useState("")
+  /**
+   * Идентификатор правили руками — именем его больше не перетираем. Человек мог
+   * подогнать его под то, чего уже ждёт нода.
+   */
+  const [slugTouched, setSlugTouched] = useState(false)
+  const [baseUrl, setBaseUrl] = useState("")
   const [currency, setCurrency] = useState("USD")
-  const [model, setModel] = useState<VendorBillingModel>("prepaid")
-  const [delivery, setDelivery] = useState<VendorDelivery>("keys")
+  /** Показать поле идентификатора. Он заполняется сам; правят его редко. */
+  const [editId, setEditId] = useState(false)
+
+  // ── Шаг 2: ключ ────────────────────────────────────────────────────────────
+  const [label, setLabel] = useState("main")
+  /**
+   * Поля секрета вводятся как есть: имя поля и значение. Состав (`secretFields`
+   * сервиса) выводится из имён — отдельно объявлять его не нужно, а вопрос
+   * «какие у вендора поля» человек всё равно решает в этот самый момент.
+   */
+  const [fields, setFields] = useState<{ key: string; value: string }[]>([
+    { key: "apiKey", value: "" },
+  ])
   const [ttlHours, setTtlHours] = useState("6")
-  const [cap, setCap] = useState("")
-  const [secret, setSecret] = useState("")
+  /** Вендор просит несколько полей. Редкий случай, поэтому за ссылкой. */
+  const [namedFields, setNamedFields] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const submit = async () => {
+  const effectiveSlug = slugTouched ? slug.trim() : slugify(name)
+  const canGoOn = name.trim().length > 0 && effectiveSlug.length > 0
+  const filled = fields.filter((f) => f.key.trim() && f.value.trim())
+
+  const submit = async (withKey: boolean) => {
     setSaving(true)
     try {
+      const specs = filled.map((f) => ({
+        key: f.key.trim(),
+        label: "",
+        secret: true,
+      }))
       const res = await fetch("/api/admin/services", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          slug: slug.trim(),
-          adapter: adapter.trim(),
+          slug: effectiveSlug,
+          baseUrl: baseUrl.trim(),
           currency,
-          billingModel: model,
-          delivery,
-          keyTtlSec: Math.max(60, Math.round(Number(ttlHours || "6") * 3600)),
-          dailyCapCents: cap.trim() ? (rublesToCents(cap) ?? 0) : 0,
-          secret: secret.trim(),
+          secretFields: withKey && specs.length > 0 ? specs : [],
+          account:
+            withKey && specs.length > 0
+              ? {
+                  label: label.trim() || "main",
+                  fields: Object.fromEntries(
+                    filled.map((f) => [f.key.trim(), f.value.trim()]),
+                  ),
+                  keyTtlSec: Math.max(
+                    60,
+                    Math.round(Number(ttlHours || "6") * 3600),
+                  ),
+                }
+              : null,
         }),
       })
       if (res.status === 409) {
@@ -492,136 +1062,297 @@ function CreateForm({ onDone }: { onDone: () => Promise<void> }) {
 
   return (
     <Section title={t.servicesAddTitle}>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="svc-name" className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldName}
-          </Label>
-          <Input id="svc-name" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="svc-slug" className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldSlug}
-          </Label>
-          <Input
-            id="svc-slug"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase())}
-            placeholder="eleven-labs"
-          />
-          <p className="text-xs text-muted-foreground/80">{t.servicesFieldSlugHint}</p>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="svc-adapter" className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldAdapter}
-          </Label>
-          <Input
-            id="svc-adapter"
-            value={adapter}
-            onChange={(e) => setAdapter(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground/80">{t.servicesFieldAdapterHint}</p>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldCurrency}
-          </Label>
-          <Select value={currency} onValueChange={setCurrency}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CURRENCIES.map((code) => (
-                <SelectItem key={code} value={code}>
-                  {code}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground/80">{t.servicesFieldCurrencyHint}</p>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldModel}
-          </Label>
-          <Select
-            value={model}
-            onValueChange={(next) => setModel(next as VendorBillingModel)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {BILLING_MODELS.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {t[MODEL_KEY[value]]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldDelivery}
-          </Label>
-          <Select
-            value={delivery}
-            onValueChange={(next) => setDelivery(next as VendorDelivery)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DELIVERIES.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {t[DELIVERY_KEY[value]]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <NumberField
-          id="svc-ttl"
-          label={t.servicesFieldTtl}
-          hint={t.servicesFieldTtlHint}
-          value={ttlHours}
-          onChange={setTtlHours}
-        />
-        <NumberField
-          id="svc-cap"
-          label={t.servicesFieldCap}
-          hint={t.servicesFieldCapHint}
-          value={cap}
-          onChange={setCap}
-        />
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="svc-secret" className="text-sm font-normal text-muted-foreground">
-            {t.servicesFieldSecret}
-          </Label>
-          <Input
-            id="svc-secret"
-            type="password"
-            autoComplete="off"
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            className="max-w-xl"
-          />
-          <p className="text-xs text-muted-foreground/80">{t.servicesFieldSecretHint}</p>
-        </div>
+      {/* Шаги показаны оба сразу, а не по одному: человек должен видеть, что
+          его ждёт, и что второй шаг можно пропустить. */}
+      <div className="flex items-center gap-2 text-xs">
+        <StepBadge n={1} active={step === 1} label={t.servicesStepService} />
+        <span className="text-muted-foreground/50">→</span>
+        <StepBadge n={2} active={step === 2} label={t.servicesStepKey} />
       </div>
 
-      <Button
-        type="button"
-        onClick={submit}
-        disabled={saving || !name.trim() || !slug.trim() || secret.trim().length < 8}
-      >
-        {saving ? (
-          <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-        ) : (
-          <Plug className="mr-1.5 h-4 w-4" />
-        )}
-        {t.servicesCreate}
-      </Button>
+      {step === 1 ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="svc-name" className="text-sm font-normal text-muted-foreground">
+                {t.servicesFieldName}
+              </Label>
+              <Input
+                id="svc-name"
+                autoComplete="off"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="ElevenLabs"
+              />
+              {/* Идентификатор не прячем за словом «Дополнительно», но и полем
+                  не показываем: он выводится из названия сам. Правят его редко
+                  — когда плагин уже ждёт конкретное имя, — и ради этого случая
+                  здесь ссылка, а не ещё одно поле на виду. */}
+              {effectiveSlug && !editId ? (
+                <p className="text-xs text-muted-foreground/80">
+                  {tf(t.servicesSlugAuto, { slug: effectiveSlug })}{" "}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    onClick={() => setEditId(true)}
+                  >
+                    {t.servicesSlugEdit}
+                  </button>
+                </p>
+              ) : null}
+              {editId ? (
+                <div className="space-y-1.5 pt-1">
+                  <Label
+                    htmlFor="svc-slug"
+                    className="text-sm font-normal text-muted-foreground"
+                  >
+                    {t.servicesFieldSlug}
+                  </Label>
+                  <Input
+                    id="svc-slug"
+                    autoComplete="off"
+                    value={effectiveSlug}
+                    onChange={(e) => {
+                      setSlugTouched(true)
+                      setSlug(e.target.value.toLowerCase())
+                    }}
+                    placeholder="eleven-labs"
+                  />
+                  <p className="text-xs text-muted-foreground/80">
+                    {t.servicesFieldSlugHint}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-normal text-muted-foreground">
+                {t.servicesFieldCurrency}
+              </Label>
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      {code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground/80">{t.servicesFieldCurrencyHint}</p>
+            </div>
+          </div>
+
+          <Button type="button" disabled={!canGoOn} onClick={() => setStep(2)}>
+            {t.servicesStepNext}
+            <ChevronRight className="ml-1.5 h-4 w-4" />
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {t.servicesStepKeyHint}
+          </p>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="svc-label" className="text-sm font-normal text-muted-foreground">
+              {t.servicesAccountLabel}
+            </Label>
+            <Input
+              id="svc-label"
+              autoComplete="off"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="main"
+              className="max-w-[14rem]"
+            />
+            <p className="text-xs text-muted-foreground/80">{t.servicesLabelHint}</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="svc-url" className="text-sm font-normal text-muted-foreground">
+              {t.servicesFieldBaseUrl}
+            </Label>
+            <Input
+              id="svc-url"
+              autoComplete="off"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://x.kraslance.ru/v2/run"
+              className="max-w-xl"
+            />
+            <p className="max-w-2xl text-xs text-muted-foreground/80">
+              {t.servicesFieldBaseUrlHint}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-normal text-muted-foreground">
+              {t.servicesKeyFields}
+            </Label>
+            {/* По умолчанию поле ОДНО и без имени: у подавляющего
+                большинства вендоров это просто ключ. Прежняя раскладка «имя
+                слева, значение справа» с первого же раза заставила вписать
+                токен в поле имени — то есть провоцировала ровно ту ошибку,
+                которую должна была предотвращать. */}
+            {!namedFields ? (
+              <>
+                <Input
+                  autoComplete="off"
+                  type="password"
+                  value={fields[0]?.value ?? ""}
+                  onChange={(e) =>
+                    setFields([{ key: "apiKey", value: e.target.value }])
+                  }
+                  placeholder="Bearer test-token"
+                  className="max-w-xl"
+                />
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  onClick={() => setNamedFields(true)}
+                >
+                  {t.servicesKeyManyFields}
+                </button>
+              </>
+            ) : (
+              <>
+                {/* В режиме нескольких полей колонки подписаны: без подписей
+                    непонятно, что слева имя, а что справа значение. */}
+                <div className="flex flex-wrap gap-2">
+                  <span className="w-[12rem] text-xs text-muted-foreground/80">
+                    {t.servicesKeyFieldName}
+                  </span>
+                  <span className="text-xs text-muted-foreground/80">
+                    {t.servicesKeyFieldValue}
+                  </span>
+                </div>
+                {fields.map((field, index) => (
+                  <div key={index} className="flex flex-wrap items-center gap-2">
+                    <Input
+                      autoComplete="off"
+                      value={field.key}
+                      onChange={(e) =>
+                        setFields((prev) =>
+                          prev.map((f, i) =>
+                            i === index ? { ...f, key: e.target.value } : f,
+                          ),
+                        )
+                      }
+                      placeholder="login"
+                      className="w-[12rem] font-mono text-[13px]"
+                    />
+                    <Input
+                      autoComplete="off"
+                      type="password"
+                      value={field.value}
+                      onChange={(e) =>
+                        setFields((prev) =>
+                          prev.map((f, i) =>
+                            i === index ? { ...f, value: e.target.value } : f,
+                          ),
+                        )
+                      }
+                      className="max-w-sm"
+                    />
+                    {fields.length > 1 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setFields((prev) => prev.filter((_, i) => i !== index))
+                        }
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFields((prev) => [...prev, { key: "", value: "" }])}
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  {t.servicesKeyFieldAdd}
+                </Button>
+              </>
+            )}
+            <p className="max-w-2xl text-xs text-muted-foreground/80">
+              {namedFields ? t.servicesKeyFieldsHint : t.servicesKeyOneHint}
+            </p>
+          </div>
+
+          <NumberField
+            id="svc-ttl"
+            label={t.servicesFieldTtl}
+            hint={t.servicesFieldTtlHint}
+            value={ttlHours}
+            onChange={setTtlHours}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="ghost" onClick={() => setStep(1)}>
+              {t.servicesStepBack}
+            </Button>
+            {/* Пропуск — законный исход, а не отказ: свой сервис, поднятый
+                рядом, может не требовать авторизации вовсе. */}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void submit(false)}
+            >
+              {t.servicesStepSkipKey}
+            </Button>
+            <Button
+              type="button"
+              disabled={saving || filled.length === 0}
+              onClick={() => void submit(true)}
+            >
+              {saving ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Plug className="mr-1.5 h-4 w-4" />
+              )}
+              {t.servicesCreate}
+            </Button>
+          </div>
+        </>
+      )}
     </Section>
+  )
+}
+
+/** Кружок с номером шага. Пройденный и текущий различаются заливкой. */
+function StepBadge({
+  n,
+  active,
+  label,
+}: {
+  n: number
+  active: boolean
+  label: string
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1",
+        active ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold",
+          active ? "bg-primary text-primary-foreground" : "bg-muted-foreground/30",
+        )}
+      >
+        {n}
+      </span>
+      {label}
+    </span>
   )
 }

@@ -8,6 +8,7 @@ import { CapacityPanel } from "@/components/account/capacity-panel"
 import { formatBalance, useI18n, type DictKey } from "@/components/account/i18n"
 import { PromosSection } from "@/components/account/promos-section"
 import { cn } from "@/lib/utils"
+import { ProcessingIndicator } from "@/components/account/processing-indicator"
 
 /**
  * «Баланс и расход» — куда ушли деньги.
@@ -97,6 +98,7 @@ export function SpendingPage() {
           <span className="opacity-50"> / </span>
           <span className="text-foreground">{t.spendCrumb}</span>
         </div>
+        <ProcessingIndicator />
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 md:px-6">

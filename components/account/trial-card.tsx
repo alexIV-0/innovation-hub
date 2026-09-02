@@ -161,6 +161,14 @@ export function TrialCard({
           <span className="text-[12.5px] text-muted-foreground">{t.trialOver}</span>
         ) : null}
 
+        {/* Отзыв отделён от «период закончился» намеренно (П9.1). Это разные
+            события: одно человек ожидал, второе с ним сделали. Молчать тут
+            нельзя — баланс упал и проекты встали, и пустое место на этом
+            месте читается как поломка сайта. */}
+        {trial?.status === "revoked" ? (
+          <span className="text-[12.5px] text-amber-500/90">{t.trialRevoked}</span>
+        ) : null}
+
         <button
           type="button"
           className="rounded-lg bg-foreground/10 px-3 py-1.5 text-[12.5px] hover:bg-foreground/[0.18]"

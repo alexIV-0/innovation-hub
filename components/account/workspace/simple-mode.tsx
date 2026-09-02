@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Download,
   FolderOpen,
@@ -41,6 +41,7 @@ function Pane({
   path,
   basePath,
   onNavigate,
+  folders,
 }: {
   kind: PaneKind
   title: string
@@ -50,10 +51,32 @@ function Pane({
   /** Префикс логического пути; для корня — пусто. */
   basePath?: string
   onNavigate: (nodes: DriveFile[]) => void
+  /**
+   * Папки, между которыми панель переключается. Правая панель показывает не
+   * только OUT: у проекта могут быть и другие папки в корне — та же `Errors
+   * (дата)`, куда падение уносит исходник, — и в упрощённом режиме их иначе не
+   * увидеть вовсе. Отдельной панели они не заслуживают, поэтому делят место с
+   * OUT, а OUT остаётся основной и открытой по умолчанию.
+   */
+  folders?: {
+    items: DriveFile[]
+    activeId: string
+    onSelect: (folder: DriveFile) => void
+  }
 }) {
   const { t, view } = useWorkspace()
   const Icon = kind === "in" ? Download : kind === "out" ? Upload : FolderOpen
   const items = itemsAtPath(root, path)
+
+  /**
+   * Выбор папки стоит на месте заголовка — сами имена и есть кнопки.
+   *
+   * Ни отдельной строкой под шапкой, ни выпадающим списком: строка занимала
+   * высоту всегда и отодвигала содержимое вниз, а список прятал за клик выбор из
+   * двух-трёх вариантов, которые целиком помещаются на виду. Имя показанной
+   * папки при этом никуда не делось — оно просто нажатое.
+   */
+  const switchable = !!folders && folders.items.length > 1
 
   const accent =
     kind === "in"
@@ -85,9 +108,36 @@ function Pane({
           <Icon className={cn("h-[19px] w-[19px]", iconColor)} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold tracking-[0.4px] text-ws-1">
-            {title}
-          </p>
+          {switchable ? (
+            <div
+              aria-label={t.paneFolderPick}
+              className="-mx-1.5 flex items-center gap-0.5 overflow-x-auto px-1.5"
+            >
+              {folders.items.map((folder) => {
+                const active = folder.id === folders.activeId
+                return (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => folders.onSelect(folder)}
+                    className={cn(
+                      "shrink-0 rounded-[8px] px-2 py-0.5 text-[15px] tracking-[0.4px] transition-colors",
+                      active
+                        ? "bg-white/[0.09] font-semibold text-ws-1"
+                        : "font-medium text-ws-4 hover:bg-white/[0.05] hover:text-ws-2",
+                    )}
+                  >
+                    {folder.name}
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="truncate text-[15px] font-semibold tracking-[0.4px] text-ws-1">
+              {title}
+            </p>
+          )}
           <p className="truncate text-[12px] text-ws-3">{subtitle}</p>
         </div>
         <span className="shrink-0 text-[11.5px] text-ws-4">
@@ -115,16 +165,80 @@ function Pane({
 
 /**
  * Упрощённый режим для выбранного проекта.
- * Если в корне есть IN и / или OUT — показываем их отдельными панелями,
- * если таких папок нет — одну панель с корнем проекта.
+ *
+ * Две панели: слева IN, справа OUT. Правая при этом показывает не только OUT —
+ * все прочие папки корня делят её место и выбираются переключателем в шапке.
+ * Иначе они в этом режиме были бы невидимы вовсе: раньше панель знала ровно две
+ * папки, и всё, что лежит в корне рядом с ними, существовало только в полном
+ * режиме. Отдельной панели такая папка не заслуживает, а невидимой быть не
+ * должна — та же `Errors (дата)`, куда падение обработки уносит исходник.
+ *
+ * Ни IN, ни других папок в корне нет — показываем одну панель с корнем проекта.
  */
 export function SimpleProject() {
-  const { t, selected, inFolder, outFolder, rootFiles, path, goToPath, refreshDrive } =
-    useWorkspace()
+  const {
+    t,
+    selected,
+    inFolder,
+    outFolder,
+    rootFiles,
+    path,
+    goToPath,
+    refreshDrive,
+    revealPath,
+  } = useWorkspace()
   const [inPath, setInPath] = useState<DriveFile[]>([])
-  const [outPath, setOutPath] = useState<DriveFile[]>([])
+  /** Какую папку показывает правая панель и где мы внутри неё. */
+  const [rightId, setRightId] = useState<string | null>(null)
+  const [rightPath, setRightPath] = useState<DriveFile[]>([])
 
-  const splitPanes = !!inFolder || !!outFolder
+  /**
+   * Что может показать правая панель: OUT и остальные папки корня.
+   *
+   * Раньше она знала только OUT, и всё, что лежит в корне рядом с ним, в
+   * упрощённом режиме было невидимо — включая `Errors (дата)`, куда падение
+   * уносит исходник. Заводить каждой папке свою панель незачем: OUT остаётся
+   * основной, прочие делят с ней место и открываются переключателем.
+   */
+  const rightFolders = useMemo(() => {
+    const others = rootFiles.filter(
+      (f) =>
+        f.isFolder && f.id !== inFolder?.id && f.id !== outFolder?.id,
+    )
+    return outFolder ? [outFolder, ...others] : others
+  }, [rootFiles, inFolder, outFolder])
+
+  const rightFolder =
+    rightFolders.find((f) => f.id === rightId) ?? rightFolders[0] ?? null
+
+  const showRight = (folder: DriveFile) => {
+    setRightId(folder.id)
+    // Путь внутренний, к прежней папке отношения не имеет.
+    setRightPath([])
+  }
+
+  /**
+   * Переход «открыть файл» снаружи: контекст сообщает цепочку папок от корня, а
+   * уложить её должна панель — у IN и правой здесь свои локальные пути, и общий
+   * `path` из контекста в этом режиме не рисуется вовсе. Без этого переход в
+   * `OUT/готовое/2026-09` открывал бы просто корень OUT.
+   *
+   * Первый узел цепочки — сама панель, остальное её внутренний путь.
+   */
+  useEffect(() => {
+    if (!revealPath || revealPath.length === 0) return
+    const [head, ...rest] = revealPath
+    if (inFolder && head.id === inFolder.id) {
+      setInPath(rest)
+      return
+    }
+    if (rightFolders.some((f) => f.id === head.id)) {
+      setRightId(head.id)
+      setRightPath(rest)
+    }
+  }, [revealPath, inFolder, rightFolders])
+
+  const splitPanes = !!inFolder || !!rightFolder
 
   const split = useDragSize({
     initial: 520,
@@ -177,7 +291,7 @@ export function SimpleProject() {
           <div
             className={cn(
               "mt-3.5 grid min-h-0 flex-1 grid-cols-1 gap-3.5",
-              inFolder && outFolder
+              inFolder && rightFolder
                 ? "grid-rows-2 lg:grid-cols-[var(--in-width)_1fr] lg:grid-rows-1"
                 : "grid-rows-1",
             )}
@@ -194,7 +308,7 @@ export function SimpleProject() {
                 onNavigate={setInPath}
               />
             ) : null}
-            {outFolder ? (
+            {rightFolder ? (
               <div className="relative flex min-h-0 min-w-0 flex-col">
                 {inFolder ? (
                   <ResizeGrip
@@ -208,13 +322,22 @@ export function SimpleProject() {
                   />
                 ) : null}
                 <Pane
-                  kind="out"
-                  title="OUT"
-                  subtitle={t.paneOutSub}
-                  root={outFolder.children ?? []}
-                  path={outPath}
-                  basePath="OUT"
-                  onNavigate={setOutPath}
+                  kind={rightFolder.id === outFolder?.id ? "out" : "root"}
+                  title={rightFolder.name}
+                  subtitle={
+                    rightFolder.id === outFolder?.id
+                      ? t.paneOutSub
+                      : t.paneFolderSub
+                  }
+                  root={rightFolder.children ?? []}
+                  path={rightPath}
+                  basePath={rightFolder.name}
+                  onNavigate={setRightPath}
+                  folders={{
+                    items: rightFolders,
+                    activeId: rightFolder.id,
+                    onSelect: showRight,
+                  }}
                 />
               </div>
             ) : null}

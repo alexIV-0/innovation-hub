@@ -169,6 +169,11 @@ export const adminDict = {
     auditServiceSecretRotated: "Заменён ключ сервиса",
     auditServiceSecretsRevoked: "Погашены прежние ключи сервиса",
     auditServiceKeysIssued: "Ключи выданы машине",
+    auditServiceAccountCreated: "Учётка заведена",
+    auditServiceAccountUpdated: "Учётка изменена",
+    auditServiceIncident: "Сбой внешнего сервиса",
+    auditTrialRevoked: "Тестовый период отозван",
+    auditTrialReset: "Тестовый период разрешён заново",
 
     // capability tags
     capsMenuItem: "Доступы",
@@ -483,6 +488,13 @@ export const adminDict = {
     pipelineTaskCancelled: "Задача снята.",
     pipelineTaskDeleted: "Задача удалена.",
     pipelineTaskActionError: "Не удалось изменить задачу.",
+    pipelineQuarantined: "исходник в папке ошибок",
+    pipelineQuarantinedTitle:
+      "Файл унесён из IN в папку ошибок проекта — обход его больше не увидит. Чтобы прогнать заново, верните его в IN.",
+    pipelineTaskRequeue: "Вернуть в IN",
+    pipelineTaskRequeueTitle:
+      "Вернуть исходник из папки ошибок в IN. Конвейер увидит его событием и заведёт новую задачу.",
+    pipelineTaskRequeued: "Файл возвращён в IN.",
 
     // токены доступа и машины под ними
     tokenScoped: "привязан к проекту",
@@ -726,6 +738,11 @@ export const adminDict = {
     auditServiceSecretRotated: "Service key rotated",
     auditServiceSecretsRevoked: "Previous service keys revoked",
     auditServiceKeysIssued: "Keys issued to a machine",
+    auditServiceAccountCreated: "Account created",
+    auditServiceAccountUpdated: "Account updated",
+    auditServiceIncident: "External service incident",
+    auditTrialRevoked: "Trial period revoked",
+    auditTrialReset: "Trial period allowed again",
 
     // capability tags
     capsMenuItem: "Access",
@@ -1035,6 +1052,13 @@ export const adminDict = {
     pipelineTaskCancelled: "Task cancelled.",
     pipelineTaskDeleted: "Task deleted.",
     pipelineTaskActionError: "Could not change the task.",
+    pipelineQuarantined: "source in the errors folder",
+    pipelineQuarantinedTitle:
+      "The file was taken out of IN into the project's errors folder — the sweep no longer sees it. To run it again, move it back to IN.",
+    pipelineTaskRequeue: "Move back to IN",
+    pipelineTaskRequeueTitle:
+      "Move the source back from the errors folder to IN. The pipeline picks it up by event and creates a new task.",
+    pipelineTaskRequeued: "File moved back to IN.",
 
     // access tokens and their machines
     tokenScoped: "scoped to a project",

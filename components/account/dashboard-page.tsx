@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowRight,
+  ArrowUpRight,
   BarChart3,
   Folder,
   Loader2,
@@ -20,6 +21,7 @@ import {
   useI18n,
 } from "@/components/account/i18n"
 import { TrialCard } from "@/components/account/trial-card"
+import { ProcessingIndicator } from "@/components/account/processing-indicator"
 
 type Stats = {
   balanceCents: number
@@ -104,12 +106,7 @@ export function DashboardPageClient({ fullName, createdAt }: Props) {
           <span className="text-[#4a5060]"> / </span>
           <span className="text-[#eef1f6]">{t.dashboardCrumb}</span>
         </div>
-        <a
-          href="/"
-          className="flex items-center gap-1 text-[13px] text-[#c3c8d2] hover:text-[#eef1f6]"
-        >
-          {t.viewSite}
-        </a>
+        <ProcessingIndicator />
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 md:px-6 md:py-7">
@@ -129,22 +126,42 @@ export function DashboardPageClient({ fullName, createdAt }: Props) {
             <div className="mt-3.5 text-[13px] text-[#7c8290]">
               {t.memberSince} {memberSince}
             </div>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/account/projects"
-                className="flex items-center gap-2 rounded-[11px] border border-white/10 bg-[#0d121c] px-4 py-2.5 text-[14px] text-[#eef1f6] hover:bg-[#141b28]"
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/account/projects"
+                  className="flex items-center gap-2 rounded-[11px] border border-white/10 bg-[#0d121c] px-4 py-2.5 text-[14px] text-[#eef1f6] hover:bg-[#141b28]"
+                >
+                  {t.allProjects}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={createProject}
+                  className="flex items-center gap-2 rounded-[11px] bg-[#3b8bf0] px-4 py-2.5 text-[14px] font-medium text-white hover:bg-[#2f80ed]"
+                >
+                  <Plus className="h-[18px] w-[18px]" />
+                  {t.newProject}
+                </button>
+              </div>
+
+              {/*
+                Единственный вход на публичный сайт из кабинета. Раньше он был в
+                четырёх верхних панелях сразу и занимал в каждой правый край —
+                самое видное место строки — ради действия, которым пользуются
+                хорошо если раз в сессию. Здесь он один, на дашборде, куда и так
+                попадают на входе, и в новой вкладке: кабинет — рабочее место,
+                терять его ради разглядывания сайта незачем.
+              */}
+              <a
+                href="/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[13px] text-[#9aa0ac] hover:text-[#eef1f6]"
               >
-                {t.allProjects}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <button
-                type="button"
-                onClick={createProject}
-                className="flex items-center gap-2 rounded-[11px] bg-[#3b8bf0] px-4 py-2.5 text-[14px] font-medium text-white hover:bg-[#2f80ed]"
-              >
-                <Plus className="h-[18px] w-[18px]" />
-                {t.newProject}
-              </button>
+                {t.viewSite}
+                <ArrowUpRight className="h-[15px] w-[15px]" />
+              </a>
             </div>
           </div>
 

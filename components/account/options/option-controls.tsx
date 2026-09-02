@@ -433,6 +433,91 @@ export function AutocompleteControl({
 }
 
 /** Контрол по `controlType`: тем же ключом, каким он назван в графе. */
+/**
+ * Учётка внешнего сервиса (пункт 7 запроса клиента).
+ *
+ * Варианты знает не граф, а сайт: это учётки ЭТОГО человека по ЭТОМУ сервису.
+ * Поэтому список тянется запросом, а не приходит в `option.options` — и по той
+ * же причине рядом стоит ссылка на «Мои ключи»: подключить ключ отсюда нельзя,
+ * он один на все проекты и живёт в своём разделе.
+ *
+ * ⚠️ В значении лежит МЕТКА, а не секрет. Секрет наружу не отдаётся никогда,
+ * даже владельцу: попади он в `options.json`, он оказался бы и в зеркале
+ * проекта на каждой машине парка.
+ */
+function VendorAccountControl({ option, value, disabled, onChange }: ControlProps) {
+  const { t } = useI18n()
+  const [labels, setLabels] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const res = await fetch("/api/account/vendor-keys", { cache: "no-store" })
+        if (!res.ok) throw new Error(String(res.status))
+        const body = (await res.json()) as {
+          accounts: { label: string; serviceSlug: string }[]
+        }
+        if (!alive) return
+        setLabels(
+          body.accounts
+            .filter((a) => a.serviceSlug === option.service)
+            .map((a) => a.label),
+        )
+      } catch {
+        // Список не загрузился — показываем пустой. Ронять всю вкладку настроек
+        // из-за одного контрола нельзя: остальные параметры к ключам отношения
+        // не имеют.
+        if (alive) setLabels([])
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [option.service])
+
+  const current = typeof value === "string" ? value : ""
+  const known = labels ?? []
+  // Метка, которой больше нет в списке: учётку отозвали, а в проекте она
+  // осталась. Показываем её отдельным пунктом, иначе поле молча опустело бы, и
+  // человек не понял бы, почему обработка встала.
+  const orphan = current !== "" && !known.includes(current)
+
+  return (
+    <div className="space-y-1.5">
+      <Select
+        value={current}
+        disabled={disabled || labels === null}
+        onValueChange={(next) => onChange(next)}
+      >
+        <SelectTrigger className="h-8 text-[13px]">
+          <SelectValue placeholder={t.optionsAccountPick} />
+        </SelectTrigger>
+        <SelectContent>
+          {orphan ? (
+            <SelectItem value={current}>
+              {current} — {t.optionsAccountMissing}
+            </SelectItem>
+          ) : null}
+          {known.map((label) => (
+            <SelectItem key={label} value={label}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <a
+        href="/account/vendor-keys"
+        className="inline-block text-[11px] text-ws-4 underline-offset-2 hover:underline"
+      >
+        {labels !== null && known.length === 0
+          ? t.optionsAccountNone
+          : t.optionsAccountManage}
+      </a>
+    </div>
+  )
+}
+
 export const OPTION_CONTROLS: Record<
   ExposedOption["control"],
   (props: ControlProps) => React.ReactNode
@@ -444,6 +529,7 @@ export const OPTION_CONTROLS: Record<
   ddm: DdmControl,
   autocomplete: AutocompleteControl,
   textedit: TextEditControl,
+  vendorAccount: VendorAccountControl,
 }
 
 /** Значение строкой — для заблокированных полей и подписей. */

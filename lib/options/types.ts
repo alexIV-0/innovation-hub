@@ -23,6 +23,15 @@ export const EXPOSED_CONTROL_TYPES = [
   "autocomplete",
   "textedit",
   "valueRange",
+  /**
+   * Учётка внешнего сервиса (VENDOR_KEYS_CLIENT_REQUESTS, пункт 7). Отдельный
+   * контрол, а не `ddm` со списком: варианты знает не граф, а сайт — это
+   * учётки ЭТОГО человека по ЭТОМУ сервису, и меняются они на «Моих ключах».
+   *
+   * В значении лежит МЕТКА учётки, не секрет: иначе ключ оказался бы в
+   * `options.json` проекта и в его зеркале на каждой машине.
+   */
+  "vendorAccount",
 ] as const
 
 export type ExposedOptionControl = (typeof EXPOSED_CONTROL_TYPES)[number]
@@ -88,4 +97,11 @@ export type ExposedOption = {
 
   /** `textedit`: подсветка синтаксиса в программе; на сайте — просто текст. */
   language: string | null
+
+  /**
+   * `vendorAccount`: слаг сервиса, чьи учётки предлагать. Приходит из графа —
+   * сайт его не угадывает. Пустой слаг означает, что автор графа контрол
+   * поставил, а сервис не назвал: список тогда пуст, и это видно.
+   */
+  service: string | null
 }

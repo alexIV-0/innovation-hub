@@ -5,6 +5,7 @@ import { ArrowLeft, BarChart3 } from "lucide-react"
 import { useI18n } from "@/components/account/i18n"
 import { StatsReadiness } from "@/components/account/stats-readiness"
 import { StatisticsExplorer } from "@/components/statistics/statistics-explorer"
+import { ProcessingIndicator } from "@/components/account/processing-indicator"
 
 /**
  * Расширенная статистика кабинета. Скоуп «только своё» навешивает роут
@@ -22,13 +23,16 @@ export function StatisticsPageClient() {
           <span className="text-ws-5"> / </span>
           <span className="text-ws-1">{t.statsAdvTitle}</span>
         </div>
-        <Link
-          href="/account"
-          className="flex items-center gap-1.5 text-[13px] text-ws-2 hover:text-ws-1"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {t.dashboard}
-        </Link>
+        <div className="flex items-center gap-3">
+          <ProcessingIndicator />
+          <Link
+            href="/account"
+            className="flex items-center gap-1.5 text-[13px] text-ws-2 hover:text-ws-1"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {t.dashboard}
+          </Link>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-6 md:px-6 md:py-7">

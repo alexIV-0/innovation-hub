@@ -12,6 +12,7 @@ import type {
 import type { Peaks } from "@/lib/tools/dialog/peaks"
 import type { TakeAdjustment } from "@/lib/tools/dialog/voice"
 import type { EditorClock, TrackFlags, TrackMode } from "../shared/editor-state"
+import type { TaskVideo } from "../shared/use-task-folder"
 import type { VoicePrefs } from "./prefs"
 
 /**
@@ -76,7 +77,8 @@ export type VoiceApi = {
   setTrackMode: (mode: TrackMode) => void
 
   clock: EditorClock
-  videoUrl: string | null
+  /** Видео задачи: файл в папке, ссылка на него или причина, почему кадра нет. */
+  video: TaskVideo
   /** Волна дорожки: своя, если есть, иначе общая. */
   peaksFor: (trackId: string) => { peaks: Peaks | null; own: boolean }
   mainPeaks: Peaks | null

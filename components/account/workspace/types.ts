@@ -24,7 +24,7 @@ export type Project = {
    * Почему проект стоит: `null` — остановил человек, иначе биллинг. Тумблер в
    * этом случае обратно не включается, пока платить нечем.
    */
-  pausedReason?: "no-funds" | "trial-over" | null
+  pausedReason?: "no-funds" | "trial-over" | "no-vendor-key" | null
   /** В архиве: скрыт из рабочего списка, обработки по нему не идут. */
   isArchived: boolean
   /** Soft-deleted project (cabinet trash tab). */

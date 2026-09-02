@@ -109,6 +109,7 @@ export function DescriptionDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
       <DialogContent
+        aria-describedby={undefined}
         // Своя геометрия вместо max-w-lg: описание — документ, его читают в
         // колонке нормальной ширины, а правят рядом с превью.
         className={cn(

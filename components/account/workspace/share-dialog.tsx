@@ -384,7 +384,10 @@ export function ShareDialog() {
         if (!next) closeShareDialog()
       }}
     >
-      <DialogContent className="gap-0 border-border/60 bg-ws-raised p-0 sm:max-w-lg">
+      <DialogContent
+        aria-describedby={undefined}
+        className="gap-0 border-border/60 bg-ws-raised p-0 sm:max-w-lg"
+      >
         <DialogHeader className="px-6 pb-1 pt-6">
           <DialogTitle className="pr-8 text-[18px] font-semibold tracking-tight text-ws-1">
             {t.shareTitle}

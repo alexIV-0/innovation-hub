@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Folder,
   FolderInput,
+  FolderSearch,
   Loader2,
   RefreshCw,
   Trash2,
@@ -18,7 +19,23 @@ import { tf, useAdminI18n, type AdminDict } from "@/components/admin/admin-dict"
 import { useI18n, type Lang } from "@/components/account/i18n"
 import { cn } from "@/lib/utils"
 import type { PipelineTask, TaskCounts, TaskStatus } from "@/lib/pipeline/tasks"
+import type { SkippedProject } from "@/lib/pipeline/scan"
+import { SKIP_LABEL } from "./skip-labels"
 import { StepList, StepStrip, stepProgress } from "./task-steps"
+
+/**
+ * Остаток до обхода часами: `MM:SS`, а после часа — `HH:MM`.
+ *
+ * Обе формы влезают в один слот и не растут: период обхода сверху ограничен
+ * сутками, то есть больше `24:00` не покажет. Секунды до часа важнее минут после
+ * него — рядом с концом отсчёта на них и смотрят.
+ */
+function formatLeft(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000))
+  const pad = (n: number) => String(n).padStart(2, "0")
+  if (total >= 3600) return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}`
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
+}
 
 const STATUS_KEY: Record<TaskStatus, keyof AdminDict> = {
   queued: "taskQueued",
@@ -70,8 +87,16 @@ export function TasksPanel({
    * момент, когда на них смотрят вместе.
    */
   tick,
+  /** Идёт ли слежение: обход ему подчинён и при «Стопе» отвечает отказом. */
+  running,
+  /** Когда обход проходил последний раз и с каким периодом ходит. */
+  sweptAt,
+  sweepIntervalMin,
 }: {
   tick: number
+  running: boolean
+  sweptAt: string | null
+  sweepIntervalMin: number
 }) {
   const t = useAdminI18n()
   const [live, setLive] = useState<PipelineTask[]>([])
@@ -85,6 +110,115 @@ export function TasksPanel({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   /** Задача, по которой сейчас идёт запрос: гасим её кнопки, а не всю таблицу. */
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [sweeping, setSweeping] = useState(false)
+  /**
+   * Секунда для часов обратного отсчёта — свой такт, а не общий такт страницы.
+   * Тот ходит раз в десять секунд и запрашивает сервер; часам сервер не нужен,
+   * им нужно только текущее время.
+   */
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    // Расписание снято — считать нечего, часы показывают прочерки.
+    if (sweepIntervalMin <= 0) return
+    let id: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (!id) id = setInterval(() => setNowMs(Date.now()), 1000)
+    }
+    const stop = () => {
+      if (id) clearInterval(id)
+      id = null
+    }
+    // Секундный таймер в скрытой вкладке — ровно та трата, которую страница уже
+    // однажды убрала у своего опроса. Возвращаясь, сразу показываем верное
+    // время, а не досчитываем с того места, где остановились.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        setNowMs(Date.now())
+        start()
+      } else stop()
+    }
+    if (document.visibilityState === "visible") start()
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [sweepIntervalMin])
+
+  /**
+   * Сколько осталось до обхода по расписанию.
+   *
+   * Цифрами и в слоте постоянной ширины: подпись меняется каждую секунду, и
+   * «через 12 мин» → «через 9 мин» дёргало бы кнопку, а с ней и всё, что правее.
+   * Поэтому на кнопке только часы, а словами — что это значит — в подсказке.
+   */
+  const left = (() => {
+    if (sweepIntervalMin <= 0) return null
+    const dueAt = sweptAt
+      ? Date.parse(sweptAt) + sweepIntervalMin * 60_000
+      : nowMs
+    return Math.max(0, dueAt - nowMs)
+  })()
+
+  const countdown = left === null ? "--:--" : formatLeft(left)
+  const nextSweep =
+    left === null
+      ? t.pipelineSweepNoSchedule
+      : left <= 0
+        ? t.pipelineSweepSoon
+        : tf(t.pipelineSweepIn, { min: Math.ceil(left / 60_000) })
+
+  /**
+   * Обход по кнопке — тот же самый, что в настройках и по расписанию.
+   *
+   * Здесь он потому, что вопрос «почему файл лежит, а задачи нет» возникает
+   * глядя на очередь, а не на закладку настроек. Причины пропуска показываем
+   * подписью к отчёту: сервер их не хранит, и другого случая их увидеть не
+   * будет.
+   */
+  const sweepNow = async () => {
+    setSweeping(true)
+    try {
+      const res = await fetch("/api/admin/pipeline/sweep", { method: "POST" })
+      const data = await res.json().catch(() => null)
+      if (res.status === 409) {
+        toast.error(t.settingsSweepStopped)
+        return
+      }
+      if (!res.ok) {
+        toast.error(data?.message ?? t.settingsSweepError)
+        return
+      }
+      const skipped: SkippedProject[] = Array.isArray(data?.skipped)
+        ? data.skipped
+        : []
+      toast.success(
+        tf(t.settingsSweepDone, {
+          created: data.created,
+          scanned: data.scanned,
+          known: data.known,
+        }) + (data.truncated ? t.settingsSweepTruncated : ""),
+        skipped.length > 0
+          ? {
+              description: (
+                <span className="flex flex-col gap-0.5">
+                  {skipped.slice(0, 5).map((item) => (
+                    <span key={`${item.projectId}:${item.reason}`}>
+                      {item.projectName} — {t[SKIP_LABEL[item.reason]]}
+                    </span>
+                  ))}
+                </span>
+              ),
+            }
+          : undefined,
+      )
+      await load()
+    } catch {
+      toast.error(t.pipelineServerUnavailable)
+    } finally {
+      setSweeping(false)
+    }
+  }
 
   const apply = (data: unknown) => {
     const snapshot = data as {
@@ -192,11 +326,39 @@ export function TasksPanel({
             })}
           </span>
         ) : null}
+        {/*
+          Две кнопки рядом, и они делают разное — отсюда подписи и подсказки.
+          Одна круглая стрелка на этом месте читалась как «проверить папки», а
+          перечитывала только список: файл лежал в IN, кнопку жали, ничего не
+          происходило, и понять, почему, было нельзя.
+        */}
+        <button
+          type="button"
+          onClick={() => void sweepNow()}
+          disabled={sweeping || !running}
+          title={
+            running
+              ? tf(t.pipelineSweepNowTitle, { when: nextSweep })
+              : t.pipelineSweepNeedRunning
+          }
+          className="ml-auto flex h-8 items-center gap-2 rounded-[9px] border border-white/[0.12] px-2.5 text-[12.5px] text-ws-2 hover:bg-white/5 hover:text-ws-1 disabled:opacity-40"
+        >
+          {sweeping ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <FolderSearch className="h-3.5 w-3.5" />
+          )}
+          {t.pipelineSweepNow}
+          <span className="w-[46px] text-right font-mono text-[12px] tabular-nums text-ws-5">
+            {countdown}
+          </span>
+        </button>
         <button
           type="button"
           onClick={() => void load()}
-          title={t.refresh}
-          className="ml-auto flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
+          title={t.pipelineQueueReloadTitle}
+          aria-label={t.pipelineQueueReload}
+          className="flex h-8 w-8 items-center justify-center rounded-[9px] text-ws-3 hover:bg-white/5 hover:text-ws-1"
         >
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
         </button>

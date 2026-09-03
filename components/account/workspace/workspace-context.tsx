@@ -23,6 +23,8 @@ import type { ExposedOption } from "@/lib/options/types"
 import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import {
   findChildByName,
+  folderPathOf,
+  freeNameIn,
   itemsAtPath,
   mapProject,
   pathToFolderPath,
@@ -43,6 +45,8 @@ import type {
   Density,
   DriveFile,
   Project,
+  UploadConflict,
+  UploadConflictAction,
   UploadTarget,
   ViewMode,
   WorkspaceCapabilities,
@@ -72,6 +76,25 @@ function parseTab(raw: string | null): ProjectTab {
   return PROJECT_TABS.includes(raw as ProjectTab)
     ? (raw as ProjectTab)
     : "projects"
+}
+
+/**
+ * Отказ «обработать заново» человеческими словами.
+ *
+ * Сервер отдаёт код, а не текст: подпись выбирает интерфейс, и разбирать строку
+ * ради неё означало бы расхождение языков. Причины сборки задачи (`no-options`,
+ * `unknown-search-type` и прочие пятнадцать) сводим в одну фразу — это кухня
+ * настроек проекта, и человеку в кабинете от «неизвестный searchType» ни тепло
+ * ни холодно. Кроме денег: про них сказать надо прямо.
+ */
+function reprocessMessage(reason: string | undefined, t: Dictionary): string {
+  if (reason === "stopped") return t.reprocessStopped
+  if (reason === "not-watched") return t.reprocessNotWatched
+  if (reason === "not-in-in") return t.reprocessNotInIn
+  if (reason === "no-source") return t.reprocessNoSource
+  if (reason === "live-task") return t.reprocessLive
+  if (reason === "insufficient-funds") return t.reprocessNoFunds
+  return t.reprocessNoTask
 }
 
 /** Событие «список проектов изменился» — по нему шелл обновляет счётчики. */
@@ -213,6 +236,15 @@ type WorkspaceValue = {
   uploading: boolean
   createFolder: (target: UploadTarget) => void
   renameItem: (file: DriveFile) => void
+  /**
+   * Отправить элемент папки IN на обработку ещё раз.
+   *
+   * `canReprocess` отвечает, есть ли смысл показывать пункт: адрес у источника
+   * может отсутствовать (админский вид), а сам элемент — лежать не верхним
+   * уровнем IN, где конвейер его не увидит.
+   */
+  canReprocess: (file: DriveFile) => boolean
+  reprocessItem: (file: DriveFile) => void
   deleteItem: (file: DriveFile) => void
   /** Удаление всего выделения одним подтверждением. */
   deleteItems: (files: DriveFile[]) => void
@@ -225,6 +257,11 @@ type WorkspaceValue = {
   openArchiveDialog: (target: ArchiveTarget) => void
   closeArchiveDialog: () => void
   uploadFiles: (list: FileList | File[], target: UploadTarget) => Promise<void>
+  /**
+   * Вопрос про занятое имя: что делать с этим файлом. `null` — вопроса нет.
+   * Диалог отвечает через `decide`, и до ответа заливка стоит.
+   */
+  conflict: UploadConflict | null
   triggerUpload: (target: UploadTarget) => void
   createTextFile: (target: UploadTarget) => void
   triggerFolderUpload: (target: UploadTarget) => void
@@ -304,7 +341,10 @@ async function uploadViaXhr(
   projectId: string,
   file: File,
   target: UploadTarget,
+  /** Как поступить с занятым именем: под новым именем или поверх старого. */
+  resolution?: { name?: string; overwrite?: boolean },
 ): Promise<void> {
+  const name = resolution?.name ?? file.name
   // Через storage v1 (presign → PUT → notify) — так заливает кабинет и «Папки
   // пользователей»: эндпоинт пускает по тегу projects.access, и байты не идут
   // через Next. Остальные источники ходят на свой uploadUrl.
@@ -313,18 +353,20 @@ async function uploadViaXhr(
       projectId,
       file,
       folderPath: target.folderPath ?? "",
+      name: resolution?.name,
+      overwrite: resolution?.overwrite,
     })
     return
   }
   return new Promise((resolve, reject) => {
-    const qs = new URLSearchParams({ fileName: file.name })
+    const qs = new URLSearchParams({ fileName: name })
     if (target.parentId) qs.set("parentId", target.parentId)
     else qs.set("folderPath", target.folderPath ?? "")
     const xhr = new XMLHttpRequest()
     xhr.open("POST", source.uploadUrl(projectId, qs))
     xhr.withCredentials = true
     if (file.type) xhr.setRequestHeader("Content-Type", file.type)
-    xhr.setRequestHeader("x-file-name", encodeURIComponent(file.name))
+    xhr.setRequestHeader("x-file-name", encodeURIComponent(name))
     xhr.onload = () => {
       try {
         const data = JSON.parse(xhr.responseText) as { message?: string }
@@ -476,6 +518,7 @@ export function WorkspaceProvider({
   const [draft, setDraft] = useState("")
   const [descDraft, setDescDraft] = useState("")
   const [prompt, setPrompt] = useState<PromptRequest | null>(null)
+  const [conflict, setConflict] = useState<UploadConflict | null>(null)
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
 
   const selected = projects.find((p) => p.id === selectedId) ?? null
@@ -1093,6 +1136,48 @@ export function WorkspaceProvider({
     [selectedId, t, loadDrive],
   )
 
+  /**
+   * «Обработать заново» — поставить элемент IN в очередь ещё раз.
+   *
+   * Нужно потому, что обе линии сборки берут только то, по чему задачи не было
+   * вообще: файл, который уже обработали (или который упал), лежит в IN и больше
+   * никогда сам не поедет. Раньше единственным выходом было удалить строку
+   * задачи в админке, но зона «Завершено» показывает последние полсотни — у
+   * файла недельной давности этого выхода уже не было.
+   */
+  const canReprocess = useCallback(
+    (file: DriveFile) => {
+      if (!sourceRef.current.reprocessUrl) return false
+      // Единица работы конвейера — элемент ВЕРХНЕГО уровня папки IN. Для файла
+      // внутри IN/raw задача не собирается, и пункт меню обещал бы несбыточное.
+      return folderPathOf(rootFiles, file.id) === "IN"
+    },
+    [rootFiles],
+  )
+
+  const reprocessItem = useCallback(
+    (file: DriveFile) => {
+      const build = sourceRef.current.reprocessUrl
+      if (!selectedId || !build) return
+      void (async () => {
+        try {
+          const res = await fetch(build(selectedId, file.id), { method: "POST" })
+          const data = (await res.json().catch(() => null)) as {
+            reason?: string
+          } | null
+          if (!res.ok) {
+            toast.error(reprocessMessage(data?.reason, tRef.current))
+            return
+          }
+          toast.success(tRef.current.reprocessQueued)
+        } catch {
+          toast.error(tRef.current.reprocessNoTask)
+        }
+      })()
+    },
+    [selectedId],
+  )
+
   const renameItem = useCallback(
     (file: DriveFile) => {
       if (!selectedId) return
@@ -1180,16 +1265,135 @@ export function WorkspaceProvider({
   }, [])
   const closeArchiveDialog = useCallback(() => setArchiveTarget(null), [])
 
+  /**
+   * Спросить про занятое имя и дождаться ответа.
+   *
+   * Промисом, а не колбэком: заливка идёт циклом по файлам, и следующий файл
+   * нельзя начинать, пока не решено, что делать с текущим. Колбэк развернул бы
+   * этот цикл в машину состояний ради одного вопроса.
+   */
+  const askConflict = useCallback(
+    (input: {
+      name: string
+      folderPath: string
+      suggestion: string
+      rest: number
+    }) =>
+      new Promise<{ action: UploadConflictAction; all: boolean }>((resolve) => {
+        setConflict({
+          ...input,
+          decide: (action, all) => {
+            setConflict(null)
+            resolve({ action, all })
+          },
+        })
+      }),
+    [],
+  )
+
+  /**
+   * Разрешение занятых имён для ОДНОЙ пачки заливки.
+   *
+   * Общее для загрузки файлов и папки целиком: вопрос один и тот же, а «так же с
+   * остальными» обязано действовать на всю пачку. Состояние живёт в замыкании,
+   * а не в компоненте, потому что оно и есть «пачка»: кончилась заливка —
+   * кончился и ответ «ко всем», следующая начинает разговор заново.
+   */
+  const makeConflictResolver = useCallback(() => {
+    /** Занятые имена по папкам: дерево спрашиваем один раз на папку. */
+    const takenByFolder = new Map<string, string[]>()
+    let blanket: UploadConflictAction | null = null
+
+    const takenIn = (folderPath: string): string[] => {
+      const key = folderPath.toLowerCase()
+      const cached = takenByFolder.get(key)
+      if (cached) return cached
+
+      const nodes = resolveFolderPathByName(rootFiles, folderPath)
+      // Папку могли создать прямо сейчас, под эту же заливку — в дереве её ещё
+      // нет. Пустой путь это корень проекта, а вот ненайденный — пустая папка;
+      // без этой развилки её содержимым стал бы корень со всеми его именами.
+      const items =
+        folderPath && nodes.length === 0 ? [] : itemsAtPath(rootFiles, nodes)
+      const list = items.filter((f) => !f.isFolder).map((f) => f.name)
+      takenByFolder.set(key, list)
+      return list
+    }
+
+    return async (
+      file: File,
+      folderPath: string,
+      rest: number,
+    ): Promise<
+      { skip: true } | { skip: false; resolution?: { name?: string; overwrite?: boolean } }
+    > => {
+      const taken = takenIn(folderPath)
+      const clash = taken.some(
+        (n) => n.toLowerCase() === file.name.toLowerCase(),
+      )
+      if (!clash) {
+        // Имя занимаем сразу: второй одноимённый файл этой же пачки должен
+        // столкнуться с первым, а не улечься поверх него.
+        taken.push(file.name)
+        return { skip: false }
+      }
+
+      const action =
+        blanket ??
+        (await (async () => {
+          const answer = await askConflict({
+            name: file.name,
+            folderPath,
+            suggestion: freeNameIn(taken, file.name),
+            rest,
+          })
+          if (answer.all) blanket = answer.action
+          return answer.action
+        })())
+
+      if (action === "skip") return { skip: true }
+      if (action === "overwrite") return { skip: false, resolution: { overwrite: true } }
+
+      const name = freeNameIn(taken, file.name)
+      taken.push(name)
+      return { skip: false, resolution: { name } }
+    }
+  }, [rootFiles, askConflict])
+
   const uploadFiles = useCallback(
     async (list: FileList | File[], target: UploadTarget) => {
       if (!selectedId) return
       const files = Array.from(list)
       if (!files.length) return
+
+      /**
+       * Занятое имя выясняем ДО отправки байтов, по уже загруженному дереву.
+       *
+       * Раньше столкновение ловил сервер (`assertNameFree`) уже после заливки:
+       * человек ждал гигабайт и получал отказ, а сделать с ним ничего не мог —
+       * оставалось удалить старый файл руками и залить всё заново.
+       */
+      const folderPath = (target.folderPath ?? "").replace(/^\/+|\/+$/g, "")
+      const resolve = makeConflictResolver()
+
       setUploading(true)
       try {
-        for (const file of files) {
+        for (const [index, file] of files.entries()) {
+          const verdict = await resolve(
+            file,
+            folderPath,
+            files.length - index - 1,
+          )
+          if (verdict.skip) continue
+
           try {
-            await uploadViaXhr(sourceRef.current, selectedId, file, target)
+            await uploadViaXhr(
+              sourceRef.current,
+              selectedId,
+              file,
+              target,
+              verdict.resolution,
+            )
           } catch (err) {
             toast.error(
               err instanceof Error ? err.message : `Upload failed: ${file.name}`,
@@ -1201,7 +1405,7 @@ export function WorkspaceProvider({
         setUploading(false)
       }
     },
-    [selectedId, loadDrive],
+    [selectedId, loadDrive, makeConflictResolver],
   )
 
   const triggerUpload = useCallback((target: UploadTarget) => {
@@ -1246,7 +1450,12 @@ export function WorkspaceProvider({
             }),
           })
         }
-        for (const file of files) {
+        // Тот же разговор про занятые имена, что и при заливке файлов, — он
+        // здесь даже нужнее: папку роняют повторно чаще, чем отдельный файл, и
+        // раньше вся пачка молча упиралась в отказы сервера по одному.
+        const resolve = makeConflictResolver()
+
+        for (const [index, file] of files.entries()) {
           const rel = (file as File & { webkitRelativePath?: string })
             .webkitRelativePath
           let folderPath = target.folderPath
@@ -1261,11 +1470,23 @@ export function WorkspaceProvider({
                 : nested
               : base
           }
+          folderPath = folderPath.replace(/^\/+|\/+$/g, "")
+
+          const verdict = await resolve(
+            file,
+            folderPath,
+            files.length - index - 1,
+          )
+          if (verdict.skip) continue
+
           try {
-            await uploadViaXhr(sourceRef.current, selectedId, file, {
-              parentId: null,
-              folderPath,
-            })
+            await uploadViaXhr(
+              sourceRef.current,
+              selectedId,
+              file,
+              { parentId: null, folderPath },
+              verdict.resolution,
+            )
           } catch (err) {
             toast.error(
               err instanceof Error ? err.message : `Upload failed: ${file.name}`,
@@ -1277,7 +1498,7 @@ export function WorkspaceProvider({
         setUploading(false)
       }
     },
-    [selectedId, loadDrive],
+    [selectedId, loadDrive, makeConflictResolver],
   )
 
   const createTextFile = useCallback(
@@ -1550,6 +1771,8 @@ export function WorkspaceProvider({
     stepPreview,
     uploading,
     createFolder,
+    canReprocess,
+    reprocessItem,
     renameItem,
     deleteItem,
     deleteItems,
@@ -1558,6 +1781,7 @@ export function WorkspaceProvider({
     openArchiveDialog,
     closeArchiveDialog,
     uploadFiles,
+    conflict,
     triggerUpload,
     createTextFile,
     triggerFolderUpload,

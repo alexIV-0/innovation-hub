@@ -17,6 +17,7 @@ import {
   FolderUp,
   MessageCircle,
   Pencil,
+  RotateCcw,
   Scissors,
   Settings2,
   Share2,
@@ -124,6 +125,22 @@ export function WorkspaceContextMenu() {
               icon: Pencil,
               label: t.mRename,
               onClick: () => ws.renameItem(file),
+            } as MenuEntry,
+          ]),
+      /*
+        «Обработать заново» — только для элемента верхнего уровня IN и только
+        при праве правки: обработка тратит деньги владельца проекта, и читатель,
+        позванный посмотреть результат, распоряжаться ими не должен. Для пачки
+        пункта нет: каждый элемент — своя задача и свои деньги, и одним кликом
+        на десяток выделенных такое не делают.
+      */
+      ...(many || !can.renameItem || !ws.canReprocess(file)
+        ? []
+        : [
+            {
+              icon: RotateCcw,
+              label: t.mReprocess,
+              onClick: () => ws.reprocessItem(file),
             } as MenuEntry,
           ]),
       { sep: true },

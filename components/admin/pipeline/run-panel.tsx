@@ -42,11 +42,18 @@ function fmtTime(iso: string | null, lang: Lang): string {
 export function RunPanel({
   /** Общий такт опроса страницы — см. TasksPanel. */
   tick,
-  /** Слежение включено: страница ускоряет собственный такт. */
-  onRunningChange,
+  /**
+   * Состояние наверх целиком, а не одним флагом «идёт слежение».
+   *
+   * Запрос за ним делает только этот пульт, а нужно оно двоим: странице — чтобы
+   * выбрать такт опроса, и шапке очереди — чтобы показать, сколько осталось до
+   * следующего обхода. Второй запрос за тем же самым означал бы два ответа,
+   * приезжающих вразнобой, и две разные правды на одном экране.
+   */
+  onState,
 }: {
   tick: number
-  onRunningChange: (running: boolean) => void
+  onState: (state: PipelineState | null) => void
 }) {
   const t = useAdminI18n()
   const { lang } = useI18n()
@@ -87,12 +94,11 @@ export function RunPanel({
 
   const running = state?.isRunning === true
 
-  // Такт страницы зависит от того, идёт ли слежение, а знает об этом только
-  // ответ этого запроса. Поэтому сообщаем наверх, а не заводим здесь второй
-  // таймер: иначе счётчик в пульте и таблица под ним обновлялись бы вразнобой.
+  // Сообщаем наверх, а не заводим второй таймер: иначе счётчик в пульте и
+  // таблица под ним обновлялись бы вразнобой.
   useEffect(() => {
-    onRunningChange(running)
-  }, [running, onRunningChange])
+    onState(state)
+  }, [state, onState])
 
   const toggle = async () => {
     setBusy(true)

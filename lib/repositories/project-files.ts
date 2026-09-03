@@ -93,6 +93,32 @@ export async function findFileByS3Key(
   return result.rows[0] ?? null
 }
 
+/**
+ * Файл с таким логическим именем в этой папке проекта.
+ *
+ * Нужен заливке: имя занято — и человека надо спросить, перезаписать или
+ * сохранить оба. Регистр не различаем, потому что его не различает и проверка
+ * `assertNameFree`, которая иначе откажет уже после отправки байтов.
+ */
+export async function findFileByName(input: {
+  projectId: string
+  folderPath: string
+  name: string
+}): Promise<ProjectFileRecord | null> {
+  const result = await query<ProjectFileRecord>(
+    `SELECT ${FILE_FIELDS}
+       FROM project_files
+      WHERE project_id = $1
+        AND lower(folder_path) = lower($2)
+        AND lower(name) = lower($3)
+        AND is_folder = FALSE
+        AND deleted_at IS NULL
+      LIMIT 1`,
+    [input.projectId, input.folderPath.replace(/^\/+|\/+$/g, ""), input.name],
+  )
+  return result.rows[0] ?? null
+}
+
 export async function createFolder(input: {
   projectId: string
   folderPath: string

@@ -57,6 +57,7 @@ export const dict = {
     emptyFolder: "Папка пуста — щёлкните правой кнопкой, чтобы загрузить",
     emptyProjects: "Пока нет проектов. Создайте первый.",
     upload: "Загрузить",
+    dropUploadTo: "Загрузить в",
     refresh: "Обновить",
     paused: "На паузе",
     projectRoot: "корень проекта",
@@ -1272,6 +1273,31 @@ export const dict = {
     paneFolderSub: "Папка проекта",
     paneFolderPick: "Показать папку",
     srtMinimap: "Вся таймлиния: перетащите рамку, чтобы переместиться",
+
+    // занятое имя при заливке
+    conflictTitle: "Файл с таким именем уже есть",
+    conflictBody: "«{name}» уже лежит {where}. Что сделать?",
+    conflictInRoot: "в корне проекта",
+    conflictInFolder: "в папке {folder}",
+    conflictOverwrite: "Перезаписать",
+    conflictOverwriteHint:
+      "Тот же файл в проекте: история и ссылки на него сохранятся, обработка запустится заново.",
+    conflictKeepBoth: "Сохранить оба",
+    conflictKeepBothHint: "Новый ляжет как «{name}».",
+    conflictSkip: "Пропустить",
+    conflictApplyAll: "Так же с остальными ({count})",
+
+    // «Обработать заново»
+    mReprocess: "Обработать заново",
+    reprocessQueued: "Файл отправлен на обработку.",
+    reprocessStopped: "Обработка сейчас остановлена.",
+    reprocessNotWatched: "Проект не в обработке: он на паузе или в архиве.",
+    reprocessNotInIn: "Заново обрабатываются только элементы из папки IN.",
+    reprocessNoSource: "Файла больше нет.",
+    reprocessLive: "Этот файл уже обрабатывается.",
+    reprocessNoFunds: "Не хватает средств на обработку.",
+    reprocessNoTask:
+      "Не удалось собрать задачу — проверьте настройки обработки проекта.",
     driveUnavailable: "Хранилище недоступно для этого проекта",
     driveEmpty: "Папок пока нет — загрузите файлы или дождитесь синхронизации",
 
@@ -1334,6 +1360,7 @@ export const dict = {
     emptyFolder: "Folder is empty — right-click to upload",
     emptyProjects: "No projects yet. Create your first one.",
     upload: "Upload",
+    dropUploadTo: "Upload to",
     refresh: "Refresh",
     paused: "Paused",
     projectRoot: "project root",
@@ -2544,6 +2571,31 @@ export const dict = {
     paneFolderSub: "Project folder",
     paneFolderPick: "Show folder",
     srtMinimap: "The whole timeline: drag the frame to move",
+
+    // name taken on upload
+    conflictTitle: "A file with this name already exists",
+    conflictBody: "“{name}” is already {where}. What should we do?",
+    conflictInRoot: "in the project root",
+    conflictInFolder: "in the {folder} folder",
+    conflictOverwrite: "Overwrite",
+    conflictOverwriteHint:
+      "Same file in the project: its history and links survive, and processing starts again.",
+    conflictKeepBoth: "Keep both",
+    conflictKeepBothHint: "The new one lands as “{name}”.",
+    conflictSkip: "Skip",
+    conflictApplyAll: "Do the same for the rest ({count})",
+
+    // "Process again"
+    mReprocess: "Process again",
+    reprocessQueued: "The file was sent for processing.",
+    reprocessStopped: "Processing is stopped right now.",
+    reprocessNotWatched: "This project is not being processed: it is paused or archived.",
+    reprocessNotInIn: "Only items in the IN folder can be processed again.",
+    reprocessNoSource: "The file is gone.",
+    reprocessLive: "This file is already being processed.",
+    reprocessNoFunds: "Not enough funds for processing.",
+    reprocessNoTask:
+      "Could not build the task — check the project's processing settings.",
     driveUnavailable: "Storage is unavailable for this project",
     driveEmpty: "No folders yet — upload files or wait for sync",
 

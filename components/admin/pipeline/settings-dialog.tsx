@@ -16,7 +16,9 @@ import { toast } from "sonner"
 
 import { tf, useAdminI18n, type AdminDict } from "@/components/admin/admin-dict"
 import { useI18n, type Lang } from "@/components/account/i18n"
+import { SKIP_LABEL } from "./skip-labels"
 import { cn } from "@/lib/utils"
+import type { SkippedProject } from "@/lib/pipeline/scan"
 import type { PipelineState } from "@/lib/pipeline/state"
 import {
   DOMAIN_LABELS,
@@ -362,6 +364,9 @@ function SweepPanel({ t, lang }: { t: AdminDict; lang: Lang }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [sweeping, setSweeping] = useState(false)
+  /** Почему обход не завёл задачу. Живёт до следующего прогона: сервер причины
+   *  не хранит, и после перезагрузки страницы их взять уже неоткуда. */
+  const [skipped, setSkipped] = useState<SkippedProject[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -417,6 +422,7 @@ function SweepPanel({ t, lang }: { t: AdminDict; lang: Lang }) {
 
   const runNow = async () => {
     setSweeping(true)
+    setSkipped(null)
     try {
       const res = await fetch("/api/admin/pipeline/sweep", { method: "POST" })
       const data = await res.json().catch(() => null)
@@ -435,6 +441,10 @@ function SweepPanel({ t, lang }: { t: AdminDict; lang: Lang }) {
           known: data.known,
         }) + (data.truncated ? t.settingsSweepTruncated : ""),
       )
+      // Причины пропуска приезжают в ответе и до сих пор выбрасывались. Из-за
+      // этого «файл лежит, а задачи нет» диагностировалось только запросом к
+      // базе: обход говорил «добрано 0» и молчал о том, почему.
+      setSkipped(Array.isArray(data.skipped) ? data.skipped : [])
       await load()
     } catch {
       toast.error(t.pipelineServerUnavailable)
@@ -558,6 +568,26 @@ function SweepPanel({ t, lang }: { t: AdminDict; lang: Lang }) {
           {t.settingsSweepRunNow}
         </button>
       </div>
+
+      {skipped && skipped.length > 0 ? (
+        <div className="mt-1 rounded-[10px] border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
+          <p className="text-[12.5px] text-ws-3">{t.settingsSweepSkipped}</p>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {skipped.map((item) => (
+              <li
+                key={`${item.projectId}:${item.reason}`}
+                className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]"
+              >
+                <span className="text-ws-2">{item.projectName}</span>
+                <span className="text-ws-out">{t[SKIP_LABEL[item.reason]]}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11.5px] text-ws-5">
+            {t.settingsSweepSkipHint}
+          </p>
+        </div>
+      ) : null}
 
       <p className="mt-1 px-1 text-[11.5px] leading-relaxed text-ws-5">
         {t.settingsSweepOnce}

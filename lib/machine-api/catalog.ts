@@ -1364,8 +1364,8 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
       en: "Advance a step and extend the lease.",
     },
     description: {
-      ru: "Первый отчёт переводит задачу из claimed в running. Каждый отчёт продлевает аренду на 15 минут, поэтому долгий шаг обязан отчитываться — иначе задачу вернут в очередь как брошенную. Строки прогресса удаляются при УСПЕШНОМ завершении (taskDone); у упавшей задачи они остаются — это единственное, по чему на сайте видно, на каком шаге всё встало. Отсюда уговор: перед taskFailed отчитайтесь по упавшему шагу status: \"error\" со своим message. taskFailed несёт один текст на всю задачу и не говорит, где именно сломалось.",
-      en: "The first report moves the task from claimed to running. Every report extends the lease by 15 minutes, so a long step must keep reporting — otherwise the task is returned to the queue as abandoned. Progress rows are deleted on SUCCESSFUL completion (taskDone); on a failed task they are kept — they are the only thing that shows the site which step broke. Hence the convention: before taskFailed, report the broken step with status: \"error\" and your own message. taskFailed carries one text for the whole task and does not say where it broke.",
+      ru: "Первый отчёт переводит задачу из claimed в running. Каждый отчёт продлевает аренду на 15 минут, поэтому долгий шаг обязан отчитываться — иначе задачу вернут в очередь как брошенную. Строки прогресса не удаляются ни при успехе, ни при падении: это история шагов, по которой на сайте видно, что прошло нормально и на каком шаге всё встало. Сайт чистит их сам по возрасту. Отсюда уговор: перед taskFailed отчитайтесь по упавшему шагу status: \"error\" со своим message. taskFailed несёт один текст на всю задачу и не говорит, где именно сломалось.",
+      en: "The first report moves the task from claimed to running. Every report extends the lease by 15 minutes, so a long step must keep reporting — otherwise the task is returned to the queue as abandoned. Progress rows are not deleted on success or on failure: they are the history of steps that shows the site what went through and where it stopped. The site evicts them by age on its own. Hence the convention: before taskFailed, report the broken step with status: \"error\" and your own message. taskFailed carries one text for the whole task and does not say where it broke.",
     },
     props: [
       {
@@ -1409,8 +1409,8 @@ export const MACHINE_API_ACTIONS: ActionDoc[] = [
     group: "queue",
     summary: { ru: "Задача выполнена.", en: "Task finished." },
     description: {
-      ru: "Идемпотентно по taskId: повторный заход (машина упала между заливкой и отчётом, задачу перезабрали и она прошла второй раз) отвечает ok, а не ошибкой. В распределённой системе «ровно один раз» не бывает, поэтому повтор сделан безвредным. payload завершённой задачи заменяется на итог — outFiles и totalCost.",
-      en: "Idempotent by taskId: a repeat call (the machine died between upload and report, the task was re-claimed and ran twice) answers ok rather than failing. “Exactly once” does not exist in a distributed system, so the repeat is made harmless. A finished task's payload is replaced by the outcome — outFiles and totalCost.",
+      ru: "Идемпотентно по taskId: повторный заход (машина упала между заливкой и отчётом, задачу перезабрали и она прошла второй раз) отвечает ok, а не ошибкой. В распределённой системе «ровно один раз» не бывает, поэтому повтор сделан безвредным. Итог — outFiles и totalCost — ДОБАВЛЯЕТСЯ к payload, а не заменяет его: из payload берутся оси тарификации и цепочка шагов, и без них задача не списывается и показывается в очереди без шагов.",
+      en: "Idempotent by taskId: a repeat call (the machine died between upload and report, the task was re-claimed and ran twice) answers ok rather than failing. “Exactly once” does not exist in a distributed system, so the repeat is made harmless. The outcome — outFiles and totalCost — is MERGED into the payload rather than replacing it: the billing axes and the chain of steps live there, and without them the task is never charged and shows no steps in the queue.",
     },
     props: [
       {

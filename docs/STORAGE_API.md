@@ -554,7 +554,16 @@ Issue a short-lived signed URL. **Bytes go directly to/from R2**, not through th
 | `fileName` | string | for PUT | Sanitized server-side |
 | `contentType` | string | for PUT | Must pass upload policy |
 | `s3Key` | string | for GET; optional for PUT | Must be under project prefix |
+| `overwrite` | boolean | no | PUT only. Reuse the key of the file already named `fileName` in `folderPath` instead of minting a new one |
 | `ttlSec` | number | no | 60–86400, default `3600` |
+
+`overwrite` exists because the catalog looks a row up **by physical key**, and a fresh
+upload mints a new `{uuid}-{name}`: without it, re-uploading the same name fails on
+`assertNameFree` *after* the bytes are already in R2. With it the object, the catalog row
+and the `file_id` stay the same — the file keeps its history and its links, and `/notify`
+journals a `put`, so the pipeline sees an event and builds a task. The key is resolved
+server-side: the browser has no business knowing the physical identity of an object. No
+such file — a new key is minted, so the flag is harmless.
 
 **Response `200` (PUT)**
 
@@ -930,6 +939,25 @@ Writing requires an `ADMIN` session, a machine token, or a computer token.
 3. POST /notify   { projectId, s3Key, folderPath, fileName, sizeBytes, contentType }
 4. Other clients see the put via /delta
 ```
+
+**A name that is already taken is decided at step 1, not at step 3.** `/notify` →
+`writeFilePut` rejects a duplicate name, and by then the bytes are already in R2 — the
+upload is lost and the client has nothing to offer the person. The cabinet therefore
+compares names against the tree it already holds and asks first, with three answers:
+
+| answer | how it is sent | what happens |
+|---|---|---|
+| overwrite | `/presign` with `overwrite: true` | same object, same catalog row, same `file_id`; the file keeps its history and links, `/notify` journals a `put`, so the pipeline builds a task again |
+| keep both | `fileName` replaced with `clip (2).mov` | a second file next to the first; the number goes before the extension, or the file stops being a video for everything that reads extensions |
+| skip | nothing is sent | this file is not uploaded, the rest of the batch continues |
+
+The same question covers a whole dropped folder: names are checked per destination
+folder, and "do the same for the rest" holds until the end of that batch. Folders created
+by this very upload are not in the tree yet — there is nothing to collide with there.
+
+There is deliberately no "delete the old one": it gives the same result as overwrite and
+pays for it with the file's identity — its links, its uploader and its connection to
+earlier tasks.
 
 ### Download
 

@@ -35,6 +35,8 @@ type Options = {
   onMerged: (doc: DialogDoc) => void
   /** Текст ошибки сети — из словаря, хук строк не знает. */
   networkError: string
+  /** Документа в папке больше нет: писать некуда. */
+  goneError: string
 }
 
 /**
@@ -52,6 +54,7 @@ export function useAutosave({
   revision,
   onMerged,
   networkError,
+  goneError,
 }: Options) {
   const [state, setState] = useState<SaveState>({ kind: "clean" })
 
@@ -66,6 +69,8 @@ export function useAutosave({
   const retries = useRef(0)
   const errorText = useRef(networkError)
   errorText.current = networkError
+  const goneText = useRef(goneError)
+  goneText.current = goneError
   /** Версия, которая станет сохранённой после текущей записи. */
   const savedVersionTarget = useRef(version)
   savedVersionTarget.current = version
@@ -97,7 +102,12 @@ export function useAutosave({
         return
       }
       if (!res.ok) {
-        setState({ kind: "error", message: data.message ?? errorText.current })
+        // Документ удалили из папки, пока задача была открыта: писать некуда, и
+        // молча создать его заново нельзя — удаление было осознанным действием.
+        setState({
+          kind: "error",
+          message: res.status === 404 ? goneText.current : (data.message ?? errorText.current),
+        })
         return
       }
       retries.current = 0

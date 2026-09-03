@@ -85,12 +85,19 @@ import { TimelinePane } from "./timeline-pane"
 import {
   findEntry,
   loadSrtSources,
+  useAutoPeaks,
   useDocPeaks,
   useSignedUrls,
   useTaskFolder,
   useTaskVideo,
 } from "../shared/use-task-folder"
 import { SrtSettingsDialog } from "./settings-dialog"
+import {
+  BuildTaskScreen,
+  collectTaskDoc,
+  postVersion,
+  taskVersions,
+} from "../shared/build-task"
 import { SaveBadge } from "../shared/save-badge"
 import { useAutosave } from "../shared/use-autosave"
 import type { FolderEntry } from "../shared/use-task-folder"
@@ -105,7 +112,7 @@ import type { FolderEntry } from "../shared/use-task-folder"
 export function SrtEditor({ tool }: { tool: ToolInstance }) {
   const { t, lang: uiLang } = useWorkspace()
   const { closeTool } = useTools()
-  const { state } = useTaskFolder(tool)
+  const { state, reload } = useTaskFolder(tool)
 
   const loaded = state.kind === "ready" ? state.doc : null
   const { doc, apply, reset, undo, redo, version } = useUndoableDoc(loaded)
@@ -121,6 +128,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
     revision: loaded?.revision ?? 0,
     onMerged: reset,
     networkError: t.driveUnavailable,
+    goneError: t.srtSaveGone,
   })
 
   // Загрузка документа — не правка человека: помечаем чистым, иначе инструмент
@@ -198,7 +206,10 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
   const folderPath = tool.source?.folderPath ?? null
   const entries = state.kind === "ready" ? state.entries : []
   const video = useTaskVideo(projectId, folderPath, entries, doc)
+  const versions = useMemo(() => taskVersions(entries, folderPath), [entries, folderPath])
   const peaks = useDocPeaks(projectId, folderPath, entries, doc)
+  // Волны, которых в папке нет, считаются в фоне и рисуются по мере готовности.
+  const autoPeaks = useAutoPeaks({ toolId: tool.id, projectId, folderPath, entries, doc })
 
   /**
    * Матрица звука (§15.3), в том виде, в каком её описал владелец: по
@@ -473,6 +484,41 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
   )
 
   /**
+   * Новая версия: собрать документ из папки заново.
+   *
+   * Здесь же, в меню восстановления, а не в отдельном углу: и то и другое —
+   * ответ на «вернуть как было», только версия помнит ещё и ручные правки.
+   * Текущий документ откладывается сервером, поэтому подтверждения не спрашиваем:
+   * терять нечего.
+   */
+  const newVersion = useCallback(async () => {
+    if (!doc || !projectId || !folderPath) return
+    const id = toast.loading(t.srtVersionBusy)
+    try {
+      const { doc: fresh } = await collectTaskDoc({
+        projectId,
+        folderPath,
+        entries,
+        originalLang: doc.languages.original,
+        onProgress: (progress) => toast.loading(progress.step, { id }),
+        steps: { srt: t.srtBuildReading, media: t.srtBuildMedia, write: t.srtBuildWriting },
+      })
+      const result = await postVersion(tool.id, { action: "replace", doc: fresh })
+      if (result.ok) {
+        toast.success(
+          result.archived ? tf(t.srtVersionArchived, { file: result.archived }) : t.srtVersionCreated,
+          { id },
+        )
+        reload()
+      } else {
+        toast.error(result.message, { id })
+      }
+    } catch (failure) {
+      toast.error(failure instanceof Error ? failure.message : t.srtVersionFailed, { id })
+    }
+  }, [doc, entries, folderPath, projectId, reload, t, tool.id])
+
+  /**
    * Сбросить всё до машинного результата.
    *
    * Спрашиваем прямо: это не отмена, а возврат к тому, с чего начиналось, и
@@ -607,10 +653,12 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
         return key ? trackAudioUrls[key] ?? null : null
       },
       peaksFor: (trackId) => {
-        const own = peaks.byTrack[trackId]
-        return own ? { peaks: own, own: true } : { peaks: peaks.main, own: false }
+        const own = peaks.byTrack[trackId] ?? autoPeaks.byTrack[trackId]
+        return own
+          ? { peaks: own, own: true }
+          : { peaks: peaks.main ?? autoPeaks.main, own: false }
       },
-      mainPeaks: peaks.main,
+      mainPeaks: peaks.main ?? autoPeaks.main,
       visibleTracks,
       rows,
       ops,
@@ -629,6 +677,7 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
     left,
     ops,
     peaks,
+    autoPeaks,
     prefs,
     resetPrefs,
     rows,
@@ -706,9 +755,17 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
               type="button"
               title={t.srtRestoreTitle}
               disabled={!doc}
-              className="flex h-[34px] w-[34px] items-center justify-center rounded border border-white/[0.07] text-ws-3 hover:bg-ws-hover hover:text-ws-1 disabled:opacity-40"
+              className="flex h-[34px] items-center gap-1.5 rounded border border-white/[0.07] px-2 text-ws-3 hover:bg-ws-hover hover:text-ws-1 disabled:opacity-40"
             >
               <RotateCcw className="h-[17px] w-[17px]" />
+              {/*
+                В какой версии работаем — видно без открытия окна. Номер тот же,
+                под которым текущий документ отложится: подпись не меняется от
+                самого действия.
+              */}
+              <span className="font-mono text-[11.5px] leading-none text-ws-4">
+                v{versions.currentNo}
+              </span>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-[280px]">
@@ -718,6 +775,14 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
             >
               <span>{t.srtRestoreAll}</span>
               <span className="text-[12px] text-ws-4">{t.srtRestoreAllNote}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => void newVersion()}
+              className="cursor-pointer flex-col items-start gap-0.5 focus:bg-white/10"
+            >
+              <span>{t.srtVersionNew}</span>
+              <span className="text-[12px] text-ws-4">{t.srtVersionNewNote}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -824,10 +889,16 @@ export function SrtEditor({ tool }: { tool: ToolInstance }) {
           </div>
           {/* Внутри провайдера: окну нужен документ, дорожки и текущий язык. */}
           <SrtExportDialog open={exportOpen} onOpenChange={setExportOpen} />
-          <SrtRestoreDialog open={restoreOpen} onOpenChange={setRestoreOpen} />
+          <SrtRestoreDialog
+            open={restoreOpen}
+            onOpenChange={setRestoreOpen}
+            tool={tool}
+            entries={entries}
+            onReloaded={reload}
+          />
         </SrtProvider>
       ) : (
-        <EmptyArea state={state} />
+        <EmptyArea state={state} tool={tool} onBuilt={reload} />
       )}
 
       <SrtSettingsDialog
@@ -916,8 +987,22 @@ function LangTab({
 }
 
 /** Пока документа нет: приглашение выбрать папку, ожидание или ошибка. */
-function EmptyArea({ state }: { state: ReturnType<typeof useTaskFolder>["state"] }) {
+function EmptyArea({
+  state,
+  tool,
+  onBuilt,
+}: {
+  state: ReturnType<typeof useTaskFolder>["state"]
+  tool: ToolInstance
+  onBuilt: () => void
+}) {
   const { t } = useWorkspace()
+
+  // Документа нет, но папка на задачу похожа: собрать её — это работа
+  // инструмента, а не повод показать ошибку.
+  if (state.kind === "needsBuild") {
+    return <BuildTaskScreen tool={tool} entries={state.entries} onDone={onBuilt} />
+  }
 
   if (state.kind === "loading") {
     return (

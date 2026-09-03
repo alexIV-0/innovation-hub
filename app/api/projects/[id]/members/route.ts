@@ -22,6 +22,7 @@ import {
   removeProjectMember,
   upsertProjectMember,
 } from "@/lib/repositories/project-members"
+import { rememberShareContact } from "@/lib/repositories/share-contacts"
 import {
   createUser,
   findUserByEmail,
@@ -355,6 +356,24 @@ export async function POST(request: NextRequest, { params }: Params) {
   const invited = results.filter((r) => r.ok)
   const failed = results.filter((r) => !r.ok)
   const status = invited.length === 0 ? 400 : 200
+
+  // История получателей — у того, кто позвал, и пишется здесь, а не в браузере:
+  // диалог один и тот же в кабинете и в админке, и список подсказок обязан
+  // пополняться одинаково, откуда бы приглашение ни ушло. Только удавшиеся:
+  // адрес с опечаткой в подсказках не нужен. Сбой записи приглашение не рушит —
+  // доступ уже выдан и письмо ушло.
+  for (const result of invited) {
+    if (!result.ok) continue
+    try {
+      await rememberShareContact({
+        userId: auth.userId,
+        email: result.member.email,
+        fullName: result.member.fullName,
+      })
+    } catch (error) {
+      console.error("[members] не записали получателя в историю", error)
+    }
+  }
 
   // Одна запись на приглашение, а не одна на запрос: в одном обращении бывает
   // до двадцати адресов, и «выдал доступ 20 людям» в журнале не ответит на

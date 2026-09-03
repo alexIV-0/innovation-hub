@@ -87,7 +87,9 @@ type ServiceRow = Omit<
   spentMonthCents: string
   secretFields: SecretFieldSpec[] | null
   accounts: AccountRow[] | null
-  prices: { unit: PriceUnit; priceMicros: string; effectiveFrom: string }[] | null
+  prices:
+    | { id: string; unit: PriceUnit; priceMicros: string; effectiveFrom: string }[]
+    | null
 }
 
 /**
@@ -152,6 +154,7 @@ const SERVICE_FIELDS = `
   ), '[]'::json) AS accounts,
   COALESCE((
     SELECT json_agg(json_build_object(
+             'id', p.id,
              'unit', p.unit,
              'priceMicros', p.price_micros::text,
              'effectiveFrom', p.effective_from
@@ -221,6 +224,7 @@ function toService(row: ServiceRow): VendorService {
         : DEFAULT_SECRET_FIELDS,
     accounts: (row.accounts ?? []).map(toAccount),
     prices: (row.prices ?? []).map((p) => ({
+      id: p.id,
       unit: p.unit,
       priceMicros: Number(p.priceMicros),
       effectiveFrom: new Date(p.effectiveFrom),
@@ -600,6 +604,50 @@ export async function addPrice(input: {
       input.actorId,
     ],
   )
+}
+
+/**
+ * Убрать цену.
+ *
+ * Прайс — таблица с историей: цены вендоров меняются, а прошлые списания
+ * пересчитываться не должны. Поэтому строку, ПО КОТОРОЙ УЖЕ СЧИТАЛИ, удалять
+ * нельзя: расход в `vendor_usage` хранит применённое `price_micros`, но
+ * объяснить, откуда оно взялось, будет уже нечем.
+ *
+ * «По ней считали» — это расход по тому же сервису и той же мере, попавший в
+ * окно действия цены: от её `effective_from` до `effective_from` следующей по
+ * этой мере. Ошибочно введённая цена, по которой ничего не прошло, удаляется
+ * свободно — а именно этот случай и есть частый.
+ */
+export async function deletePrice(priceId: string): Promise<PurgeResult> {
+  const used = await query(
+    `SELECT 1
+       FROM vendor_service_prices p
+      WHERE p.id = $1
+        AND EXISTS (
+          SELECT 1 FROM vendor_usage u
+           WHERE u.service_id = p.service_id
+             AND u.unit = p.unit
+             AND u.created_at >= p.effective_from
+             AND u.created_at < COALESCE((
+                   SELECT MIN(p2.effective_from)
+                     FROM vendor_service_prices p2
+                    WHERE p2.service_id = p.service_id
+                      AND p2.unit = p.unit
+                      AND p2.effective_from > p.effective_from
+                 ), 'infinity'::timestamptz)
+        )
+      LIMIT 1`,
+    [priceId],
+  )
+  if ((used.rowCount ?? 0) > 0) return { ok: false, reason: "has-usage" }
+
+  const result = await query(`DELETE FROM vendor_service_prices WHERE id = $1`, [
+    priceId,
+  ])
+  if ((result.rowCount ?? 0) === 0) return { ok: false, reason: "not-found" }
+  // Ревизию не двигаем: прайс на машины не уезжает, деньги считает сайт.
+  return { ok: true }
 }
 
 /**

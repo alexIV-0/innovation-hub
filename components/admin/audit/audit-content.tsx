@@ -18,7 +18,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useI18n } from "@/components/account/i18n"
-import { tf, useAdminI18n } from "@/components/admin/admin-dict"
+import { useAdminI18n } from "@/components/admin/admin-dict"
 import { Button } from "@/components/ui/button"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { EmptyState } from "@/components/admin/shared/empty-state"
@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select"
 import { AUDIT_ACTIONS, type AuditAction } from "@/lib/audit-actions"
 import { ACTION_META, TONE_CLASS } from "./action-meta"
+import { detailsOf } from "./event-details"
 import { cn } from "@/lib/utils"
 
 type AuditEvent = {
@@ -48,8 +49,6 @@ type AuditEvent = {
   createdAt: string
 }
 
-type Dict = ReturnType<typeof useAdminI18n>
-
 function formatMoment(value: string, locale: string) {
   try {
     return new Date(value).toLocaleString(locale, {
@@ -61,41 +60,6 @@ function formatMoment(value: string, locale: string) {
   } catch {
     return value
   }
-}
-
-/**
- * Строка подробностей: то, ради чего в журнал вообще заглядывают. Для смены роли
- * это «из чего во что», для удаления проекта — чем именно его удалили.
- */
-function detailsOf(event: AuditEvent, t: Dict): string | null {
-  const meta = event.meta ?? {}
-
-  if (event.action === "user.role_changed") {
-    const from = typeof meta.from === "string" ? meta.from : "?"
-    const to = typeof meta.to === "string" ? meta.to : "?"
-    return tf(t.auditRoleFromTo, { from, to })
-  }
-  if (event.action === "user.password_reset" && meta.isSelf === true) {
-    return t.auditSelfNote
-  }
-  if (event.action === "project.deleted") {
-    if (meta.via === "computer") return t.auditViaComputer
-    if (meta.via === "machine") return t.auditViaMachine
-    return t.auditViaSession
-  }
-  if (event.action === "settings.updated" && Array.isArray(meta.domains)) {
-    return meta.domains.join(", ")
-  }
-  if (
-    (event.action === "user.created" || event.action === "user.deleted") &&
-    typeof meta.role === "string"
-  ) {
-    return meta.role
-  }
-  if (event.action === "user.updated" && Array.isArray(meta.profileFields)) {
-    return meta.profileFields.join(", ")
-  }
-  return null
 }
 
 export function AuditContent() {

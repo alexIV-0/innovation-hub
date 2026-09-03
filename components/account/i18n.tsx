@@ -593,11 +593,6 @@ export const dict = {
     servicesFieldSlugHint:
       "Под этим именем сервис знает программа: по нему машина просит ключ, и оно же попадает в настройки чужих проектов. Заполняется само из названия. Латиница, цифры и дефис; менять потом нельзя.",
     servicesSlugAuto: "Плагин будет искать сервис по имени {slug} — позже его не поменять.",
-    servicesMore: "Дополнительно",
-    servicesMoreHint:
-      "Здесь всё имеет верный ответ по умолчанию: предоплаченный кошелёк, ключ едет на машину, копия живёт 6 часов, потолка нет. Открывать стоит, только если у этого вендора иначе.",
-    servicesFieldAdapter: "Адаптер",
-    servicesFieldAdapterHint: "Какой код в программе умеет с ним разговаривать. Можно оставить пустым.",
     servicesFieldBaseUrl: "Куда слать запрос",
     servicesNoBaseUrl: "Адрес не задан — его знает сама нода",
     servicesEditBaseUrl: "Изменить адрес",
@@ -606,13 +601,9 @@ export const dict = {
       "Адрес, по которому нода зовёт сервис с этим ключом. Уезжает на машины вместе с ним, и менять его можно здесь, не обходя парк. Пусто — адрес зашит в самой ноде.",
     servicesFieldCurrency: "Валюта прайса",
     servicesFieldCurrencyHint: "Валюта сервиса, а не кошелька: кошелёк рублёвый всегда.",
-    servicesFieldModel: "Как платим вендору",
-    servicesFieldDelivery: "Как ключ попадает к исполнителю",
     servicesFieldTtl: "Сколько живёт копия на машине, часов",
     servicesFieldTtlHint:
       "Через это время машина спросит ключ заново. Копия без срока — вечная, и тогда отзыв ничего не отзывает. Клиентскому ключу срок разумно ставить короче нашего.",
-    servicesFieldCap: "Дневной потолок расхода, ₽",
-    servicesFieldCapHint: "0 — без потолка. Страховка от зацикленного графа и от утёкшего ключа.",
     optionsAccountPick: "Выберите ключ",
     optionsAccountManage: "Управлять ключами",
     optionsAccountNone: "Своих ключей нет — подключить",
@@ -723,8 +714,17 @@ export const dict = {
     servicesResume: "Вернуть в работу",
     servicesRevoke: "Отозвать",
     servicesRevokeConfirm: "Отозвать сервис? Ключи по нему выдаваться перестанут.",
+    servicesPriceRemove: "Убрать цену",
+    servicesPriceRemoved: "Цена убрана",
+    servicesPriceRemoveConfirm:
+      "Убрать эту цену? Если по этой мере остались другие, вернётся в силу предыдущая; если нет — расход по ней записываться перестанет.",
+    servicesPriceHasUsage:
+      "Убрать нельзя: по этой цене уже считали расход. Иначе в прошлых списаниях осталось бы число, происхождение которого нечем объяснить. Задайте новую цену — она вступит в силу с этого момента, прошлое не пересчитается.",
     servicesPrices: "Прайс",
-    servicesPricesEmpty: "Цены не назначены — потребление по этому сервису записать будет нечем.",
+    servicesPricesWhy:
+      "Вендор в ответе сообщает ПОТРЕБЛЕНИЕ — символы, секунды, токены, — а не списанные деньги. Деньги получаются умножением на прайс, и умножает их сайт, а не машина: числу, посчитанному на чужой машине, проверить нечем. Прайс лежит здесь, а не в плагине, поэтому смена тарифа у вендора — правка одной строки, а не обход парка.",
+    servicesPricesEmpty:
+      "Цен нет — расход по этому сервису не записывается и в стоимость работы не входит. Так и должно быть у своего сервиса на своём железе: его час уже оплачен ставкой за обработку, и вторая цена сверху была бы двойным счётом клиенту. Цены нужны чужому платному вендору.",
     servicesPriceAdd: "Добавить цену",
     servicesPriceUnit: "Мера",
     servicesPriceValue: "Цена за единицу",
@@ -1271,6 +1271,7 @@ export const dict = {
     paneOutSub: "Здесь готовые результаты",
     paneFolderSub: "Папка проекта",
     paneFolderPick: "Показать папку",
+    srtMinimap: "Вся таймлиния: перетащите рамку, чтобы переместиться",
     driveUnavailable: "Хранилище недоступно для этого проекта",
     driveEmpty: "Папок пока нет — загрузите файлы или дождитесь синхронизации",
 
@@ -1866,12 +1867,7 @@ export const dict = {
     servicesFieldName: "Name",
     servicesFieldSlug: "Name the plugin expects",
     servicesSlugAuto: "The plugin will look for the service by the name {slug} — it cannot be changed later.",
-    servicesMore: "Advanced",
-    servicesMoreHint:
-      "Everything here has a correct default: prepaid wallet, key travels to the machine, the copy lives 6 hours, no cap. Worth opening only when this vendor differs.",
     servicesFieldSlugHint: "Machines ask for the key by it. Latin letters, digits and dashes; cannot be changed later.",
-    servicesFieldAdapter: "Adapter",
-    servicesFieldAdapterHint: "Which code in the app knows how to talk to it. May be left empty.",
     servicesFieldCurrency: "Price currency",
     servicesFieldBaseUrl: "Where to send the request",
     servicesNoBaseUrl: "No address set — the node knows it itself",
@@ -1880,12 +1876,8 @@ export const dict = {
     servicesFieldBaseUrlHint:
       "Where the node connects. Empty — the address is baked into the node itself. A filled address travels to machines along with the keys, so it can be changed here instead of touring the fleet.",
     servicesFieldCurrencyHint: "The service’s currency, not the wallet’s: the wallet is always in roubles.",
-    servicesFieldModel: "How we pay the vendor",
-    servicesFieldDelivery: "How the key reaches the worker",
     servicesFieldTtl: "Copy lifetime on the machine, hours",
     servicesFieldTtlHint: "A copy without a lifetime is a permanent copy, and then revocation revokes nothing.",
-    servicesFieldCap: "Daily spending cap, ₽",
-    servicesFieldCapHint: "0 — no cap. Insurance against a looping graph and against a leaked key.",
     optionsAccountPick: "Pick a key",
     optionsAccountManage: "Manage keys",
     optionsAccountNone: "No keys of your own — connect one",
@@ -1996,8 +1988,17 @@ export const dict = {
     servicesResume: "Resume",
     servicesRevoke: "Revoke",
     servicesRevokeConfirm: "Revoke the service? Keys for it will stop being issued.",
+    servicesPriceRemove: "Remove the price",
+    servicesPriceRemoved: "Price removed",
+    servicesPriceRemoveConfirm:
+      "Remove this price? If other prices for this unit remain, the previous one takes effect again; if not, spending for it stops being recorded.",
+    servicesPriceHasUsage:
+      "Cannot remove: spending has already been computed from this price. Past charges would keep a number with nothing to explain it. Set a new price instead — it takes effect from now, and the past is not recomputed.",
     servicesPrices: "Price list",
-    servicesPricesEmpty: "No prices set — usage for this service could not be recorded.",
+    servicesPricesWhy:
+      "A vendor reports USAGE in its reply — characters, seconds, tokens — not the money it charged. Money comes from multiplying by the price list, and the site does that, not the machine: a number computed on someone else's machine cannot be verified. The price list lives here rather than in the plugin, so a tariff change is one row edited, not a tour of the fleet.",
+    servicesPricesEmpty:
+      "No prices — spending on this service is not recorded and is not part of what the work costs. That is correct for a service of your own on your own hardware: its hour is already covered by the processing rate, and a second price on top would bill the client twice. Prices are for a paid third-party vendor.",
     servicesPriceAdd: "Add price",
     servicesPriceUnit: "Unit",
     servicesPriceValue: "Price per unit",
@@ -2542,6 +2543,7 @@ export const dict = {
     paneOutSub: "Pick up finished results here",
     paneFolderSub: "Project folder",
     paneFolderPick: "Show folder",
+    srtMinimap: "The whole timeline: drag the frame to move",
     driveUnavailable: "Storage is unavailable for this project",
     driveEmpty: "No folders yet — upload files or wait for sync",
 

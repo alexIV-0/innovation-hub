@@ -70,7 +70,7 @@ type Service = {
   /** Из чего состоит секрет учётки: `apiKey` либо `login` + `password`. */
   secretFields: { key: string; label: string; secret: boolean }[]
   accounts: Account[]
-  prices: { unit: PriceUnit; priceMicros: number; effectiveFrom: string }[]
+  prices: { id: string; unit: PriceUnit; priceMicros: number; effectiveFrom: string }[]
   spentMonthCents: number
 }
 
@@ -358,24 +358,60 @@ function ServiceCard({
         )}
       </div>
 
-      {/* Прайс: без него потребление записать нечем, и это сказано прямо. */}
+      {/* Прайс. Объяснение стоит здесь, а не только в шапке экрана: вопрос
+          «почему я вообще задаю цены, если вендор их присылает» возникает
+          именно в этот момент, глядя на пустую таблицу. */}
       <div className="space-y-2">
         <Label className="text-sm font-normal text-muted-foreground">
           {t.servicesPrices}
         </Label>
+        <p className="max-w-3xl text-xs text-muted-foreground/80">
+          {t.servicesPricesWhy}
+        </p>
         {service.prices.length === 0 ? (
           <p className="text-xs text-muted-foreground/80">{t.servicesPricesEmpty}</p>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {service.prices.map((row) => (
               <li
-                key={row.unit}
-                className="rounded-md border border-border/60 px-2.5 py-1 text-xs"
+                key={row.id}
+                className="flex items-center gap-1.5 rounded-md border border-border/60 py-1 pl-2.5 pr-1 text-xs"
               >
-                {t[UNIT_KEY[row.unit]]}:{" "}
-                <span className="font-mono">
-                  {(row.priceMicros / PRICE_SCALE).toFixed(6)} {service.currency}
+                <span>
+                  {t[UNIT_KEY[row.unit]]}:{" "}
+                  <span className="font-mono">
+                    {(row.priceMicros / PRICE_SCALE).toFixed(6)} {service.currency}
+                  </span>
                 </span>
+                {/* Убрать цену. Сервер откажет, если по ней уже считали: расход
+                    хранит применённое число, но объяснить его происхождение
+                    после удаления строки будет нечем. */}
+                <button
+                  type="button"
+                  aria-label={t.servicesPriceRemove}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
+                  onClick={() => {
+                    if (!window.confirm(t.servicesPriceRemoveConfirm)) return
+                    void (async () => {
+                      const res = await fetch(
+                        `/api/admin/services/${service.id}/prices/${row.id}`,
+                        { method: "DELETE" },
+                      )
+                      if (res.status === 409) {
+                        toast.error(t.servicesPriceHasUsage)
+                        return
+                      }
+                      if (!res.ok) {
+                        toast.error(t.servicesSaveError)
+                        return
+                      }
+                      toast.success(t.servicesPriceRemoved)
+                      await onReload()
+                    })()
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </li>
             ))}
           </ul>

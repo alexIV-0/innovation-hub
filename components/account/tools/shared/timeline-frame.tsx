@@ -6,6 +6,7 @@ import type { Track } from "@/lib/tools/dialog/dialog-doc"
 import type { Peaks } from "@/lib/tools/dialog/peaks"
 import { MAX_PPS, MIN_PPS, msToX, xToMs } from "@/lib/tools/dialog/timeline"
 import type { EditorClock } from "./editor-state"
+import { TimelineMinimap, type OverviewBlock } from "./timeline-minimap"
 import { TimelineRuler } from "./timeline-ruler"
 import { useViewportSource, type ViewportSource } from "./viewport"
 
@@ -62,6 +63,8 @@ export function TimelineFrame({
   mainPeaks,
   showMainWave,
   reveal,
+  overview,
+  overviewLabel,
   toolbar,
   columnHeader,
   renderRow,
@@ -81,7 +84,15 @@ export function TimelineFrame({
    * перерисовку: иначе она спорила бы и с зумом, и с рукой человека.
    */
   reveal: { key: string | null; atMs: number; trackId: string | null } | null
-  toolbar: React.ReactNode
+  /** Что показать блоками на миникарте: реплики, тейки — решает инструмент. */
+  overview: OverviewBlock[]
+  overviewLabel: string
+  /**
+   * Строка над таймлинией. Приходит готовым узлом, но с одной вставкой:
+   * миникарту каркас собирает сам — только он знает окно просмотра и полотно, —
+   * а место ей в строке выбирает инструмент, у которого там свои кнопки.
+   */
+  toolbar: (minimap: React.ReactNode) => React.ReactNode
   columnHeader: React.ReactNode
   renderRow: (track: Track) => React.ReactNode
   renderLane: (track: Track, context: LaneContext) => React.ReactNode
@@ -256,7 +267,19 @@ export function TimelineFrame({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-ws-panel">
-      {toolbar}
+      {toolbar(
+        <TimelineMinimap
+          blocks={overview}
+          durationMs={fullMs}
+          peaks={mainPeaks}
+          showWave={showMainWave}
+          laneWidth={laneWidth}
+          viewport={viewport}
+          scroller={scrollerRef}
+          clock={clock}
+          label={overviewLabel}
+        />,
+      )}
       <div className="flex min-h-0 flex-1">
         <div
           onWheel={forwardWheel}

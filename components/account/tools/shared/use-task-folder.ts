@@ -10,6 +10,7 @@ import {
   type DocError,
   type DocWarning,
 } from "@/lib/tools/dialog/dialog-doc"
+import { pickVideoName } from "@/lib/tools/dialog/media-files"
 import { parsePeaks, type Peaks } from "@/lib/tools/dialog/peaks"
 import { pickSrtName, wantFromSourcePath } from "@/lib/tools/dialog/srt-files"
 import { parseSrt, type SrtCue } from "@/lib/tools/dialog/srt-parse"
@@ -99,21 +100,6 @@ export function findEntry(
 }
 
 /**
- * Видео в корне папки задачи: расширение или тип из каталога.
- *
- * Расширение — не украшение к типу, а замена ему: тип проставляется при заливке
- * через браузер, а файл, пришедший в хранилище другим путём, лежит с пустым
- * `contentType`, и по одному типу такое видео было бы не найти.
- */
-const VIDEO_EXTENSION = /\.(mp4|m4v|mov|webm|mkv|avi|mxf)$/i
-
-function looksLikeVideo(entry: FolderEntry): boolean {
-  if (entry.isFolder || !entry.s3Key) return false
-  if (entry.contentType?.toLowerCase().startsWith("video/")) return true
-  return VIDEO_EXTENSION.test(entry.name)
-}
-
-/**
  * Видео задачи подбором, когда путь из документа не сошёлся.
  *
  * Имя исходника контрактом не закреплено: обработка кладёт в корень папки то,
@@ -121,21 +107,16 @@ function looksLikeVideo(entry: FolderEntry): boolean {
  * Ищем только в корне папки задачи — глубже лежат дорожки и сырьё, и видео
  * оттуда было бы не тем файлом.
  *
- * `mp4` первым: его и ждём от обработки, и играют его все браузеры. Дальше — по
- * имени, чтобы выбор не зависел от порядка строк каталога и не менялся сам по
- * себе между открытиями задачи.
+ * Правила выбора (прокси → `mp4` → остальное) живут в
+ * `lib/tools/dialog/media-files.ts`: они те же и для локального редактора.
  */
 export function pickVideoEntry(
   entries: FolderEntry[],
   folderPath: string,
 ): FolderEntry | null {
-  const own = entries.filter((e) => e.folderPath === folderPath && looksLikeVideo(e))
-  const rank = (e: FolderEntry) => (/\.mp4$/i.test(e.name) ? 0 : 1)
-  return (
-    own
-      .slice()
-      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))[0] ?? null
-  )
+  const own = entries.filter((e) => !e.isFolder && e.s3Key && e.folderPath === folderPath)
+  const picked = pickVideoName(own)
+  return picked ? (own.find((e) => e.name === picked) ?? null) : null
 }
 
 /**

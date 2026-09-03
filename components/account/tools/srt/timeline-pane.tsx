@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import {
   ArrowDown,
   ArrowDownUp,
@@ -45,6 +45,7 @@ import {
 } from "./prefs"
 import { useSrt } from "./srt-context"
 import { TimelineFrame } from "../shared/timeline-frame"
+import { withAlpha } from "../shared/tokens"
 import { TrackColorPicker } from "../shared/track-color-picker"
 import { type ViewportSource } from "../shared/viewport"
 import { WaveCanvas } from "../shared/wave-canvas"
@@ -73,11 +74,28 @@ function cursorFor(tool: TimelineTool, overClip: boolean): string {
 
 /** Зона 4: панель дорожек слева и полотно справа. */
 export function TimelinePane() {
+  const { t } = useWorkspace()
   const srt = useSrt()
   const cue = srt.doc.cues.find((item) => item.id === srt.selectedCueId)
 
+  // Что показать на миникарте: реплики видимых дорожек, каждая цветом своей.
+  // Скрытая дорожка не показывается и здесь — карта обязана совпадать с тем, что
+  // под ней, иначе по ней нельзя ориентироваться.
+  const overview = useMemo(() => {
+    const colors = new Map(srt.visibleTracks.map((track) => [track.id, track.color]))
+    return srt.doc.cues
+      .filter((item) => colors.has(item.trackId))
+      .map((item) => ({
+        startMs: item.startMs,
+        endMs: item.endMs,
+        color: withAlpha(colors.get(item.trackId) ?? "", 0.9),
+      }))
+  }, [srt.doc.cues, srt.visibleTracks])
+
   return (
     <TimelineFrame
+      overview={overview}
+      overviewLabel={t.srtMinimap}
       tracks={srt.visibleTracks}
       trackH={srt.prefs.trackH}
       durationMs={srt.durationMs}
@@ -91,7 +109,7 @@ export function TimelinePane() {
         atMs: cue?.startMs ?? 0,
         trackId: cue?.trackId ?? null,
       }}
-      toolbar={<TimelineToolbar />}
+      toolbar={(minimap) => <TimelineToolbar minimap={minimap} />}
       columnHeader={<TrackColumnHeader />}
       renderRow={(track) => <TrackHeader track={track} />}
       renderLane={(track, context) => (
@@ -101,7 +119,7 @@ export function TimelinePane() {
   )
 }
 
-function TimelineToolbar() {
+function TimelineToolbar({ minimap }: { minimap: React.ReactNode }) {
   const { t } = useWorkspace()
   const srt = useSrt()
 
@@ -183,7 +201,7 @@ function TimelineToolbar() {
         <AudioLines className="h-4 w-4" />
       </button>
 
-      <div className="flex-1" />
+      {minimap}
 
       <div
         title={t.srtZoomWheel}

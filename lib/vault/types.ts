@@ -26,6 +26,7 @@ export const PRICE_UNITS = ["token", "char", "sec", "image", "run"] as const
 export type PriceUnit = (typeof PRICE_UNITS)[number]
 
 export type VendorPrice = {
+  id: string
   unit: PriceUnit
   priceMicros: number
   effectiveFrom: Date

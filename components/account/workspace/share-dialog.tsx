@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Check, ChevronDown, Loader2, X } from "lucide-react"
+import { Check, ChevronDown, Loader2, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { avatarInitials, tf, type Dictionary } from "@/components/account/i18n"
@@ -37,6 +37,20 @@ type Person = {
   invitedBy?: string | null
   invitedByName?: string | null
 }
+
+/**
+ * Кого смотрящий уже приглашал — история из его настроек, а не список
+ * участников этого проекта. Живёт на сервере (`share_contacts`), поэтому
+ * подсказки одинаковы в кабинете и в админке.
+ */
+type Contact = { email: string; fullName: string }
+
+/**
+ * Получатель, набранный в поле. Имя рядом с адресом нужно, чтобы выбранного из
+ * подсказок человека было видно так же, как в списке доступа: одним адресом
+ * коллегу не узнать.
+ */
+type Chip = { email: string; name: string }
 
 const AVATAR_COLORS = [
   "#1a73e8",
@@ -108,10 +122,14 @@ export function ShareDialog() {
   const project = shareTarget
 
   const [draft, setDraft] = useState("")
-  const [chips, setChips] = useState<string[]>([])
+  const [chips, setChips] = useState<Chip[]>([])
   const [inviteRole, setInviteRole] = useState<MemberRole>("viewer")
   const [owner, setOwner] = useState<Person | null>(null)
   const [members, setMembers] = useState<Person[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  /** −1 — ничего не подсвечено: Enter тогда разбирает набранное, а не выбирает. */
+  const [active, setActive] = useState(-1)
   const [viewerUserId, setViewerUserId] = useState<string | null>(null)
   const [viewerRole, setViewerRole] = useState<ViewerRole>("owner")
   const [loading, setLoading] = useState(false)
@@ -124,7 +142,7 @@ export function ShareDialog() {
     const set = new Set<string>()
     if (owner) set.add(owner.email.toLowerCase())
     for (const m of members) set.add(m.email.toLowerCase())
-    for (const c of chips) set.add(c)
+    for (const c of chips) set.add(c.email)
     return set
   }, [owner, members, chips])
 
@@ -134,6 +152,9 @@ export function ShareDialog() {
     setInviteRole("viewer")
     setOwner(null)
     setMembers([])
+    setContacts([])
+    setSuggestOpen(false)
+    setActive(-1)
     setViewerUserId(null)
     setViewerRole("owner")
     setHint(null)
@@ -203,12 +224,115 @@ export function ShareDialog() {
     }
   }, [open, project, reset])
 
-  const commitTokens = useCallback(
-    (raw: string): string => {
+  // История получателей — про того, кто смотрит, а не про проект: отдельный
+  // запрос, чтобы смена проекта в диалоге её не перезагружала.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch("/api/account/share-contacts")
+        if (!res.ok) return
+        const data = await res.json().catch(() => ({}))
+        if (cancelled || !Array.isArray(data.contacts)) return
+        setContacts(
+          data.contacts
+            .filter(
+              (c: unknown): c is Contact =>
+                typeof (c as Contact)?.email === "string",
+            )
+            .map((c: Contact) => ({
+              email: c.email.toLowerCase(),
+              fullName: typeof c.fullName === "string" ? c.fullName : "",
+            })),
+        )
+      } catch {
+        // Подсказки — удобство: без них диалог работает как раньше.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  /**
+   * Что показать под полем: те, кого уже приглашали, кроме уже добавленных.
+   *
+   * Фильтр — по всей набранной строке, а не по последнему слову: имя пишется с
+   * пробелом, и «Иван Пет» должно находить «Иван Петров».
+   */
+  const suggestions = useMemo(() => {
+    const q = draft.trim().toLowerCase()
+    return contacts
+      .filter((c) => !taken.has(c.email))
+      .filter(
+        (c) =>
+          !q ||
+          c.email.includes(q) ||
+          c.fullName.toLowerCase().includes(q),
+      )
+      .slice(0, 8)
+  }, [contacts, draft, taken])
+
+  /**
+   * Набранное → человек из истории, если он там один.
+   *
+   * Так поле принимает и имя, и почту: точное совпадение сильнее частичного, а
+   * неоднозначное «Иван» ничего не выбирает — иначе доступ ушёл бы не тому.
+   */
+  const contactFor = useCallback(
+    (raw: string): Contact | null => {
+      const q = raw.trim().toLowerCase()
+      if (!q) return null
+      // Набран целый адрес — берём его буквально: частичное совпадение иначе
+      // подменило бы новый адрес похожим знакомым (`van@corp.co` → знакомый
+      // `ivan@corp.com`), и доступ ушёл бы не тому.
+      if (EMAIL_RE.test(q)) return contacts.find((c) => c.email === q) ?? null
+      const exact = contacts.filter(
+        (c) => c.email === q || c.fullName.trim().toLowerCase() === q,
+      )
+      // Список приходит «свежие сверху»: у полных тёзок берём того, кого звали
+      // последним.
+      if (exact.length) return exact[0]!
+      const partial = contacts.filter(
+        (c) => c.email.includes(q) || c.fullName.toLowerCase().includes(q),
+      )
+      return partial.length === 1 ? partial[0]! : null
+    },
+    [contacts],
+  )
+
+  /**
+   * Разбор набранного текста в получателей — без записи в состояние.
+   *
+   * Чистая, потому что её зовут двое: Enter в поле и кнопка «Отправить». Иначе
+   * адрес, набранный и не подтверждённый Enter, при отправке терялся бы.
+   */
+  const parse = useCallback(
+    (raw: string): { picked: Chip[]; leftover: string; message: string | null } => {
+      const contact = contactFor(raw)
+      if (contact) {
+        if (taken.has(contact.email)) {
+          return {
+            picked: [],
+            leftover: "",
+            message:
+              owner && contact.email === owner.email.toLowerCase()
+                ? t.shareOwnerEmail
+                : t.shareAlreadyAdded,
+          }
+        }
+        return {
+          picked: [{ email: contact.email, name: contact.fullName }],
+          leftover: "",
+          message: null,
+        }
+      }
+
       const parts = tokenize(raw)
-      if (parts.length === 0) return raw.trim()
+      if (parts.length === 0) return { picked: [], leftover: raw.trim(), message: null }
       const leftover: string[] = []
-      const next: string[] = []
+      const picked: Chip[] = []
       let message: string | null = null
       for (const part of parts) {
         if (!EMAIL_RE.test(part)) {
@@ -216,34 +340,112 @@ export function ShareDialog() {
           message = t.shareInvalidEmail
           continue
         }
-        if (taken.has(part) || next.includes(part) || chips.includes(part)) {
+        if (taken.has(part) || picked.some((c) => c.email === part)) {
           message =
             owner && part === owner.email.toLowerCase()
               ? t.shareOwnerEmail
               : t.shareAlreadyAdded
           continue
         }
-        next.push(part)
+        // Имя из истории: адрес набран руками, но человек знакомый.
+        const known = contacts.find((c) => c.email === part)
+        picked.push({ email: part, name: known?.fullName ?? "" })
       }
-      if (next.length) setChips((prev) => [...prev, ...next])
-      setHint(message)
-      return leftover.join(" ")
+      return { picked, leftover: leftover.join(" "), message }
     },
-    [chips, owner, t, taken],
+    [contactFor, contacts, owner, t, taken],
+  )
+
+  const addChips = useCallback((picked: Chip[]) => {
+    if (!picked.length) return
+    setChips((prev) => [
+      ...prev,
+      ...picked.filter((p) => !prev.some((c) => c.email === p.email)),
+    ])
+  }, [])
+
+  /** Выбор строки в подсказках: имя в фишку, поле — чистое. */
+  const pick = useCallback(
+    (contact: Contact) => {
+      addChips([{ email: contact.email, name: contact.fullName }])
+      setDraft("")
+      setHint(null)
+      setActive(-1)
+      inputRef.current?.focus()
+    },
+    [addChips],
+  )
+
+  /**
+   * Убрать человека из подсказок. Сначала из списка, потом с сервера: строку
+   * удаляют, чтобы она пропала, и ждать ответа тут не за чем — при сбое
+   * возвращаем на место.
+   */
+  const forget = useCallback(async (contact: Contact) => {
+    setContacts((prev) => prev.filter((c) => c.email !== contact.email))
+    setActive(-1)
+    try {
+      const res = await fetch(
+        `/api/account/share-contacts?email=${encodeURIComponent(contact.email)}`,
+        { method: "DELETE" },
+      )
+      if (!res.ok) throw new Error("failed")
+    } catch {
+      setContacts((prev) =>
+        prev.some((c) => c.email === contact.email) ? prev : [contact, ...prev],
+      )
+      toast.error(t.shareForgetFailed)
+    }
+  }, [t])
+
+  const commitDraft = useCallback(
+    (raw: string): string => {
+      const { picked, leftover, message } = parse(raw)
+      addChips(picked)
+      setHint(message)
+      return leftover
+    },
+    [addChips, parse],
   )
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown" && suggestions.length) {
+      event.preventDefault()
+      setSuggestOpen(true)
+      setActive((prev) => Math.min(prev + 1, suggestions.length - 1))
+      return
+    }
+    if (event.key === "ArrowUp" && suggestions.length) {
+      event.preventDefault()
+      setActive((prev) => Math.max(prev - 1, -1))
+      return
+    }
+    if (event.key === "Escape" && suggestOpen) {
+      event.preventDefault()
+      setSuggestOpen(false)
+      setActive(-1)
+      return
+    }
     if (event.key === "Backspace" && !draft && chips.length) {
       event.preventDefault()
       setChips((prev) => prev.slice(0, -1))
       setHint(null)
       return
     }
+    // Пробел разделяет адреса, но не слова имени: «Иван Петров» иначе распался
+    // бы на два «некорректных адреса» раньше, чем человек дописал фамилию.
+    if (event.key === " " && !draft.includes("@")) return
     if (["Enter", "Tab", ",", ";", " "].includes(event.key)) {
+      const highlighted = active >= 0 ? suggestions[active] : null
+      if (highlighted) {
+        event.preventDefault()
+        pick(highlighted)
+        return
+      }
       if (!draft.trim()) return
       event.preventDefault()
-      const rest = commitTokens(draft)
-      setDraft(rest)
+      setDraft(commitDraft(draft))
+      setActive(-1)
     }
   }
 
@@ -251,35 +453,26 @@ export function ShareDialog() {
     const text = event.clipboardData.getData("text")
     if (!/[,;\s]/.test(text)) return
     event.preventDefault()
-    const rest = commitTokens(`${draft} ${text}`)
-    setDraft(rest)
+    setDraft(commitDraft(`${draft} ${text}`))
   }
 
   const send = async () => {
     if (!project) return
-    const leftover: string[] = []
-    const extra: string[] = []
-    let message: string | null = null
-    for (const part of tokenize(draft)) {
-      if (!EMAIL_RE.test(part)) {
-        leftover.push(part)
-        message = t.shareInvalidEmail
-        continue
-      }
-      if (owner && part === owner.email.toLowerCase()) {
-        message = t.shareOwnerEmail
-        continue
-      }
-      extra.push(part)
+    // Набранное, но не подтверждённое Enter, — тоже получатель: человек ввёл
+    // адрес и сразу нажал «Отправить».
+    const { picked, leftover, message } = parse(draft)
+    const all = [...chips]
+    for (const item of picked) {
+      if (!all.some((c) => c.email === item.email)) all.push(item)
     }
-    const unique = [
-      ...new Set([...chips, ...extra].filter((email) => EMAIL_RE.test(email))),
-    ]
-    setDraft(leftover.join(" "))
+    const unique = all.map((c) => c.email)
+    setDraft(leftover)
     if (unique.length === 0) {
       setHint(message ?? (draft.trim() ? t.shareInvalidEmail : null))
       return
     }
+    setSuggestOpen(false)
+    setActive(-1)
     setSending(true)
     try {
       const res = await fetch(`/api/projects/${project.id}/members`, {
@@ -316,7 +509,21 @@ export function ShareDialog() {
       const okEmails = new Set(
         ok.map((r: { email?: string }) => r.email?.toLowerCase()).filter(Boolean),
       )
-      setChips((prev) => prev.filter((email) => !okEmails.has(email)))
+      setChips((prev) => prev.filter((c) => !okEmails.has(c.email)))
+      // Тех же людей сервер только что записал в историю; повторяем это у себя,
+      // чтобы подсказки не отставали до следующего открытия диалога.
+      const invited: Contact[] = ok
+        .filter((r: { member?: { email?: string } }) => r.member?.email)
+        .map((r: { member: { email: string; fullName?: string } }) => ({
+          email: r.member.email.toLowerCase(),
+          fullName: r.member.fullName ?? "",
+        }))
+      if (invited.length) {
+        setContacts((prev) => [
+          ...invited,
+          ...prev.filter((c) => !invited.some((i) => i.email === c.email)),
+        ])
+      }
       if (ok.length && fail.length === 0) {
         const mailFail = ok.some((r: { mailOk?: boolean }) => r.mailOk === false)
         if (mailFail) toast.message(t.shareMailWarn)
@@ -375,7 +582,10 @@ export function ShareDialog() {
     }
   }
 
-  const hasPending = chips.length > 0 || EMAIL_RE.test(draft.trim().toLowerCase())
+  const hasPending =
+    chips.length > 0 ||
+    EMAIL_RE.test(draft.trim().toLowerCase()) ||
+    contactFor(draft) !== null
 
   return (
     <Dialog
@@ -396,56 +606,120 @@ export function ShareDialog() {
         </DialogHeader>
 
         <div className="px-6 pb-2 pt-4">
-          <div
-            className="flex min-h-[48px] items-start gap-2 rounded-xl border border-white/10 bg-ws-control px-2 py-1.5 focus-within:border-ws-select"
-            onClick={() => inputRef.current?.focus()}
-          >
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 py-0.5">
-              {chips.map((email) => (
-                <span
-                  key={email}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/10 py-0.5 pl-2 pr-1 text-[13px] text-ws-1"
-                >
-                  <span className="truncate">{email}</span>
-                  <button
-                    type="button"
-                    className="flex h-5 w-5 items-center justify-center rounded-full text-ws-3 hover:bg-white/10 hover:text-ws-1"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setChips((prev) => prev.filter((c) => c !== email))
-                    }}
-                    aria-label={t.shareRemove}
+          <div className="relative">
+            <div
+              className="flex min-h-[48px] items-start gap-2 rounded-xl border border-white/10 bg-ws-control px-2 py-1.5 focus-within:border-ws-select"
+              onClick={() => inputRef.current?.focus()}
+            >
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 py-0.5">
+                {chips.map((chip) => (
+                  <span
+                    key={chip.email}
+                    title={chip.email}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/10 py-0.5 pl-2 pr-1 text-[13px] text-ws-1"
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-              <input
-                ref={inputRef}
-                value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value)
-                  if (hint) setHint(null)
-                }}
-                onKeyDown={onKeyDown}
-                onPaste={onPaste}
-                onBlur={() => {
-                  if (!draft.trim()) return
-                  const rest = commitTokens(draft)
-                  setDraft(rest)
-                }}
-                placeholder={chips.length ? "" : t.shareAddPeoplePh}
-                className="min-w-[140px] flex-1 bg-transparent py-1.5 text-[14px] text-ws-1 outline-none placeholder:text-ws-4"
-                autoComplete="off"
-                autoFocus
+                    <span className="truncate">{chip.name || chip.email}</span>
+                    <button
+                      type="button"
+                      className="flex h-5 w-5 items-center justify-center rounded-full text-ws-3 hover:bg-white/10 hover:text-ws-1"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setChips((prev) =>
+                          prev.filter((c) => c.email !== chip.email),
+                        )
+                      }}
+                      aria-label={t.shareRemove}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value)
+                    setSuggestOpen(true)
+                    setActive(-1)
+                    if (hint) setHint(null)
+                  }}
+                  onKeyDown={onKeyDown}
+                  onPaste={onPaste}
+                  onFocus={() => setSuggestOpen(true)}
+                  onBlur={() => {
+                    setSuggestOpen(false)
+                    setActive(-1)
+                    if (!draft.trim()) return
+                    setDraft(commitDraft(draft))
+                  }}
+                  placeholder={chips.length ? "" : t.shareAddPeoplePh}
+                  className="min-w-[140px] flex-1 bg-transparent py-1.5 text-[14px] text-ws-1 outline-none placeholder:text-ws-4"
+                  autoComplete="off"
+                  autoFocus
+                />
+              </div>
+              <RoleMenu
+                t={t}
+                value={inviteRole}
+                onChange={setInviteRole}
+                disabled={sending}
               />
             </div>
-            <RoleMenu
-              t={t}
-              value={inviteRole}
-              onChange={setInviteRole}
-              disabled={sending}
-            />
+
+            {/*
+              Кого уже приглашали. Мышь здесь работает по onMouseDown с
+              preventDefault: без него поле теряет фокус раньше клика, onBlur
+              разбирает набранное и закрывает список — по строке не попасть.
+            */}
+            {suggestOpen && suggestions.length > 0 ? (
+              <div className="absolute inset-x-0 top-[calc(100%+4px)] z-50 overflow-hidden rounded-xl border border-white/10 bg-ws-raised shadow-lg">
+                <p className="px-3 pb-1 pt-2 text-[11px] uppercase tracking-wide text-ws-4">
+                  {t.shareRecent}
+                </p>
+                <ul className="max-h-[220px] overflow-y-auto pb-1">
+                  {suggestions.map((contact, index) => (
+                    <li
+                      key={contact.email}
+                      className={cn(
+                        "flex items-center gap-2 px-1.5",
+                        index === active && "bg-white/10",
+                      )}
+                      onMouseEnter={() => setActive(index)}
+                    >
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1.5 py-1.5 text-left"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => pick(contact)}
+                      >
+                        <PersonAvatar
+                          name={contact.fullName}
+                          email={contact.email}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[14px] text-ws-1">
+                            {contact.fullName || contact.email}
+                          </span>
+                          <span className="block truncate text-[12px] text-ws-4">
+                            {contact.email}
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ws-4 hover:bg-white/10 hover:text-destructive"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => void forget(contact)}
+                        aria-label={t.shareForget}
+                        title={t.shareForget}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
           {hint ? (
             <p className="mt-2 text-[12px] text-destructive">{hint}</p>

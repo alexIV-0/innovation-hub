@@ -10,8 +10,9 @@ import {
   type DocError,
   type DocWarning,
 } from "@/lib/tools/dialog/dialog-doc"
-import { pickVideoName } from "@/lib/tools/dialog/media-files"
+import { peaksNameFor, pickVideoName } from "@/lib/tools/dialog/media-files"
 import { parsePeaks, type Peaks } from "@/lib/tools/dialog/peaks"
+import { computePeaksFromUrl } from "@/lib/tools/dialog/peaks-compute"
 import { pickSrtName, wantFromSourcePath } from "@/lib/tools/dialog/srt-files"
 import { parseSrt, type SrtCue } from "@/lib/tools/dialog/srt-parse"
 import type { ToolInstance } from "../tools-context"
@@ -26,12 +27,22 @@ export type FolderEntry = {
   sizeBytes: number | null
   /** Тип из каталога. У залитого мимо браузера файла бывает пустым. */
   contentType?: string | null
+  /** Когда файл записан — по нему подписаны версии документа. */
+  updatedAt?: string | null
 }
 
 export type FolderState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "error"; message: string }
+  /**
+   * Документа нет, но папка на задачу похожа — её можно собрать.
+   *
+   * Отдельное состояние, а не ошибка: «в папке нет dialog.json» было верным,
+   * пока документ приезжал из обработки. Теперь его собирает инструмент, и
+   * отсутствие файла — это начало работы, а не отказ.
+   */
+  | { kind: "needsBuild"; entries: FolderEntry[] }
   | {
       kind: "ready"
       doc: DialogDoc
@@ -240,7 +251,7 @@ export function useTaskFolder(tool: ToolInstance) {
         (e) => !e.isFolder && e.name === DOC_NAME && e.folderPath === folderPath,
       )
       if (!docEntry) {
-        setState({ kind: "error", message: tRef.current.srtNoDocument })
+        setState({ kind: "needsBuild", entries })
         return
       }
       const fileRes = await fetch(
@@ -334,6 +345,29 @@ export function useSignedUrls(
 }
 
 /**
+ * Где лежит общая волна: путь из документа, а нет его — соглашение об имени.
+ *
+ * Источник звука для общей волны тот же, что звучит в превью: отдельный микс,
+ * если он есть, иначе видео. Имя волны выводится из имени источника
+ * (`peaksNameFor`), поэтому документ ради посчитанной волны править не нужно.
+ */
+export function mainPeaksPath(
+  entries: FolderEntry[],
+  folderPath: string,
+  doc: DialogDoc,
+): string | null {
+  if (doc.media.peaks) return doc.media.peaks
+  const source = doc.media.mix ?? doc.media.video ?? pickVideoEntry(entries, folderPath)?.name
+  return source ? peaksNameFor(source) : null
+}
+
+/** То же для дорожки: свой путь или волна рядом со стемом. */
+export function trackPeaksPath(track: { peaks: string | null; audio: string | null }): string | null {
+  if (track.peaks) return track.peaks
+  return track.audio ? peaksNameFor(track.audio) : null
+}
+
+/**
  * Волны задачи: общая из `media.peaks` и свои у дорожек.
  *
  * Грузим одним заходом, а не хуком на дорожку: число дорожек меняется по ходу
@@ -352,7 +386,12 @@ export function useDocPeaks(
   })
 
   const wanted = doc
-    ? JSON.stringify([doc.media.peaks, doc.tracks.map((track) => [track.id, track.peaks])])
+    ? JSON.stringify([
+        doc.media.peaks,
+        doc.media.mix,
+        doc.media.video,
+        doc.tracks.map((track) => [track.id, track.peaks, track.audio]),
+      ])
     : ""
 
   useEffect(() => {
@@ -377,10 +416,10 @@ export function useDocPeaks(
     }
 
     void (async () => {
-      const main = await fetchPeaks(doc.media.peaks)
+      const main = await fetchPeaks(mainPeaksPath(entries, folderPath, doc))
       const byTrack: Record<string, Peaks> = {}
       for (const track of doc.tracks) {
-        const peaks = await fetchPeaks(track.peaks)
+        const peaks = await fetchPeaks(trackPeaksPath(track))
         if (peaks) byTrack[track.id] = peaks
       }
       if (!cancelled) setState({ main, byTrack })
@@ -421,6 +460,114 @@ function resolveSrtEntry(
     want,
   )
   return picked ? (inDir.find((e) => e.name === picked) ?? null) : null
+}
+
+/**
+ * Волны, которых в папке ещё нет, — считаем сами и в фоне.
+ *
+ * Почему в фоне: титры и тайминги готовы сразу, а декодирование десяти минут
+ * звука занимает секунды и держать из-за него пустой экран незачем. Волна
+ * дорисовывается, когда посчиталась, а посчитанное уезжает в папку — на второе
+ * открытие задачи считать уже нечего.
+ *
+ * Считаем по одному файлу за раз: параллельное декодирование нескольких дорожек
+ * съедает память браузера ровно там, где человек в это время работает.
+ *
+ * Записать волну может и читатель (`PUT /api/account/tools/{id}/peaks`): не смог
+ * записать — не беда, в этом сеансе волна всё равно нарисована, просто в
+ * следующий раз посчитается заново.
+ */
+export function useAutoPeaks(input: {
+  toolId: string
+  projectId: string | null
+  folderPath: string | null
+  entries: FolderEntry[]
+  doc: DialogDoc | null
+}): { main: Peaks | null; byTrack: Record<string, Peaks> } {
+  const { toolId, projectId, folderPath, entries, doc } = input
+  const [state, setState] = useState<{ main: Peaks | null; byTrack: Record<string, Peaks> }>({
+    main: null,
+    byTrack: {},
+  })
+  /** Что уже пробовали: второй раз не считаем ни удачу, ни отказ. */
+  const tried = useRef(new Set<string>())
+
+  const wanted = doc
+    ? JSON.stringify([
+        doc.media.peaks,
+        doc.media.mix,
+        doc.media.video,
+        doc.tracks.map((track) => [track.id, track.peaks, track.audio]),
+      ])
+    : ""
+
+  useEffect(() => {
+    if (!projectId || !folderPath || !doc) return
+    let cancelled = false
+
+    const mainSource =
+      doc.media.mix ?? doc.media.video ?? pickVideoEntry(entries, folderPath)?.name ?? null
+    const targets: { key: string; source: string; peaksPath: string; trackId?: string }[] = []
+
+    const mainPath = mainPeaksPath(entries, folderPath, doc)
+    if (mainSource && mainPath) {
+      targets.push({ key: "main", source: mainSource, peaksPath: mainPath })
+    }
+    for (const track of doc.tracks) {
+      const peaksPath = trackPeaksPath(track)
+      if (track.audio && peaksPath) {
+        targets.push({ key: track.id, source: track.audio, peaksPath, trackId: track.id })
+      }
+    }
+
+    const todo = targets.filter((target) => {
+      if (tried.current.has(target.peaksPath)) return false
+      // Файл уже в папке — его прочитает `useDocPeaks`, считать нечего.
+      return !findEntry(entries, folderPath, target.peaksPath)
+    })
+    if (todo.length === 0) return
+
+    void (async () => {
+      for (const target of todo) {
+        if (cancelled) return
+        tried.current.add(target.peaksPath)
+        const sourceEntry = findEntry(entries, folderPath, target.source)
+        if (!sourceEntry?.s3Key) continue
+        const url = await signGet(projectId, sourceEntry.s3Key)
+        if (!url) continue
+        const file = await computePeaksFromUrl(url)
+        if (!file || cancelled) continue
+
+        const peaks = parsePeaks(file)
+        if (peaks) {
+          setState((current) =>
+            target.trackId
+              ? { ...current, byTrack: { ...current.byTrack, [target.trackId]: peaks } }
+              : { ...current, main: peaks },
+          )
+        }
+
+        try {
+          await fetch(`/api/account/tools/${encodeURIComponent(toolId)}/peaks`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: target.peaksPath, peaks: file }),
+          })
+        } catch {
+          // Волна уже нарисована; не записалась — посчитается в следующий раз.
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // `entries` — новый массив на каждую перезагрузку папки; сравнивать по нему
+    // нечего, а пути и так в зависимостях строкой.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, folderPath, toolId, wanted])
+
+  return state
 }
 
 /**

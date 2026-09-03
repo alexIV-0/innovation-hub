@@ -105,6 +105,48 @@ export function resolveFolderPathByName(
   return nodes
 }
 
+/**
+ * Логический путь папки, в которой лежит элемент: `IN`, `OUT/готовое`, `` — корень.
+ *
+ * Ищем по всему дереву, а не по текущему пути: меню одно на все режимы, а путь
+ * в них разный — в упрощённом у панелей свои локальные, на мобильном свой. Дерево
+ * же одно и то же. `null` — элемента в дереве нет.
+ */
+export function folderPathOf(root: DriveFile[], id: string): string | null {
+  const walk = (list: DriveFile[], prefix: string[]): string | null => {
+    for (const item of list) {
+      if (item.id === id) return prefix.join("/")
+      if (item.isFolder && item.children) {
+        const found = walk(item.children, [...prefix, item.name])
+        if (found !== null) return found
+      }
+    }
+    return null
+  }
+  return walk(root, [])
+}
+
+/**
+ * Свободное имя в папке: `clip.mp4` → `clip (2).mp4` → `clip (3).mp4`.
+ *
+ * Номер вставляется перед расширением, а не в конец: `clip.mp4 (2)` перестаёт
+ * быть видеофайлом для всего, что смотрит на расширение, — от превью в кабинете
+ * до поиска по типам в конвейере.
+ */
+export function freeNameIn(taken: string[], name: string): string {
+  const busy = new Set(taken.map((item) => item.toLowerCase()))
+  if (!busy.has(name.toLowerCase())) return name
+
+  const dot = name.lastIndexOf(".")
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ""
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${stem} (${n})${ext}`
+    if (!busy.has(candidate.toLowerCase())) return candidate
+  }
+  return `${stem} (${Date.now()})${ext}`
+}
+
 export function pathToFolderPath(nodes: DriveFile[]): string {
   return nodes.map((n) => n.name).join("/")
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { useI18n } from "@/components/account/i18n"
+import type { PipelineState } from "@/lib/pipeline/state"
 import { AdminPageHeader } from "@/components/admin/shell/admin-page-header"
 import { RunPanel } from "./run-panel"
 import { TasksPanel } from "./tasks-panel"
@@ -18,7 +19,8 @@ const POLL_IDLE_MS = 30_000
 export function PipelineContent() {
   const { t } = useI18n()
   const [tick, setTick] = useState(0)
-  const [running, setRunning] = useState(false)
+  const [state, setState] = useState<PipelineState | null>(null)
+  const running = state?.isRunning === true
 
   /**
    * Опрашиваем только видимую вкладку.
@@ -60,8 +62,8 @@ export function PipelineContent() {
     }
   }, [running])
 
-  const onRunningChange = useCallback((value: boolean) => {
-    setRunning(value)
+  const onState = useCallback((value: PipelineState | null) => {
+    setState(value)
   }, [])
 
   return (
@@ -71,8 +73,13 @@ export function PipelineContent() {
         title={t.adminPipeline}
         description={t.adminPipelineDesc}
       />
-      <RunPanel tick={tick} onRunningChange={onRunningChange} />
-      <TasksPanel tick={tick} />
+      <RunPanel tick={tick} onState={onState} />
+      <TasksPanel
+        tick={tick}
+        running={running}
+        sweptAt={state?.sweptAt ?? null}
+        sweepIntervalMin={state?.sweepIntervalMin ?? 0}
+      />
     </div>
   )
 }

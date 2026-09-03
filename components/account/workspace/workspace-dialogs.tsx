@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -23,12 +24,18 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { tf } from "@/components/account/i18n"
 import { useWorkspace } from "./workspace-context"
 
 /** Диалоги ввода имени и подтверждения — замена нативным prompt() / confirm(). */
 export function WorkspaceDialogs() {
-  const { t, prompt, setPrompt, confirm, setConfirm } = useWorkspace()
+  const { t, prompt, setPrompt, confirm, setConfirm, conflict } = useWorkspace()
   const [value, setValue] = useState("")
+  /** «Так же с остальными» — сбрасывается на каждый новый вопрос. */
+  const [applyAll, setApplyAll] = useState(false)
+  useEffect(() => {
+    if (conflict) setApplyAll(false)
+  }, [conflict])
 
   useEffect(() => {
     if (prompt) setValue(prompt.initial)
@@ -132,6 +139,83 @@ export function WorkspaceDialogs() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/*
+        Занятое имя при заливке. Спрашиваем до отправки байтов, поэтому окно
+        обычное, а не подтверждение: у вопроса три ответа, а не «да / нет».
+        Закрытие крестиком равно «пропустить» — молча оборвать очередь заливки
+        хуже, чем не залить один файл.
+      */}
+      <Dialog
+        open={!!conflict}
+        onOpenChange={(open) => {
+          if (!open) conflict?.decide("skip", false)
+        }}
+      >
+        <DialogContent className="border-border/60 bg-ws-raised sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[15px] text-ws-1">
+              {t.conflictTitle}
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-relaxed text-ws-3">
+              {conflict
+                ? tf(t.conflictBody, {
+                    name: conflict.name,
+                    where: conflict.folderPath
+                      ? tf(t.conflictInFolder, { folder: conflict.folderPath })
+                      : t.conflictInRoot,
+                  })
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-1.5 text-[12px] text-ws-4">
+            <span>{t.conflictOverwriteHint}</span>
+            <span>
+              {conflict
+                ? tf(t.conflictKeepBothHint, { name: conflict.suggestion })
+                : ""}
+            </span>
+          </div>
+
+          {conflict && conflict.rest > 0 ? (
+            <label className="flex items-center gap-2 text-[12.5px] text-ws-3">
+              <input
+                type="checkbox"
+                checked={applyAll}
+                onChange={(e) => setApplyAll(e.target.checked)}
+                className="h-3.5 w-3.5 accent-ws-action"
+              />
+              {tf(t.conflictApplyAll, { count: conflict.rest })}
+            </label>
+          ) : null}
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              variant="ghost"
+              onClick={() => conflict?.decide("skip", applyAll)}
+              className="text-ws-3 hover:bg-white/5 hover:text-ws-1"
+            >
+              {t.conflictSkip}
+            </Button>
+            <span className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => conflict?.decide("rename", applyAll)}
+                className="border-white/10 bg-transparent text-ws-2 hover:bg-white/5 hover:text-ws-1"
+              >
+                {t.conflictKeepBoth}
+              </Button>
+              <Button
+                onClick={() => conflict?.decide("overwrite", applyAll)}
+                className="bg-ws-action text-white hover:bg-ws-action-hover"
+              >
+                {t.conflictOverwrite}
+              </Button>
+            </span>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

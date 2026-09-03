@@ -7,6 +7,7 @@ import {
   requireProjectAccess,
   requireStorageApi,
 } from "@/lib/storage/auth"
+import { findFileByName } from "@/lib/repositories/project-files"
 import { projectPrefix } from "@/lib/storage/keys"
 import { projectUploadObjectKey } from "@/lib/project-storage"
 import { isAllowedProjectContentType } from "@/lib/project-upload-policy"
@@ -24,6 +25,14 @@ const schema = z.object({
   fileName: z.string().min(1).optional(),
   contentType: z.string().optional(),
   s3Key: z.string().optional(),
+  /**
+   * Писать поверх файла с таким же именем, если он в этой папке уже есть.
+   *
+   * Ключ ищем сами, а не принимаем от клиента: физический ключ — внутренняя
+   * идентичность объекта, и отдавать его в браузер ради этого незачем. Не нашли
+   * — минтим новый, то есть флаг безвреден.
+   */
+  overwrite: z.boolean().optional(),
   ttlSec: z.number().int().min(60).max(86400).optional(),
 })
 
@@ -84,10 +93,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Content type not allowed." }, { status: 400 })
   }
 
+  // Перезапись: тот же объект в R2, та же строка каталога, тот же file_id.
+  // Именно поэтому она лучше, чем «удалить и залить заново»: у файла остаётся
+  // история, а `notify` по существующему ключу журналируется как `put` — то
+  // есть конвейер увидит событие и соберёт задачу.
+  const existing =
+    data.overwrite && data.fileName
+      ? await findFileByName({
+          projectId: access.projectId,
+          folderPath: data.folderPath,
+          name: data.fileName,
+        })
+      : null
+
   const s3Key =
     data.s3Key && data.s3Key.startsWith(expectedPrefix)
       ? data.s3Key
-      : projectUploadObjectKey(
+      : existing?.s3Key && existing.s3Key.startsWith(expectedPrefix)
+        ? existing.s3Key
+        : projectUploadObjectKey(
           access.storageOwnerId,
           access.projectId,
           data.folderPath,

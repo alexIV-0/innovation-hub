@@ -17,10 +17,24 @@ export async function uploadProjectFileDirect(input: {
   projectId: string
   file: File
   folderPath?: string
+  /**
+   * Под каким именем сохранить. Пусто — имя самого файла.
+   *
+   * Нужно, когда имя в папке занято и человек выбрал «сохранить оба»: файл на
+   * диске у него тот же, а в проекте должен лечь как `clip (2).mp4`.
+   */
+  name?: string
+  /**
+   * Писать поверх одноимённого файла: тот же объект, та же строка каталога, тот
+   * же `file_id`. Ключ находит сервер — браузеру физическая идентичность
+   * объекта не нужна.
+   */
+  overwrite?: boolean
   onProgress?: (percent: number) => void
 }): Promise<DirectUploadResult> {
+  const name = input.name ?? input.file.name
   const contentType =
-    resolveProjectContentType({ name: input.file.name, type: input.file.type }) ??
+    resolveProjectContentType({ name, type: input.file.type }) ??
     "application/octet-stream"
   const folderPath = input.folderPath ?? ""
 
@@ -32,8 +46,9 @@ export async function uploadProjectFileDirect(input: {
       projectId: input.projectId,
       method: "PUT",
       folderPath,
-      fileName: input.file.name,
+      fileName: name,
       contentType,
+      overwrite: input.overwrite ?? false,
     }),
   })
   const presign = (await presignRes.json().catch(() => null)) as
@@ -75,7 +90,7 @@ export async function uploadProjectFileDirect(input: {
       projectId: input.projectId,
       s3Key: presign.s3Key,
       folderPath: presign.folderPath ?? folderPath,
-      fileName: input.file.name,
+      fileName: name,
       sizeBytes: input.file.size,
       contentType: presign.contentType ?? contentType,
     }),

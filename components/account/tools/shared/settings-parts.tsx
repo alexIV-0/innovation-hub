@@ -7,7 +7,7 @@ import { tf } from "@/components/account/i18n"
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
 import { cn } from "@/lib/utils"
 import { keyLabel } from "./editor-state"
-import { projectRules, type ProjectRule, type ProjectSort } from "./project-rules"
+import { projectRules, type ProjectRule } from "./project-rules"
 import { useTools, type ToolInstance } from "../tools-context"
 
 /**
@@ -276,7 +276,7 @@ export function ProjectRulesSection({ tool }: { tool: ToolInstance }) {
     void patchSettings(tool.id, { hiddenProjectIds: [...next] })
   }
 
-  const setRule = (projectId: string, patch: { rule?: ProjectRule; sort?: ProjectSort }) => {
+  const setRule = (projectId: string, patch: { rule?: ProjectRule }) => {
     void patchSettings(tool.id, {
       projectRules: {
         ...rules.all,
@@ -311,7 +311,7 @@ export function ProjectRulesSection({ tool }: { tool: ToolInstance }) {
         return (
           <div
             key={project.id}
-            className="grid grid-cols-[1fr_190px_130px] items-center gap-3 border-t border-white/[0.06] py-2"
+            className="grid grid-cols-[1fr_260px] items-center gap-3 border-t border-white/[0.06] py-2"
           >
             <div className="flex min-w-0 items-center gap-2.5">
               <Toggle
@@ -349,17 +349,10 @@ export function ProjectRulesSection({ tool }: { tool: ToolInstance }) {
               onChange={(value) => setRule(project.id, { rule: value as ProjectRule })}
               options={[
                 { value: "folders", label: t.srtRuleFolders },
+                { value: "folders2", label: t.srtRuleFolders2 },
+                { value: "auto", label: t.srtRuleAuto },
                 { value: "srt", label: t.srtRuleSrt },
                 { value: "flat", label: t.srtRuleFlat },
-              ]}
-            />
-            <NativeSelect
-              value={rule.sort}
-              disabled={unavailable}
-              onChange={(value) => setRule(project.id, { sort: value as ProjectSort })}
-              options={[
-                { value: "name", label: t.srtSortName },
-                { value: "date", label: t.srtSortDate },
               ]}
             />
           </div>

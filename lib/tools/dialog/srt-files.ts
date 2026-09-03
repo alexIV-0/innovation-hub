@@ -152,6 +152,32 @@ export function pickSrtName(names: string[], want: SrtWant): string | null {
 }
 
 /**
+ * Какой язык назван в имени файла — обратный поиск по той же таблице.
+ *
+ * Нужен сборке документа: там языки не спрашивают, а **находят** — что в папке
+ * дорожки лежит, то и есть список переводов задачи. Возвращается всегда
+ * двухбуквенный код: `dialog_RUS.srt` и `dialog_ru.srt` — один и тот же язык, и
+ * двумя колонками перевода они быть не должны.
+ *
+ * Имя, названное оригиналом словом, языка не даёт: `original.srt` — это
+ * исходник, даже если рядом в имени мелькает код.
+ */
+export function langFromName(name: string): string | null {
+  if (nameIsOriginal(name)) return null
+  const tokens = tokensOf(name)
+  for (const token of tokens) {
+    if (LANG_ALIASES[token]) return token
+    for (const [code, aliases] of Object.entries(LANG_ALIASES)) {
+      if (aliases.includes(token)) return code
+    }
+  }
+  // Двухбуквенный код языка, которого нет в таблице: берём как есть — список
+  // там не «все языки мира», а те, что встречались.
+  const last = tokens[tokens.length - 1]
+  return last && /^[a-z]{2}$/.test(last) ? last : null
+}
+
+/**
  * Что означает путь, который просят: оригинал или перевод.
  *
  * Пути приходят от `sourcePathsFor` (`01/orig.srt`, `01/ru.srt`) и из

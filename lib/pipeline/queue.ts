@@ -228,12 +228,26 @@ export async function completeTask(input: {
   }
 
   await withTransaction(async (client) => {
-    // payload обнуляем: у завершённой задачи он занимает место и больше не нужен,
-    // а вот у упавшей — нужен, без него нельзя ни переретраить, ни разобраться.
+    /**
+     * Итог ДОБАВЛЯЕТСЯ к payload, а не заменяет его.
+     *
+     * Раньше заменял — «у завершённой задачи payload занимает место и больше не
+     * нужен». Оба утверждения оказались неверны. Место: несколько килобайт на
+     * задачу, то есть ничто. А нужен он двоим:
+     *
+     * - тарификации. `settleUnbilled` берёт оси из `payload.description`
+     *   (`payBase`, `payMeter`, `sourceUnits`) — в архиве машины их нет, и взять
+     *   больше неоткуда. С обнулённым payload они приезжали пустыми, и КАЖДАЯ
+     *   успешно завершённая задача уходила в «пропущено», то есть не списывалась
+     *   никогда;
+     * - окну очереди. Цепочка шагов лежит в `processingQueue`, и без неё у
+     *   завершённой задачи в колонке «Шагов» стоял ноль — при том, что шаги
+     *   прошли и известны.
+     */
     await client.query(
       `UPDATE tasks
           SET status = 'done',
-              payload = jsonb_build_object(
+              payload = payload || jsonb_build_object(
                 'outFiles', $2::jsonb,
                 'totalCost', $3::numeric
               ),
@@ -248,9 +262,9 @@ export async function completeTask(input: {
         input.totalCost ?? null,
       ],
     )
-    await client.query(`DELETE FROM task_progress WHERE task_id = $1`, [
-      input.taskId,
-    ])
+    // Строки прогресса тоже оставляем: это готовая история шагов со временем и
+    // последним сообщением, и другой у нас нет. Растут они не бесконечно —
+    // старые вычищает `evictOldProgress` на тике конвейера.
     await client.query(
       `UPDATE remote_computers
           SET status = 'idle', current_task_id = NULL, current_project_id = NULL
@@ -396,6 +410,32 @@ export async function releaseTask(input: {
   })
 
   return { ok: true }
+}
+
+/**
+ * Чистка истории шагов у давно завершённых задач.
+ *
+ * Появилась вместе с решением не удалять прогресс при завершении: без потолка
+ * `task_progress` растёт линейно и навсегда — тысяча элементов в день по пять
+ * шагов это полтора миллиона строк в год ни для кого.
+ *
+ * Срок отмеряем от `tasks.updated_at`, а не от `task_progress.updated_at`:
+ * интересует возраст задачи целиком, а не когда в последний раз шевельнулся
+ * отдельный шаг. Живые задачи не трогаем ни при каком возрасте — у них шаги
+ * показываются прямо сейчас.
+ */
+const PROGRESS_KEEP_DAYS = 30
+
+export async function evictOldProgress(): Promise<number> {
+  const result = await query(
+    `DELETE FROM task_progress p
+      USING tasks t
+      WHERE t.id = p.task_id
+        AND t.status IN ('done', 'failed')
+        AND t.updated_at < NOW() - ($1 || ' days')::interval`,
+    [String(PROGRESS_KEEP_DAYS)],
+  )
+  return result.rowCount ?? 0
 }
 
 /**

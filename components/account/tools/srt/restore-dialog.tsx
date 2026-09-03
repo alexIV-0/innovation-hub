@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Loader2, RotateCcw } from "lucide-react"
+import { Loader2, RotateCcw, Trash2 } from "lucide-react"
 
 import { tf } from "@/components/account/i18n"
 import { useWorkspace } from "@/components/account/workspace/workspace-context"
@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { mergeRebuild } from "@/lib/tools/dialog/build-doc"
 import {
   fullRestoreScope,
   restoreFromSrt,
@@ -19,7 +20,16 @@ import {
 } from "@/lib/tools/dialog/restore"
 import type { SrtCue } from "@/lib/tools/dialog/srt-parse"
 import { cn } from "@/lib/utils"
+import {
+  collectTaskDoc,
+  deleteVersion,
+  postVersion,
+  taskVersions,
+  type VersionResult,
+} from "../shared/build-task"
 import { languageName } from "../shared/language-picker"
+import type { FolderEntry } from "../shared/use-task-folder"
+import type { ToolInstance } from "../tools-context"
 import { useSrt } from "./srt-context"
 
 type Lang = string | null
@@ -38,9 +48,15 @@ type Lang = string | null
 export function SrtRestoreDialog({
   open,
   onOpenChange,
+  tool,
+  entries,
+  onReloaded,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  tool: ToolInstance
+  entries: FolderEntry[]
+  onReloaded: () => void
 }) {
   const { t, lang: uiLang } = useWorkspace()
   const srt = useSrt()
@@ -150,6 +166,15 @@ export function SrtRestoreDialog({
           <p className="text-pretty text-[12px] leading-relaxed text-ws-3">
             {t.srtRestoreHint}
           </p>
+
+          <VersionsSection
+            tool={tool}
+            entries={entries}
+            onChanged={() => {
+              onOpenChange(false)
+              onReloaded()
+            }}
+          />
 
           <section className="flex flex-col gap-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.32px] text-ws-4">
@@ -370,5 +395,215 @@ function Check({
         {count ?? "—"}
       </span>
     </label>
+  )
+}
+
+/**
+ * Версии документа — здесь же, в окне восстановления.
+ *
+ * Место не случайное: и то и другое отвечает на один вопрос — «вернуть как
+ * было». Ниже по окну возвращают текст из сырья по выбранным пределам, здесь —
+ * документ целиком. Разница в том, что версия помнит и ручные правки, а сырьё
+ * знает только машинный результат.
+ *
+ * Пересборка предлагается с сохранением правок по умолчанию: обычный повод её
+ * запустить — «в папку докинули перевод», и терять из-за нового языка всю
+ * вычитку не должен никто.
+ */
+function VersionsSection({
+  tool,
+  entries,
+  onChanged,
+}: {
+  tool: ToolInstance
+  entries: FolderEntry[]
+  onChanged: () => void
+}) {
+  const { t, lang: uiLang } = useWorkspace()
+  const srt = useSrt()
+  const [busy, setBusy] = useState<string | null>(null)
+  const [step, setStep] = useState("")
+  const [error, setError] = useState<string | null>(null)
+
+  const projectId = tool.source?.projectId ?? null
+  const folderPath = tool.source?.folderPath ?? null
+
+  const { list: versions, currentNo } = useMemo(
+    () => taskVersions(entries, folderPath),
+    [entries, folderPath],
+  )
+
+  /**
+   * Новая версия. `keepEdits` разделяет два разных повода её создать: начать с
+   * машинного результата или всего лишь забрать из папки новое, не потеряв
+   * вычитку. Текущий документ в обоих случаях откладывается сервером.
+   */
+  const rebuild = async (keepEdits: boolean) => {
+    if (!projectId || !folderPath) return
+    setError(null)
+    setBusy(keepEdits ? "pull" : "new")
+    try {
+      const { doc } = await collectTaskDoc({
+        projectId,
+        folderPath,
+        entries,
+        // Язык оригинала уже назван в документе: спрашивать его второй раз
+        // незачем, а менять его пересборка не должна.
+        originalLang: srt.doc.languages.original,
+        onProgress: (progress) => setStep(progress.step),
+        steps: { srt: t.srtBuildReading, media: t.srtBuildMedia, write: t.srtBuildWriting },
+      })
+      const result = await postVersion(tool.id, {
+        action: "replace",
+        doc: keepEdits ? mergeRebuild(srt.doc, doc) : doc,
+      })
+      if (result.ok) onChanged()
+      else setError(result.message)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : t.srtVersionFailed)
+    } finally {
+      setBusy(null)
+      setStep("")
+    }
+  }
+
+  const act = async (key: string, run: () => Promise<VersionResult>) => {
+    setError(null)
+    setBusy(key)
+    const result = await run()
+    setBusy(null)
+    if (result.ok) onChanged()
+    else setError(result.message)
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.32px] text-ws-4">
+        {t.srtVersionsTitle}
+      </h3>
+      <p className="text-pretty text-[12px] leading-relaxed text-ws-4">{t.srtVersionsHint}</p>
+
+      <div className="overflow-hidden rounded-[6px] border border-white/[0.07]">
+        <Action
+          label={t.srtVersionNew}
+          note={t.srtVersionNewNote}
+          busy={busy === "new"}
+          disabled={Boolean(busy)}
+          onClick={() => void rebuild(false)}
+        />
+        <Action
+          label={t.srtVersionPull}
+          note={t.srtVersionPullNote}
+          busy={busy === "pull"}
+          disabled={Boolean(busy)}
+          onClick={() => void rebuild(true)}
+        />
+        {step ? <p className="px-3 pb-2 text-[11.5px] text-ws-4">{step}</p> : null}
+      </div>
+
+      <div className="overflow-hidden rounded-[6px] border border-white/[0.07]">
+        {/*
+          Первой строкой — та, в которой работают сейчас. Без неё список читается
+          как «вот версии», и непонятно, где в нём человек находится.
+        */}
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2 last:border-b-0">
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate font-mono text-[12.5px] text-ws-1">dialog.json</span>
+            <span className="text-[11.5px] text-ws-4">
+              {tf(t.srtVersionCurrent, { no: currentNo })}
+            </span>
+          </span>
+        </div>
+        {versions.length === 0 ? (
+          <p className="px-3 py-2.5 text-[12.5px] text-ws-5">{t.srtVersionsEmpty}</p>
+        ) : (
+          versions.map(({ entry }) => (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2 last:border-b-0"
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-mono text-[12.5px] text-ws-2">{entry.name}</span>
+                {entry.updatedAt ? (
+                  <span className="text-[11.5px] text-ws-5">
+                    {new Date(entry.updatedAt).toLocaleString(uiLang)}
+                  </span>
+                ) : null}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={Boolean(busy)}
+                  onClick={() =>
+                    void act(entry.name, () =>
+                      postVersion(tool.id, { action: "activate", file: entry.name }),
+                    )
+                  }
+                  className="flex h-[26px] items-center gap-2 rounded border border-white/[0.09] px-2.5 text-[12px] text-ws-2 hover:bg-ws-hover disabled:opacity-60"
+                >
+                  {busy === entry.name ? (
+                    <Loader2 className="h-[13px] w-[13px] animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-[13px] w-[13px]" />
+                  )}
+                  {t.srtVersionActivate}
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(busy)}
+                  title={t.srtVersionDelete}
+                  onClick={() =>
+                    void act(`del:${entry.name}`, () => deleteVersion(tool.id, entry.name))
+                  }
+                  className="flex h-[26px] w-[26px] items-center justify-center rounded border border-white/[0.09] text-ws-4 hover:bg-ws-hover hover:text-ws-playhead disabled:opacity-60"
+                >
+                  {busy === `del:${entry.name}` ? (
+                    <Loader2 className="h-[13px] w-[13px] animate-spin" />
+                  ) : (
+                    <Trash2 className="h-[13px] w-[13px]" />
+                  )}
+                </button>
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {error ? <span className="text-[12px] text-ws-playhead">{error}</span> : null}
+    </section>
+  )
+}
+
+/** Строка-действие в рамке: название, пояснение и своя занятость. */
+function Action({
+  label,
+  note,
+  busy,
+  disabled,
+  onClick,
+}: {
+  label: string
+  note: string
+  busy: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 border-b border-white/[0.06] px-3 py-2.5 text-left last:border-b-0 hover:bg-ws-hover disabled:opacity-60"
+    >
+      {busy ? (
+        <Loader2 className="h-[15px] w-[15px] shrink-0 animate-spin text-ws-accent" />
+      ) : (
+        <RotateCcw className="h-[15px] w-[15px] shrink-0 text-ws-4" />
+      )}
+      <span className="flex min-w-0 flex-col">
+        <span className="text-[13px] text-ws-1">{label}</span>
+        <span className="text-[11.5px] text-ws-5">{note}</span>
+      </span>
+    </button>
   )
 }

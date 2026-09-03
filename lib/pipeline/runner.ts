@@ -1,4 +1,8 @@
-import { reapExpiredLeases, reapOrphanedTasks } from "@/lib/pipeline/queue"
+import {
+  evictOldProgress,
+  reapExpiredLeases,
+  reapOrphanedTasks,
+} from "@/lib/pipeline/queue"
 import { collectTasks } from "@/lib/pipeline/scan"
 import {
   readPipelineState,
@@ -31,6 +35,16 @@ import { sweepInFolders } from "@/lib/pipeline/sweep"
  */
 
 const TICK_INTERVAL_MS = 15_000
+
+/**
+ * Как часто чистим историю шагов у старых задач.
+ *
+ * Раз в час, а не на каждом тике: работа редкая по смыслу — за пятнадцать секунд
+ * ничего не успевает состариться на месяц, — а `DELETE` по всей таблице каждые
+ * пятнадцать секунд был бы чистой тратой.
+ */
+const PROGRESS_EVICT_MS = 60 * 60_000
+let evictedAt = 0
 
 /**
  * Пора ли обходить.
@@ -78,6 +92,16 @@ export function startPipelineRunner(): void {
         console.log(
           `[pipeline-runner] погашено задач без источника: ${orphaned}`,
         )
+      }
+
+      // Тоже независимо от флага: старая история одинаково не нужна и при
+      // включённом слежении, и при выключенном.
+      if (Date.now() - evictedAt > PROGRESS_EVICT_MS) {
+        evictedAt = Date.now()
+        const evicted = await evictOldProgress()
+        if (evicted > 0) {
+          console.log(`[pipeline-runner] вычищено строк прогресса: ${evicted}`)
+        }
       }
 
       const state = await readPipelineState()

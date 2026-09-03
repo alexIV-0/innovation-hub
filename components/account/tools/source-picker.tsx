@@ -74,7 +74,7 @@ function ProjectSubmenu({
   const loadedRef = useRef("")
 
   const load = useCallback(async () => {
-    const key = `${root}|${rule.rule}|${rule.sort}`
+    const key = `${root}|${rule.rule}`
     if (loadedRef.current === key) return
     loadedRef.current = key
     setState("loading")
@@ -106,7 +106,7 @@ function ProjectSubmenu({
     } catch {
       setState("error")
     }
-  }, [project.id, root, rule.rule, rule.sort])
+  }, [project.id, root, rule.rule])
 
   return (
     <DropdownMenuSub onOpenChange={(open) => open && void load()}>

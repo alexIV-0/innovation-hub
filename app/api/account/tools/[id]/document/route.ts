@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3"
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
@@ -8,6 +8,7 @@ import { requireProjectAccess } from "@/lib/project-access"
 import { listFilesInFolder } from "@/lib/repositories/project-files"
 import { findUserTool } from "@/lib/repositories/user-tools"
 import { getS3Bucket } from "@/lib/s3-config"
+import { projectUploadObjectKey } from "@/lib/project-storage"
 import { getS3Client, isS3Configured } from "@/lib/s3-client"
 import { StorageWriteError, writeNotifyUpload } from "@/lib/storage/write-path"
 import { parseDialogDoc, type DialogDoc } from "@/lib/tools/dialog/dialog-doc"
@@ -55,7 +56,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
     return NextResponse.json({ message: "Tool has no source folder." }, { status: 400 })
   }
 
-  const access = await requireProjectAccess(projectId, auth.userId, "editor")
+  /**
+   * Правка титров через инструмент открыта и читателю — решение владельца.
+   *
+   * Роль `viewer` закрывает файловый менеджер: залезть в папку и что-то там
+   * сделать читатель по-прежнему не может. Инструмент — другой канал: он пишет
+   * ровно один файл ровно в ту папку, которую человек выбрал источником своего
+   * экземпляра, и ничего больше. Без этого читатель, которому расшарили проект
+   * ради вычитки, не мог бы сохранить ни одной правки.
+   */
+  const access = await requireProjectAccess(projectId, auth.userId, "viewer")
   if (access instanceof NextResponse) return access
   if (!isS3Configured()) {
     return NextResponse.json({ message: "Object storage is not available." }, { status: 503 })
@@ -222,4 +232,128 @@ function isPreconditionFailed(error: unknown): boolean {
   if (!error || typeof error !== "object") return false
   const e = error as { name?: string; $metadata?: { httpStatusCode?: number } }
   return e.name === "PreconditionFailed" || e.$metadata?.httpStatusCode === 412
+}
+
+/**
+ * Создание документа задачи — сборка папки при первом открытии.
+ *
+ * Отдельный метод, а не ветка в `PUT`: там вся логика построена вокруг того,
+ * что документ уже есть, и «создать» отличается от «сохранить» в главном —
+ * условие записи. Здесь это `If-None-Match: *`: если файл успел появиться,
+ * пока мы собирали (второй человек открыл ту же задачу), запись не проходит, и
+ * клиент просто перечитывает папку вместо того, чтобы затереть чужую сборку.
+ *
+ * Права те же, что у сохранения: собрать документ должен мочь и читатель,
+ * иначе задача, которую ему расшарили, у него не откроется вовсе.
+ */
+export async function POST(request: NextRequest, { params }: Params) {
+  const auth = await requireUserApi(request)
+  if (auth instanceof NextResponse) return auth
+  const { id } = await params
+
+  const tool = await findUserTool(id, auth.userId)
+  if (!tool) return NextResponse.json({ message: "Tool not found." }, { status: 404 })
+
+  const source = (tool.source ?? {}) as { projectId?: string | null; folderPath?: string | null }
+  const projectId = source.projectId ?? null
+  const folderPath = source.folderPath ?? null
+  if (!projectId || !folderPath) {
+    return NextResponse.json({ message: "Tool has no source folder." }, { status: 400 })
+  }
+
+  const access = await requireProjectAccess(projectId, auth.userId, "viewer")
+  if (access instanceof NextResponse) return access
+  if (!isS3Configured()) {
+    return NextResponse.json({ message: "Object storage is not available." }, { status: 503 })
+  }
+
+  let body: unknown
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ message: "Invalid JSON." }, { status: 400 })
+  }
+  const parsed = z.object({ doc: z.unknown() }).safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ message: "Invalid input." }, { status: 400 })
+  }
+
+  const incoming = parseDialogDoc(parsed.data.doc)
+  if (!incoming.ok) {
+    return NextResponse.json(
+      { message: "Document is invalid.", error: incoming.error },
+      { status: 422 },
+    )
+  }
+
+  const files = await listFilesInFolder(projectId, folderPath)
+  if (files.some((file) => !file.isFolder && file.name === DOC_NAME)) {
+    return NextResponse.json({ message: "Document already exists." }, { status: 409 })
+  }
+
+  // Ключ как у presign (`{uuid}-{имя}`): по всему проекту файлы лежат так, и
+  // «понятный путь» дал бы второй объект с тем же логическим именем.
+  const s3Key = projectUploadObjectKey(
+    access.project.storageOwnerId,
+    projectId,
+    folderPath,
+    `${randomUUID()}-${DOC_NAME}`,
+  )
+  const at = new Date().toISOString()
+  const document = stampForSave(incoming.doc, {
+    revision: 1,
+    updatedBy: auth.email,
+    producer: PRODUCER,
+    at,
+  })
+  const bytes = Buffer.from(serializeDialogDoc(document), "utf-8")
+
+  try {
+    await getS3Client().send(
+      new PutObjectCommand({
+        Bucket: getS3Bucket(),
+        Key: s3Key,
+        Body: bytes,
+        ContentType: "application/json",
+        IfNoneMatch: "*",
+      }),
+    )
+  } catch (error) {
+    if (isPreconditionFailed(error) || isAlreadyExists(error)) {
+      return NextResponse.json({ message: "Document already exists." }, { status: 409 })
+    }
+    console.error("[srt-editor] create failed", error)
+    return NextResponse.json({ message: "Failed to write the document." }, { status: 503 })
+  }
+
+  try {
+    await writeNotifyUpload({
+      storageOwnerId: access.project.storageOwnerId,
+      projectId,
+      s3Key,
+      folderPath,
+      fileName: DOC_NAME,
+      sizeBytes: bytes.byteLength,
+      contentType: "application/json",
+      contentHash: createHash("sha256").update(bytes).digest("hex"),
+      originMtime: Math.floor(Date.parse(at) / 1000),
+      // Сборка документа — не заливка исходника: `contact` задачи остаётся за
+      // тем, кто принёс материал.
+      actor: { userId: auth.userId, isUploader: false },
+    })
+  } catch (error) {
+    if (error instanceof StorageWriteError) {
+      return NextResponse.json({ message: error.message }, { status: error.status })
+    }
+    console.error("[srt-editor] notify after create failed", error)
+  }
+
+  return NextResponse.json({ created: true, revision: document.revision, updatedAt: at })
+}
+
+/** Хранилище отказало, потому что объект уже есть (`If-None-Match: *`). */
+function isAlreadyExists(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const e = error as { name?: string; $metadata?: { httpStatusCode?: number } }
+  return e.name === "PreconditionFailed" || e.$metadata?.httpStatusCode === 409
 }

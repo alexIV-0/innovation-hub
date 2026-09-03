@@ -60,11 +60,13 @@ import {
   type TrackFlags,
   type TrackMode,
 } from "../shared/editor-state"
+import { BuildTaskScreen } from "../shared/build-task"
 import { SaveBadge } from "../shared/save-badge"
 import { useAutosave } from "../shared/use-autosave"
 import {
   findEntry,
   signGet,
+  useAutoPeaks,
   useDocPeaks,
   usePeaksByPath,
   useSignedUrls,
@@ -100,7 +102,7 @@ import { VoiceProvider, type VoiceApi, type VoiceSoundMode } from "./voice-conte
 export function VoiceEditor({ tool }: { tool: ToolInstance }) {
   const { t } = useWorkspace()
   const { closeTool } = useTools()
-  const { state } = useTaskFolder(tool)
+  const { state, reload } = useTaskFolder(tool)
 
   const loaded = state.kind === "ready" ? state.doc : null
   const { doc, apply, reset, undo, redo, version } = useUndoableDoc<DialogDoc>(loaded)
@@ -112,6 +114,7 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
     revision: loaded?.revision ?? 0,
     onMerged: reset,
     networkError: t.driveUnavailable,
+    goneError: t.srtSaveGone,
   })
 
   const markClean = save.markClean
@@ -173,6 +176,8 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
   const entries = state.kind === "ready" ? state.entries : []
   const video = useTaskVideo(projectId, folderPath, entries, doc)
   const peaks = useDocPeaks(projectId, folderPath, entries, doc)
+  // Волны, которых в папке нет, считаются в фоне и рисуются по мере готовности.
+  const autoPeaks = useAutoPeaks({ toolId: tool.id, projectId, folderPath, entries, doc })
 
   useEffect(() => {
     if (!doc) return
@@ -467,10 +472,12 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
       clock,
       video,
       peaksFor: (trackId) => {
-        const own = peaks.byTrack[trackId]
-        return own ? { peaks: own, own: true } : { peaks: peaks.main, own: false }
+        const own = peaks.byTrack[trackId] ?? autoPeaks.byTrack[trackId]
+        return own
+          ? { peaks: own, own: true }
+          : { peaks: peaks.main ?? autoPeaks.main, own: false }
       },
-      mainPeaks: peaks.main,
+      mainPeaks: peaks.main ?? autoPeaks.main,
       peaksForTake: (take) => (take.peaks ? takePeaks[take.peaks] ?? null : null),
       takeUrl: (take) => {
         const key = takeEntries.find((item) => item.path === take.file)?.s3Key
@@ -517,6 +524,7 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
     projectId,
     ops,
     peaks,
+    autoPeaks,
     prefs,
     resetPrefs,
     rows,
@@ -754,7 +762,7 @@ export function VoiceEditor({ tool }: { tool: ToolInstance }) {
           <VoiceExportDialog request={exportReq} onClose={() => setExportReq(null)} />
         </VoiceProvider>
       ) : (
-        <EmptyArea state={state} />
+        <EmptyArea state={state} tool={tool} onBuilt={reload} />
       )}
 
       {/*
@@ -818,8 +826,22 @@ function ExportMenuItem({
   )
 }
 
-function EmptyArea({ state }: { state: ReturnType<typeof useTaskFolder>["state"] }) {
+function EmptyArea({
+  state,
+  tool,
+  onBuilt,
+}: {
+  state: ReturnType<typeof useTaskFolder>["state"]
+  tool: ToolInstance
+  onBuilt: () => void
+}) {
   const { t } = useWorkspace()
+
+  // Документа нет, но папка на задачу похожа: собрать её — это работа
+  // инструмента, а не повод показать ошибку.
+  if (state.kind === "needsBuild") {
+    return <BuildTaskScreen tool={tool} entries={state.entries} onDone={onBuilt} />
+  }
 
   if (state.kind === "loading") {
     return (

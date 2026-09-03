@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { ChevronRight, Loader2 } from "lucide-react"
+import { ChevronRight, Loader2, Upload } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import {
@@ -75,6 +75,57 @@ function useDropZone(target: UploadTarget) {
   }
 
   return { active, handlers }
+}
+
+/**
+ * Куда попадут файлы, если отпустить их здесь.
+ *
+ * Одна и та же подсказка во всех видах: раньше цель загрузки было видно только
+ * в колоночном виде — там подсвечивалась колонка, — а в списке и плитке
+ * оставалась лишь тонкая рамка вокруг области, по которой папку не назвать.
+ * Не ловит указатель: иначе собственные dragenter / dragleave наложились бы на
+ * счётчик глубины в зоне и подсветка замигала бы.
+ */
+function DropHint({ target, size }: { target: UploadTarget; size: Size }) {
+  const { t } = useWorkspace()
+  const segments = target.folderPath ? target.folderPath.split("/") : []
+  const name = segments.length ? segments[segments.length - 1] : t.projectRoot
+  const full = segments.join(" / ")
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ws-select/[0.12] p-2">
+      <span
+        title={full || undefined}
+        className={cn(
+          "flex max-w-full flex-col items-center gap-1 rounded-xl border border-ws-select/60 bg-ws-panel/95 text-center shadow-ws-panel",
+          size === "roomy" ? "px-4 py-3" : "px-3 py-2.5",
+        )}
+      >
+        <Upload
+          className={cn(
+            "text-ws-select",
+            size === "roomy" ? "h-5 w-5" : "h-4 w-4",
+          )}
+        />
+        <span
+          className={cn(
+            "text-ws-4",
+            size === "roomy" ? "text-[11.5px]" : "text-[10.5px]",
+          )}
+        >
+          {t.dropUploadTo}
+        </span>
+        <span
+          className={cn(
+            "max-w-full truncate font-semibold text-ws-1",
+            size === "roomy" ? "text-[14px]" : "text-[12.5px]",
+          )}
+        >
+          {name}
+        </span>
+      </span>
+    </div>
+  )
 }
 
 export function Breadcrumbs({
@@ -291,64 +342,67 @@ function FileColumn({
       onContextMenu={(e) => openMenu("empty", e, { target: colTarget })}
       {...drop.handlers}
       className={cn(
-        "shrink-0 overflow-y-auto border-r border-white/[0.07] p-2 transition-colors",
+        "relative shrink-0 border-r border-white/[0.07] transition-colors",
         size === "roomy" ? "w-[212px]" : "w-[190px]",
-        drop.active && "bg-ws-select/[0.1] outline outline-2 -outline-offset-2 outline-ws-select",
+        drop.active && "outline outline-2 -outline-offset-2 outline-ws-select",
         !drop.active && isMenuHere && "bg-ws-accent/[0.07] outline outline-1 -outline-offset-1 outline-ws-accent/40",
       )}
     >
-      {list.length === 0 ? (
-        <p className="px-2 py-4 text-[12px] text-ws-5">{emptyMessage}</p>
-      ) : (
-        list.map((f) => {
-          const active = f.isFolder
-            ? path[depth]?.id === f.id || ws.isSelected(f.id)
-            : ws.isSelected(f.id)
-          const isMenuTarget = menu?.kind === "file" && menu.file?.id === f.id
-          const Icon = fileIcon(f)
-          return (
-            <button
-              key={f.id}
-              type="button"
-              onContextMenu={(e) =>
-                openMenu("file", e, { file: f, target: colTarget })
-              }
-              onDoubleClick={() => ws.openPreview(f)}
-              onClick={(e) => {
-                if (e.shiftKey) {
-                  ws.selectRange(list, f)
-                  return
+      <div className="h-full overflow-y-auto p-2">
+        {list.length === 0 ? (
+          <p className="px-2 py-4 text-[12px] text-ws-5">{emptyMessage}</p>
+        ) : (
+          list.map((f) => {
+            const active = f.isFolder
+              ? path[depth]?.id === f.id || ws.isSelected(f.id)
+              : ws.isSelected(f.id)
+            const isMenuTarget = menu?.kind === "file" && menu.file?.id === f.id
+            const Icon = fileIcon(f)
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onContextMenu={(e) =>
+                  openMenu("file", e, { file: f, target: colTarget })
                 }
-                if (e.metaKey || e.ctrlKey) {
-                  ws.selectFile(f, true)
-                  return
-                }
-                if (f.isFolder) {
-                  onNavigate([...prefix, f])
-                } else {
-                  onNavigate(prefix)
-                  ws.selectFile(f)
-                }
-              }}
-              className={cn(
-                "mb-0.5 flex w-full select-none items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-left transition-opacity hover:bg-white/5",
-                ws.isCut(f.id) && "opacity-45",
-                isMenuTarget
-                  ? "bg-ws-accent/[0.18] text-ws-1 ring-1 ring-ws-accent/55"
-                  : active
-                    ? "bg-ws-select/[0.16] text-ws-1"
-                    : "text-ws-2",
-              )}
-            >
-              <Icon className={cn("h-[18px] w-[18px] shrink-0", fileIconClass(f))} />
-              <span className="min-w-0 flex-1 truncate text-[14px]">{f.name}</span>
-              {f.isFolder ? (
-                <ChevronRight className="h-4 w-4 shrink-0 text-ws-4" />
-              ) : null}
-            </button>
-          )
-        })
-      )}
+                onDoubleClick={() => ws.openPreview(f)}
+                onClick={(e) => {
+                  if (e.shiftKey) {
+                    ws.selectRange(list, f)
+                    return
+                  }
+                  if (e.metaKey || e.ctrlKey) {
+                    ws.selectFile(f, true)
+                    return
+                  }
+                  if (f.isFolder) {
+                    onNavigate([...prefix, f])
+                  } else {
+                    onNavigate(prefix)
+                    ws.selectFile(f)
+                  }
+                }}
+                className={cn(
+                  "mb-0.5 flex w-full select-none items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-left transition-opacity hover:bg-white/5",
+                  ws.isCut(f.id) && "opacity-45",
+                  isMenuTarget
+                    ? "bg-ws-accent/[0.18] text-ws-1 ring-1 ring-ws-accent/55"
+                    : active
+                      ? "bg-ws-select/[0.16] text-ws-1"
+                      : "text-ws-2",
+                )}
+              >
+                <Icon className={cn("h-[18px] w-[18px] shrink-0", fileIconClass(f))} />
+                <span className="min-w-0 flex-1 truncate text-[14px]">{f.name}</span>
+                {f.isFolder ? (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-ws-4" />
+                ) : null}
+              </button>
+            )
+          })
+        )}
+      </div>
+      {drop.active ? <DropHint target={colTarget} size={size} /> : null}
     </div>
   )
 }
@@ -417,7 +471,7 @@ export function FileBrowser({
   }
 
   const areaHighlight = drop.active
-    ? "outline outline-2 -outline-offset-2 outline-ws-select bg-ws-select/[0.07]"
+    ? "outline outline-2 -outline-offset-2 outline-ws-select"
     : menuHere
       ? "outline outline-1 -outline-offset-1 outline-ws-accent/40 bg-ws-accent/[0.05]"
       : ""
@@ -451,61 +505,66 @@ export function FileBrowser({
   return (
     <div
       className={cn(
-        "relative flex min-h-0 flex-1 flex-col overflow-y-auto p-2.5 transition-colors",
+        "relative flex min-h-0 flex-1 flex-col transition-colors",
         areaHighlight,
         className,
       )}
       onContextMenu={(e) => openMenu("empty", e, { target })}
-      onClick={(e) => {
-        // клик по пустому месту снимает выделение
-        if (e.target === e.currentTarget) clearFileSelection()
-      }}
       {...drop.handlers}
     >
-      {loadingFiles ? (
-        <div className="flex justify-center py-16 text-ws-4">
-          <Loader2 className="h-5 w-5 animate-spin" />
-        </div>
-      ) : items.length === 0 ? (
-        <div className="flex min-h-[140px] flex-1 items-center justify-center px-6 text-center text-[12.5px] text-ws-5">
-          {emptyMessage}
-        </div>
-      ) : view === "grid" ? (
-        <div
-          className={cn(
-            "grid content-start",
-            size === "roomy"
-              ? "grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3"
-              : "grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5",
-          )}
-        >
-          {items.map((f) => (
-            <FileCard
-              key={f.id}
-              file={f}
-              size={size}
-              onOpen={(e) => openItem(f, e)}
-              onPreview={() => ws.openPreview(f)}
-              onContext={(e) => openMenu("file", e, { file: f, target })}
-            />
-          ))}
-        </div>
-      ) : (
-        <div
-          className={cn("flex flex-col", size === "roomy" ? "gap-2" : "gap-1.5")}
-        >
-          {items.map((f) => (
-            <FileRow
-              key={f.id}
-              file={f}
-              size={size}
-              onOpen={(e) => openItem(f, e)}
-              onPreview={() => ws.openPreview(f)}
-              onContext={(e) => openMenu("file", e, { file: f, target })}
-            />
-          ))}
-        </div>
-      )}
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2.5"
+        onClick={(e) => {
+          // клик по пустому месту снимает выделение
+          if (e.target === e.currentTarget) clearFileSelection()
+        }}
+      >
+        {loadingFiles ? (
+          <div className="flex justify-center py-16 text-ws-4">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex min-h-[140px] flex-1 items-center justify-center px-6 text-center text-[12.5px] text-ws-5">
+            {emptyMessage}
+          </div>
+        ) : view === "grid" ? (
+          <div
+            className={cn(
+              "grid content-start",
+              size === "roomy"
+                ? "grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3"
+                : "grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5",
+            )}
+          >
+            {items.map((f) => (
+              <FileCard
+                key={f.id}
+                file={f}
+                size={size}
+                onOpen={(e) => openItem(f, e)}
+                onPreview={() => ws.openPreview(f)}
+                onContext={(e) => openMenu("file", e, { file: f, target })}
+              />
+            ))}
+          </div>
+        ) : (
+          <div
+            className={cn("flex flex-col", size === "roomy" ? "gap-2" : "gap-1.5")}
+          >
+            {items.map((f) => (
+              <FileRow
+                key={f.id}
+                file={f}
+                size={size}
+                onOpen={(e) => openItem(f, e)}
+                onPreview={() => ws.openPreview(f)}
+                onContext={(e) => openMenu("file", e, { file: f, target })}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      {drop.active ? <DropHint target={target} size={size} /> : null}
     </div>
   )
 }

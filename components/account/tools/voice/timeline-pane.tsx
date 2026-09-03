@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ArrowDown,
   ArrowDownUp,
@@ -78,11 +78,28 @@ const GAIN_PX_PER_DB = 4
  * не двигают и не режут, — а на переднем плане тейки, которые как раз и правят.
  */
 export function TimelinePane() {
+  const { t } = useWorkspace()
   const voice = useVoice()
   const cue = voice.doc.cues.find((item) => item.id === voice.selectedCueId)
 
+  // Блоками — реплики видимых дорожек: в озвучке ориентируются по ним же, а
+  // тейков у реплики может не быть вовсе, и карта из них зияла бы дырами там,
+  // где работа как раз и не сделана.
+  const overview = useMemo(() => {
+    const colors = new Map(voice.visibleTracks.map((track) => [track.id, track.color]))
+    return voice.doc.cues
+      .filter((item) => colors.has(item.trackId))
+      .map((item) => ({
+        startMs: item.startMs,
+        endMs: item.endMs,
+        color: withAlpha(colors.get(item.trackId) ?? "", 0.9),
+      }))
+  }, [voice.doc.cues, voice.visibleTracks])
+
   return (
     <TimelineFrame
+      overview={overview}
+      overviewLabel={t.srtMinimap}
       tracks={voice.visibleTracks}
       trackH={voice.prefs.trackH}
       durationMs={voice.durationMs}
@@ -96,7 +113,7 @@ export function TimelinePane() {
         atMs: cue?.startMs ?? 0,
         trackId: cue?.trackId ?? null,
       }}
-      toolbar={<Toolbar />}
+      toolbar={(minimap) => <Toolbar minimap={minimap} />}
       columnHeader={<ColumnHeader />}
       renderRow={(track) => <TrackRow track={track} />}
       renderLane={(track) => <Lane track={track} />}
@@ -104,7 +121,7 @@ export function TimelinePane() {
   )
 }
 
-function Toolbar() {
+function Toolbar({ minimap }: { minimap: React.ReactNode }) {
   const { t } = useWorkspace()
   const voice = useVoice()
 
@@ -149,7 +166,7 @@ function Toolbar() {
         <AudioLines className="h-4 w-4" />
       </button>
 
-      <div className="flex-1" />
+      {minimap}
 
       <div
         title={t.srtZoomWheel}

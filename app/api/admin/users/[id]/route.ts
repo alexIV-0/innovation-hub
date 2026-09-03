@@ -81,6 +81,11 @@ export async function PATCH(
   // прежние значения уже не достать.
   const previousRole = target.role
   const wasActive = target.isActive
+  const previousFullName = target.fullName
+  // Почта в базе уже в нижнем регистре, но входящую мы приводим сами — сравнение
+  // должно идти по одной и той же форме, иначе смена регистра в поле сойдёт за
+  // правку профиля.
+  const previousEmail = target.email.toLowerCase()
 
   // Два инварианта, и первый второго не заменяет: «админка достижима»
   // выполняется и одними админами, а «роли есть кому раздать» — только
@@ -166,9 +171,23 @@ export async function PATCH(
         action: parsed.data.isActive ? "user.reactivated" : "user.suspended",
       })
     }
-    const profileFields = (["fullName", "email"] as const).filter(
-      (field) => parsed.data[field] !== undefined,
-    )
+    // Что действительно изменилось, а не что прислали. Диалог правки шлёт
+    // профиль целиком — имя, почту, роль и флаг блокировки — независимо от
+    // того, что человек трогал. По факту присутствия поля журнал писал
+    // «Изменён профиль fullName, email» после каждого сохранения, и рядом с
+    // «Профиль заблокирован» это выглядело как одно действие, записанное
+    // дважды. Роль и блокировка сравниваются со снимком до записи с самого
+    // начала — здесь та же мерка.
+    const profileFields: ("fullName" | "email")[] = []
+    if (
+      parsed.data.fullName !== undefined &&
+      parsed.data.fullName !== previousFullName
+    ) {
+      profileFields.push("fullName")
+    }
+    if (nextEmail !== undefined && nextEmail !== previousEmail) {
+      profileFields.push("email")
+    }
     if (profileFields.length > 0) {
       await audit({ ...target, action: "user.updated", meta: { profileFields } })
     }

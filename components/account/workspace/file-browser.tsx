@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   ChevronRight,
   CircleAlert,
@@ -249,6 +249,7 @@ function FileRow({
   return (
     <button
       type="button"
+      data-file-id={file.id}
       onClick={onOpen}
       onDoubleClick={onPreview}
       onContextMenu={onContext}
@@ -325,6 +326,7 @@ function FileCard({
   return (
     <button
       type="button"
+      data-file-id={file.id}
       onClick={onOpen}
       onDoubleClick={onPreview}
       onContextMenu={onContext}
@@ -429,6 +431,7 @@ function FileColumn({
               <button
                 key={f.id}
                 type="button"
+                data-file-id={f.id}
                 onContextMenu={(e) =>
                   openMenu("file", e, { file: f, target: colTarget })
                 }
@@ -476,6 +479,37 @@ function FileColumn({
 }
 
 /**
+ * Прокрутка к файлу, к которому просили перейти снаружи (индикатор обработки).
+ *
+ * Выделения мало: в папке с сотней результатов выделенная строка оказывается
+ * далеко за краем окна, и переход «к файлу» выглядит как переход «в папку».
+ *
+ * Ищем в DOM по `data-file-id`, а не держим ref в каждой строке: строку рисуют
+ * три вида (список, плитка, колонки), и в колоночном она вообще внутри map, где
+ * хук не поставить. Зато область — одна на все три.
+ *
+ * `offsetParent === null` — это скрытая копия разметки: мобильная и десктопная
+ * висят в DOM одновременно, и та, что спрятана `display: none`, прокрутиться не
+ * может. Она и просьбу не гасит — иначе видимая копия не успела бы её увидеть.
+ */
+function useRevealScroll(items: DriveFile[]) {
+  const { revealFileId, consumeReveal } = useWorkspace()
+  const areaRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!revealFileId) return
+    const el = areaRef.current?.querySelector<HTMLElement>(
+      `[data-file-id="${CSS.escape(revealFileId)}"]`,
+    )
+    if (!el || el.offsetParent === null) return
+    el.scrollIntoView({ block: "center", inline: "nearest" })
+    consumeReveal()
+  }, [revealFileId, items, consumeReveal])
+
+  return areaRef
+}
+
+/**
  * Файловая область: список / плитка / колонки.
  * ПКМ по пустому месту открывает меню создания и загрузки,
  * файлы можно перетащить прямо в область.
@@ -512,6 +546,7 @@ export function FileBrowser({
   } = ws
 
   const items = itemsAtPath(root, path)
+  const areaRef = useRevealScroll(items)
   const target = targetFor(basePath, path)
   const emptyMessage = !driveAvailable ? t.driveUnavailable : t.emptyFolder
 
@@ -547,6 +582,7 @@ export function FileBrowser({
   if (view === "columns") {
     return (
       <div
+        ref={areaRef}
         className={cn("flex min-h-0 flex-1 overflow-x-auto", className)}
         onContextMenu={(e) => openMenu("empty", e, { target })}
       >
@@ -572,6 +608,7 @@ export function FileBrowser({
 
   return (
     <div
+      ref={areaRef}
       className={cn(
         "relative flex min-h-0 flex-1 flex-col transition-colors",
         areaHighlight,

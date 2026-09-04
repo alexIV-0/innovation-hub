@@ -44,6 +44,7 @@ import type {
   ContextMenuState,
   Density,
   DriveFile,
+  InItemStatus,
   Project,
   UploadConflict,
   UploadConflictAction,
@@ -168,6 +169,15 @@ type WorkspaceValue = {
   refreshDrive: () => void
   inFolder: DriveFile | null
   outFolder: DriveFile | null
+  /**
+   * Была ли по элементу папки IN задача и чем она кончилась. `null` — задачи не
+   * было, элемент ещё поедет.
+   *
+   * Спрашивается по элементу, а не хранится в самом `DriveFile`, потому что
+   * дерево приходит из каталога, а это знание — из очереди: сшивать их в один
+   * узел значило бы дать файловому дереву поле, которого у файла нет.
+   */
+  inStatusOf: (file: DriveFile) => InItemStatus | null
 
   // параметры обработки, открытые клиенту (exposedToSite в options.json)
   exposedOptions: ExposedOption[]
@@ -450,6 +460,12 @@ export function WorkspaceProvider({
   )
 
   const [rootFiles, setRootFiles] = useState<DriveFile[]>([])
+  /**
+   * Что конвейер уже знает про элементы папки IN: id строки каталога → статус
+   * последней задачи. В карте только верхний уровень IN — глубже задач не
+   * бывает, — поэтому проверять путь при поиске не нужно.
+   */
+  const [inStatus, setInStatus] = useState<Record<string, InItemStatus>>({})
   const [exposedOptions, setExposedOptions] = useState<ExposedOption[]>([])
   const [driveAvailable, setDriveAvailable] = useState(true)
   const [loadingFiles, setLoadingFiles] = useState(false)
@@ -623,6 +639,7 @@ export function WorkspaceProvider({
         if (!data.available) {
           setDriveAvailable(false)
           setRootFiles([])
+          setInStatus({})
           setExposedOptions([])
           setPath([])
           toast.error(tRef.current.driveUnavailable)
@@ -632,6 +649,11 @@ export function WorkspaceProvider({
         setExposedOptions(Array.isArray(data.options) ? data.options : [])
         const files: DriveFile[] = data.files ?? []
         setRootFiles(files)
+        setInStatus(
+          data.inStatus && typeof data.inStatus === "object"
+            ? (data.inStatus as Record<string, InItemStatus>)
+            : {},
+        )
         setPath((prev) => (keepPath ? resolvePath(files, prev) : []))
         setSelectedFile(null)
 
@@ -708,6 +730,7 @@ export function WorkspaceProvider({
     setRevealPath(null)
     if (!selectedId) {
       setRootFiles([])
+      setInStatus({})
       setPath([])
       setSelectedFile(null)
       setMessages([])
@@ -1137,6 +1160,18 @@ export function WorkspaceProvider({
   )
 
   /**
+   * Отметка на элементе IN: задача по нему уже была, сам он больше не поедет.
+   *
+   * Обратная сторона того же правила, из-за которого существует «Обработать
+   * заново»: раньше «уже обработан» и «ждёт очереди» выглядели в папке
+   * одинаково, и разницу нельзя было увидеть — только вспомнить.
+   */
+  const inStatusOf = useCallback(
+    (file: DriveFile) => inStatus[file.id] ?? null,
+    [inStatus],
+  )
+
+  /**
    * «Обработать заново» — поставить элемент IN в очередь ещё раз.
    *
    * Нужно потому, что обе линии сборки берут только то, по чему задачи не было
@@ -1170,12 +1205,18 @@ export function WorkspaceProvider({
             return
           }
           toast.success(tRef.current.reprocessQueued)
+          // Перечитываем дерево ради отметки: задача уже в очереди, а событий в
+          // хранилище от этого не появилось — сам по себе опрос delta её не
+          // увидит, и значок остался бы зелёным до первого записанного файла.
+          // Без await и вне catch: постановка уже удалась, и сбой перечитывания
+          // не должен показать поверх успеха сообщение о несобранной задаче.
+          void loadDrive(selectedId, true)
         } catch {
           toast.error(tRef.current.reprocessNoTask)
         }
       })()
     },
-    [selectedId],
+    [selectedId, loadDrive],
   )
 
   const renameItem = useCallback(
@@ -1742,6 +1783,7 @@ export function WorkspaceProvider({
     refreshDrive,
     inFolder,
     outFolder,
+    inStatusOf,
     exposedOptions,
     saveExposedOptions: source.exposedOptionsUrl ? saveExposedOptions : null,
     path,

@@ -1332,6 +1332,13 @@ export const dict = {
     reprocessNoFunds: "Не хватает средств на обработку.",
     reprocessNoTask:
       "Не удалось собрать задачу — проверьте настройки обработки проекта.",
+
+    // Отметка обработки на элементе папки IN
+    inMarkDone:
+      "Уже обработан. Сам по себе больше не поедет — «Обработать заново» в меню файла.",
+    inMarkQueued: "В очереди на обработку.",
+    inMarkRunning: "Обрабатывается сейчас.",
+    inMarkFailed: "Обработка не удалась.",
     driveUnavailable: "Хранилище недоступно для этого проекта",
     driveEmpty: "Папок пока нет — загрузите файлы или дождитесь синхронизации",
 
@@ -2664,6 +2671,13 @@ export const dict = {
     reprocessNoFunds: "Not enough funds for processing.",
     reprocessNoTask:
       "Could not build the task — check the project's processing settings.",
+
+    // Processing mark on an IN folder item
+    inMarkDone:
+      "Already processed. It will not run on its own — use “Process again” in the file menu.",
+    inMarkQueued: "Queued for processing.",
+    inMarkRunning: "Processing right now.",
+    inMarkFailed: "Processing failed.",
     driveUnavailable: "Storage is unavailable for this project",
     driveEmpty: "No folders yet — upload files or wait for sync",
 

@@ -1,7 +1,14 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { ChevronRight, Loader2, Upload } from "lucide-react"
+import {
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Clock,
+  Loader2,
+  Upload,
+} from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import {
@@ -11,7 +18,7 @@ import {
   itemsAtPath,
   pathToFolderPath,
 } from "./format"
-import type { DriveFile, UploadTarget, ViewMode } from "./types"
+import type { DriveFile, InItemStatus, UploadTarget, ViewMode } from "./types"
 import { useWorkspace } from "./workspace-context"
 
 /** Профиль плотности: roomy — полный режим, snug — панели IN / OUT. */
@@ -163,6 +170,63 @@ export function Breadcrumbs({
   )
 }
 
+/**
+ * Отметка на элементе папки IN: задача по нему уже была.
+ *
+ * Нужна из-за правила, на котором держатся обе линии сборки: элемент, по
+ * которому задача создавалась, не берётся больше никогда (docs/PIPELINE.md §3).
+ * Обработанный файл остаётся лежать в IN рядом с только что залитым и выглядит
+ * ровно так же — «почему ничего не происходит» было вопросом, на который папка
+ * не отвечала, а «Обработать заново» находил только тот, кто заранее знал, что
+ * файл встал.
+ *
+ * Значок, а не подпись: места в плитке и в узкой колонке считанные единицы, а
+ * сказать нужно одно слово. Само слово — в подсказке по наведению, там же, где
+ * оно понадобится.
+ *
+ * Отсутствие значка тоже сообщение: задачи не было, элемент ещё поедет. Поэтому
+ * «ждёт очереди» ничем не помечаем — иначе значок стоял бы вообще на всём и
+ * перестал бы что-либо различать.
+ */
+const IN_MARK: Record<
+  InItemStatus,
+  {
+    icon: typeof CircleCheck
+    tone: string
+    /** Ключ подписи в словаре — она же подсказка по наведению. */
+    key: "inMarkDone" | "inMarkQueued" | "inMarkRunning" | "inMarkFailed"
+  }
+> = {
+  done: { icon: CircleCheck, tone: "text-ws-out", key: "inMarkDone" },
+  running: {
+    icon: Loader2,
+    tone: "text-ws-accent animate-spin",
+    key: "inMarkRunning",
+  },
+  queued: { icon: Clock, tone: "text-ws-accent", key: "inMarkQueued" },
+  failed: { icon: CircleAlert, tone: "text-destructive", key: "inMarkFailed" },
+}
+
+function InMark({ file, className }: { file: DriveFile; className?: string }) {
+  const { t, inStatusOf } = useWorkspace()
+  const status = inStatusOf(file)
+  if (!status) return null
+
+  const { icon: Icon, tone, key } = IN_MARK[status]
+  const label = t[key]
+  // Обёртка, а не title на самой иконке: у <svg> это не подсказка браузера, а
+  // просто неизвестный атрибут — всплывающего текста от него не будет.
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className={cn("flex shrink-0 items-center", className)}
+    >
+      <Icon className={cn("h-[13px] w-[13px]", tone)} aria-hidden />
+    </span>
+  )
+}
+
 function FileRow({
   file,
   size,
@@ -226,6 +290,7 @@ function FileRow({
           {fileMeta(file, t, lang)}
         </span>
       </span>
+      <InMark file={file} />
       {file.isFolder ? (
         <ChevronRight
           className={cn(
@@ -264,7 +329,8 @@ function FileCard({
       onDoubleClick={onPreview}
       onContextMenu={onContext}
       className={cn(
-        "select-none border bg-ws-control text-left transition-opacity hover:border-white/[0.18]",
+        // relative — под отметку обработки в правом верхнем углу плитки.
+        "relative select-none border bg-ws-control text-left transition-opacity hover:border-white/[0.18]",
         isCut(file.id) && "opacity-45",
         roomy
           ? "flex items-center gap-3 rounded-2xl p-[18px]"
@@ -301,6 +367,7 @@ function FileCard({
           {fileMeta(file, t, lang)}
         </span>
       </span>
+      <InMark file={file} className="absolute right-2 top-2" />
     </button>
   )
 }
@@ -394,6 +461,7 @@ function FileColumn({
               >
                 <Icon className={cn("h-[18px] w-[18px] shrink-0", fileIconClass(f))} />
                 <span className="min-w-0 flex-1 truncate text-[14px]">{f.name}</span>
+                <InMark file={f} />
                 {f.isFolder ? (
                   <ChevronRight className="h-4 w-4 shrink-0 text-ws-4" />
                 ) : null}

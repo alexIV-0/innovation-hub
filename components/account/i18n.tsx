@@ -202,6 +202,8 @@ export const dict = {
     trialOver: "Тестовый период завершён",
     trialRevoked: "Тестовый период отозван. Проекты и файлы остались у вас — остановилась только обработка за подарочные деньги.",
     trialProvisioning: "Проекты копируются, это займёт несколько секунд",
+    trialResume: "Повторить",
+    trialResumeStarted: "Продолжаем копировать проекты",
     trialDialogTitle: "Тестовый период",
     trialDialogBody:
       "Мы начислим {amount} на подарочный баланс и скопируем вам {count} готовых проекта. Работать в них можно сразу — обработка включится сама.",
@@ -1546,6 +1548,8 @@ export const dict = {
     trialOver: "Trial period is over",
     trialRevoked: "The trial period was revoked. Your projects and files stay with you — only processing paid from the gift has stopped.",
     trialProvisioning: "Copying projects, this takes a few seconds",
+    trialResume: "Retry",
+    trialResumeStarted: "Resuming the copy",
     trialDialogTitle: "Trial period",
     trialDialogBody:
       "We will credit {amount} to your gift balance and copy {count} ready-made projects to you. You can work in them right away — processing turns on by itself.",

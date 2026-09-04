@@ -67,6 +67,7 @@
 | --- | --- |
 | [UI_GUIDE.md](./UI_GUIDE.md) | подробные правила UI, паттерны, антипаттерны, техдолг |
 | [UI_TOKENS.md](./UI_TOKENS.md) | полный список токенов, рецепты классов, таблица миграции хардкода |
+| [HELP_SYSTEM.md](./HELP_SYSTEM.md) | справка `/help`: реестр тем, статьи, якоря, права 🔧 |
 
 Сжатая версия обоих, самодостаточная — в
 [reference/12-ui-guidelines.md](./reference/12-ui-guidelines.md).

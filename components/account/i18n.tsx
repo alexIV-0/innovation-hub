@@ -1376,6 +1376,26 @@ export const dict = {
     processingFailed: "ошибка",
     processingFailedHint: "Файл отложен — мы разберёмся и вернём его в работу.",
     processingActive: "в работе: {count}",
+
+    // справка (/help) — тексты интерфейса; сами статьи лежат в content/help/
+    helpTitle: "Справка",
+    helpSubtitle: "Что как устроено и почему именно так.",
+    helpSectionPipeline: "Конвейер",
+    helpSearch: "Поиск по справке…",
+    helpEmpty: "Ничего не нашлось.",
+    helpTagAll: "Все",
+    helpAudienceUser: "Для всех",
+    helpUpdated: "обновлено {date}",
+    helpMore: "Подробнее",
+    helpSeeAlso: "Смотрите также",
+    helpOpen: "Открыть справку",
+    helpBack: "Вся справка",
+    helpUnavailable: "Справка недоступна.",
+    helpFallbackNote:
+      "Перевода на английский пока нет — показан русский текст.",
+    helpPageButton: "Справка по разделу",
+    helpOpenFull: "Открыть целиком",
+    helpBackPrev: "Назад",
   },
   en: {
     langName: "EN",
@@ -2718,6 +2738,26 @@ export const dict = {
     processingFailed: "error",
     processingFailedHint: "The file is set aside — we will look into it and put it back.",
     processingActive: "running: {count}",
+
+    // help (/help) — interface strings; the articles live in content/help/
+    helpTitle: "Help",
+    helpSubtitle: "How things work, and why they work that way.",
+    helpSectionPipeline: "Pipeline",
+    helpSearch: "Search help…",
+    helpEmpty: "Nothing found.",
+    helpTagAll: "All",
+    helpAudienceUser: "Everyone",
+    helpUpdated: "updated {date}",
+    helpMore: "Read more",
+    helpSeeAlso: "See also",
+    helpOpen: "Open help",
+    helpBack: "All help",
+    helpUnavailable: "Help is unavailable.",
+    helpFallbackNote:
+      "There is no English translation yet — showing the Russian text.",
+    helpPageButton: "Section help",
+    helpOpenFull: "Open full page",
+    helpBackPrev: "Back",
   },
 } as const
 

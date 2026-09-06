@@ -39,11 +39,12 @@
 | `/api/account/profile` | GET, PATCH | user | Профиль; PATCH меняет имя и `contact_name`. |
 | `/api/account/password` | POST | user | Смена пароля. |
 | `/api/account/stats` | GET | user | Сводка для дашборда `/account`: баланс, число проектов и файлов, хронометраж, столбцы графика. Параметр `?range=day\|week\|month`. |
-| `/api/account/statistics` | GET | user | Полная статистика со скоупом «только своё». Оси — в query (`breakdown`, `period`, `userId`, `projectId`). |
+| `/api/account/statistics` | GET | user | Полная статистика со скоупом «только своё». Оси — в query (`breakdown`, `period`, `projectId`); `userId` игнорируется, а разрезы по людям и машинам сервер сводит к разрезу по проектам. |
 | `/api/account/machine-tokens` | GET, POST, DELETE | user | Токены `mch_…`. Сырой токен показывается один раз. Отзыв токена отзывает и машины, ходившие под ним. |
 | `/api/account/push-subscription` | POST, DELETE | user | Регистрация / снятие подписки Web Push. |
 | `/api/account/balance` | GET | user | Кошельки, доступное с учётом резерва и «на что ещё хватит» по мерам (видео, файлы, объём, запуски). Питает виджет баланса и разбор на кошельке. |
 | `/api/account/spending` | GET | user | Расход за период: итоги, лента по дням, разрез по проектам и по заливщикам. `?period=day\|week\|month\|year`, `?projectId=`. |
+| `/api/account/transactions` | GET | user | Движение средств по кошелькам, страницами по курсору. `?wallet=all\|own\|gift`, `?cursor=<время>\|<id>`. Курсор — пара «время, id»: OFFSET на растущей ленте показал бы строку дважды. |
 | `/api/account/trial` | GET, POST | user | Состояние тестового периода и его активация. POST отвечает `202`: пробные проекты ещё копируются. |
 | `/api/account/promos` | GET | user | Акции этого человека: начислено, потрачено, остаток, срок, проекты. Плюс не взятое предложение тестового периода. |
 

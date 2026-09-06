@@ -149,7 +149,12 @@ function SidebarContent({
 
   const counts = useProjectCounts()
 
-  const isDash = pathname === "/account"
+  // Статистика подсвечивает дашборд, а не себя: своего пункта в меню у неё нет
+  // намеренно (docs/STATISTICS_PLAN.md §7.4) — она продолжает сводку дашборда,
+  // и вход в неё оттуда же. Погасшее меню на такой странице читается как «я
+  // куда-то вышел», хотя человек внутри того же раздела.
+  const isDash =
+    pathname === "/account" || pathname.startsWith("/account/statistics")
   const inProjects = pathname.startsWith("/account/projects")
   // Все разделы — одна страница проектов, отличается только ?tab=…
   const tab = searchParams.get("tab") ?? "projects"

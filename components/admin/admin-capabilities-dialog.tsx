@@ -42,6 +42,7 @@ const LABEL_KEY: Record<AdminCapability, keyof Dict> = {
   "billing.promo": "capBillingPromo",
   "services.manage": "capServicesManage",
   "audit.view": "capAuditView",
+  "features.manage": "capFeaturesManage",
 }
 
 const PRESET_KEY: Record<CapabilityPreset, keyof Dict> = {

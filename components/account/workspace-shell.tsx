@@ -1,5 +1,7 @@
 "use client"
+import { SITE_NAME } from "@/lib/site"
 import { isElevated } from "@/lib/admin-roles"
+import { useDisabledAdminTools } from "@/components/admin/shell/features-context"
 
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
@@ -145,6 +147,7 @@ function SidebarContent({
   const searchParams = useSearchParams()
   const router = useRouter()
   const { t, lang, setLang } = useI18n()
+  const disabledAdminTools = useDisabledAdminTools()
   const initials = avatarInitials(user.fullName, user.email)
 
   const counts = useProjectCounts()
@@ -195,7 +198,7 @@ function SidebarContent({
         ) : (
           <>
             <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-[#eef1f6]">
-              FF Works
+              {SITE_NAME}
             </span>
             {onToggle && (
               <button
@@ -329,7 +332,7 @@ function SidebarContent({
                   {t.adminPanel}
                 </p>
               ) : null}
-              {visibleAreas(user.role, user.capabilities).map((area) => {
+              {visibleAreas(user.role, user.capabilities, disabledAdminTools).map((area) => {
                 const Icon = area.icon
                 return (
                   <div key={area.key} onClick={onNavigate}>
@@ -477,7 +480,7 @@ function WorkspaceShellInner({
             ? t.profileTitle
             : pathname.startsWith("/admin")
               ? t.adminPanel
-              : "FF Works"
+              : SITE_NAME
 
   return (
     <div

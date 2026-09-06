@@ -25,6 +25,9 @@ import type { UserRole } from "@/lib/domain-types"
  */
 export const HELP_SECTIONS = [
   { key: "pipeline", labelKey: "helpSectionPipeline" },
+  // Про саму установку, а не про работу в ней: что здесь включено и почему
+  // раздел, знакомый по другому сайту, тут может отсутствовать.
+  { key: "site", labelKey: "helpSectionSite" },
 ] as const
 
 export type HelpSection = (typeof HELP_SECTIONS)[number]["key"]
@@ -107,6 +110,13 @@ export const HELP_TOPICS = [
   },
   // Пара к `pipeline.settings.file-type` для другой аудитории. Якоря пока нет:
   // в кабинете ещё некуда его поставить, файловый браузер справкой не размечен.
+  // Раздел целиком: открывается кнопкой в шапке страницы, а не знаком «?» у
+  // параметра. Видна тем же, кому открыт сам раздел.
+  {
+    id: "features.overview",
+    section: "site",
+    audience: "features.manage",
+  },
   {
     id: "pipeline.file-types",
     section: "pipeline",
@@ -125,6 +135,18 @@ const BY_ID = new Map<string, HelpTopic>(
 
 export function findTopic(id: string): HelpTopic | undefined {
   return BY_ID.get(id)
+}
+
+/**
+ * Соседние темы. У темы без соседей — пустой список.
+ *
+ * Помощник, а не `topic.seeAlso ?? []` по месту: реестр объявлен через
+ * `as const`, поэтому у темы без этого поля его нет и в типе, и обращение
+ * напрямую не собирается. Пока `seeAlso` стоял у всех тем подряд, это не
+ * всплывало — первая же тема без соседей сломала бы оба потребителя сразу.
+ */
+export function seeAlsoOf(topic: HelpTopic): readonly string[] {
+  return "seeAlso" in topic ? topic.seeAlso : []
 }
 
 /**

@@ -48,6 +48,11 @@ export const ADMIN_CAPABILITIES = [
   // доверили тариф, незачем доставать ключ ElevenLabs, и наоборот.
   "services.manage",
   "audit.view",
+  // Выключатели частей сайта (lib/features.ts). Тег отдельный, а не довесок к
+  // `settings.write`: словари конвейера — это работа внутри раздела, а здесь
+  // распоряжение самим набором разделов, и гасится он сразу для всех
+  // пользователей установки.
+  "features.manage",
 ] as const
 
 export type AdminCapability = (typeof ADMIN_CAPABILITIES)[number]
@@ -103,7 +108,11 @@ export const CAPABILITY_PRESETS = {
     "pipeline.operate",
   ],
   pipeline: ["pipeline.operate", "settings.write", "statistics.view"],
-  full: [...ADMIN_CAPABILITIES],
+  // `features.manage` в «полный доступ» не входит намеренно. Пресет — кнопка для
+  // удобства, её нажимают не глядя; выключатель же гасит раздел или инструмент
+  // сразу всем пользователям установки. Такое право выдают поштучно и осознанно.
+  // Суперадмина это не ограничивает: ему теги не проверяются вовсе.
+  full: ADMIN_CAPABILITIES.filter((capability) => capability !== "features.manage"),
 } as const satisfies Record<string, readonly AdminCapability[]>
 
 export type CapabilityPreset = keyof typeof CAPABILITY_PRESETS

@@ -609,6 +609,41 @@ export const adminDict = {
     settingsSweepSaved: "Настройки обхода сохранены.",
     settingsSweepSaveError: "Не удалось сохранить настройки обхода.",
     settingsSweepStateUnavailable: "Состояние обхода недоступно ({status})",
+    // ─── Части сайта (выключатели) ───
+    auditFeatureToggled: "Часть сайта переключена",
+    capFeaturesManage: "Части сайта",
+    featuresEyebrow: "Установка",
+    featuresTitle: "Части сайта",
+    featuresDescription:
+      "Что включено на этой установке. Выключенное скрывается, но не удаляется: экземпляры инструментов, проекты и записи журнала остаются на месте.",
+    featuresLoadError: "Не удалось загрузить список.",
+    featureSaveError: "Не удалось переключить.",
+    featureSourceEnv: "Задано в окружении",
+    featureSourceEnvHint:
+      "Значение приходит из переменной {name}. Меняется на сервере и требует перезапуска.",
+    featureDecidedDefault: "Умолчание установки",
+    featureGroupPublic: "Публичная часть",
+    featureGroupBilling: "Деньги",
+    featureGroupInsights: "Аналитика",
+    featureGroupTools: "Инструменты",
+    featurePublicCatalog: "Витрина видео",
+    featurePublicCatalogDesc:
+      "Главная страница, каталог роликов и страница ролика. Когда выключено, корень сайта ведёт на вход.",
+    featurePublicPages: "Информационные страницы",
+    featurePublicPagesDesc: "«О нас», контакты и форма предложения идеи.",
+    featureBilling: "Биллинг",
+    featureBillingDesc:
+      "Баланс, тарифы, подарки, тестовый период и проверка средств перед запуском задачи.",
+    featureAdminVisitors: "Посетители",
+    featureAdminVisitorsDesc: "Раздел админки со статистикой посещений сайта.",
+    featureAdminStatistics: "Статистика",
+    featureAdminStatisticsDesc: "Раздел админки с отчётами по обработке.",
+    featureToolSrtEditor: "Редактор титров",
+    featureToolSrtEditorDesc:
+      "Инструмент кабинета: титры по персонажам. Уже добавленные экземпляры сохраняются.",
+    featureToolVoiceOver: "Озвучка",
+    featureToolVoiceOverDesc:
+      "Инструмент кабинета: генерация реплик. Уже добавленные экземпляры сохраняются.",
   },
   en: {
     all: "All",
@@ -1203,6 +1238,41 @@ export const adminDict = {
     settingsSweepSaved: "Sweep settings saved.",
     settingsSweepSaveError: "Could not save the sweep settings.",
     settingsSweepStateUnavailable: "Sweep state unavailable ({status})",
+    // ─── Site parts (feature switches) ───
+    auditFeatureToggled: "Site part switched",
+    capFeaturesManage: "Site parts",
+    featuresEyebrow: "Installation",
+    featuresTitle: "Site parts",
+    featuresDescription:
+      "What is switched on for this installation. Switching off hides a part but never deletes it: tool instances, projects and audit records stay in place.",
+    featuresLoadError: "Could not load the list.",
+    featureSaveError: "Could not switch this.",
+    featureSourceEnv: "Set in the environment",
+    featureSourceEnvHint:
+      "The value comes from {name}. Change it on the server and restart.",
+    featureDecidedDefault: "Installation default",
+    featureGroupPublic: "Public site",
+    featureGroupBilling: "Billing",
+    featureGroupInsights: "Insights",
+    featureGroupTools: "Tools",
+    featurePublicCatalog: "Video catalog",
+    featurePublicCatalogDesc:
+      "Home page, video catalog and video page. When off, the site root leads to sign-in.",
+    featurePublicPages: "Information pages",
+    featurePublicPagesDesc: "About, contact and the idea suggestion form.",
+    featureBilling: "Billing",
+    featureBillingDesc:
+      "Balance, rates, grants, trial period and the funds check before a task starts.",
+    featureAdminVisitors: "Visitors",
+    featureAdminVisitorsDesc: "Admin section with site visit statistics.",
+    featureAdminStatistics: "Statistics",
+    featureAdminStatisticsDesc: "Admin section with processing reports.",
+    featureToolSrtEditor: "Caption editor",
+    featureToolSrtEditorDesc:
+      "Workspace tool: per-character captions. Existing instances are kept.",
+    featureToolVoiceOver: "Voice-over",
+    featureToolVoiceOverDesc:
+      "Workspace tool: line generation. Existing instances are kept.",
   },
 } as const
 

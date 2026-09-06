@@ -392,7 +392,7 @@ export const dict = {
     accountSection: "АККАУНТ",
     profileTitle: "Профиль",
     profileSub:
-      "Личные данные и настройки безопасности аккаунта FF Works.",
+      "Личные данные и настройки безопасности аккаунта {site}.",
     memberBadge: "Участник",
     adminBadge: "Админ",
     activeBadge: "Активен",
@@ -1435,6 +1435,10 @@ export const dict = {
     helpSectionButton: "Справка по этой секции",
     helpOpenFull: "Открыть целиком",
     helpBackPrev: "Назад",
+    adminFeatures: "Части сайта",
+    helpSectionSite: "Установка",
+    adminFeaturesDesc:
+      "Что включено на этой установке: публичные разделы, разделы админки и инструменты кабинета.",
   },
   en: {
     langName: "EN",
@@ -1797,7 +1801,7 @@ export const dict = {
     accountSection: "ACCOUNT",
     profileTitle: "Profile",
     profileSub:
-      "Personal information and security settings for your FF Works account.",
+      "Personal information and security settings for your {site} account.",
     memberBadge: "Member",
     adminBadge: "Admin",
     activeBadge: "Active",
@@ -2836,6 +2840,10 @@ export const dict = {
     helpSectionButton: "Help for this section",
     helpOpenFull: "Open full page",
     helpBackPrev: "Back",
+    adminFeatures: "Site parts",
+    helpSectionSite: "Installation",
+    adminFeaturesDesc:
+      "What is switched on for this installation: public sections, admin sections and workspace tools.",
   },
 } as const
 

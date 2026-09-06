@@ -12,6 +12,7 @@ import {
   ScrollText,
   ShieldCheck,
   Ticket,
+  ToggleRight,
   Users,
   Workflow,
   type LucideIcon,
@@ -153,6 +154,17 @@ export const ADMIN_TOOLS: AdminTool[] = [
     icon: LayoutGrid,
     areas: ["main"],
     capability: "content.manage",
+  },
+  {
+    // Область «Главная»: это распоряжение самой установкой — что на ней вообще
+    // показано, — а не инструмент аналитики или доступа.
+    key: "features",
+    labelKey: "adminFeatures",
+    descriptionKey: "adminFeaturesDesc",
+    href: "/admin/features",
+    icon: ToggleRight,
+    areas: ["main"],
+    capability: "features.manage",
   },
   {
     key: "visitors",
@@ -299,11 +311,20 @@ export function isToolActive(tool: AdminTool, pathname: string) {
   return pathname === tool.href || pathname.startsWith(`${tool.href}/`)
 }
 
+/**
+ * `disabled` — адреса разделов, погашенных на установке (lib/features.ts).
+ *
+ * Отдельный список, а не ещё одно поле у инструмента: права отвечают на вопрос
+ * «кому можно», выключатель — «есть ли это здесь вообще». Сложи их в одно поле,
+ * и «раздела нет на этой площадке» стало бы неотличимо от «вам сюда нельзя».
+ */
 export function canSeeTool(
   tool: AdminTool,
   role: UserRole,
   capabilities: readonly AdminCapability[],
+  disabled: readonly string[] = [],
 ): boolean {
+  if (disabled.includes(tool.href)) return false
   return !tool.capability || hasCapability(role, capabilities, tool.capability)
 }
 
@@ -319,9 +340,12 @@ export function toolsInArea(
   area: AdminArea,
   role: UserRole,
   capabilities: readonly AdminCapability[],
+  disabled: readonly string[] = [],
 ): AdminTool[] {
   return ADMIN_TOOLS.filter(
-    (tool) => tool.areas.includes(area) && canSeeTool(tool, role, capabilities),
+    (tool) =>
+      tool.areas.includes(area) &&
+      canSeeTool(tool, role, capabilities, disabled),
   )
 }
 
@@ -329,9 +353,10 @@ export function toolsInArea(
 export function visibleAreas(
   role: UserRole,
   capabilities: readonly AdminCapability[],
+  disabled: readonly string[] = [],
 ): AdminAreaInfo[] {
   return ADMIN_AREAS.filter(
-    (area) => toolsInArea(area.key, role, capabilities).length > 0,
+    (area) => toolsInArea(area.key, role, capabilities, disabled).length > 0,
   )
 }
 

@@ -20,9 +20,21 @@ type Row = { key: string; enabled: boolean }
  * состояние установки при этом не попадает.
  */
 export async function readFeatureOverrides(): Promise<Map<FeatureKey, boolean>> {
-  const result = await query<Row>(
-    `SELECT key, enabled FROM feature_flags`,
-  )
+  let result
+  try {
+    result = await query<Row>(`SELECT key, enabled FROM feature_flags`)
+  } catch (error) {
+    // 42P01 — таблицы нет. Это незалитая миграция, а не «решений не принимали»:
+    // молча вернуть пустой список значило бы поднять сайт на умолчаниях и
+    // сделать вид, что так и надо. Сообщение сразу называет лечение — тот же
+    // приём, что в readRow() для automation_settings.
+    if ((error as { code?: string }).code === "42P01") {
+      throw new Error(
+        "feature_flags table is missing — run npm run db:migrate.",
+      )
+    }
+    throw error
+  }
   const overrides = new Map<FeatureKey, boolean>()
   for (const row of result.rows) {
     if (isFeatureKey(row.key)) overrides.set(row.key, row.enabled)

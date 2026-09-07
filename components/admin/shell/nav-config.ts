@@ -7,6 +7,7 @@ import {
   Gift,
   LayoutDashboard,
   LayoutGrid,
+  MessagesSquare,
   Monitor,
   Plug,
   ScrollText,
@@ -52,6 +53,7 @@ export type AdminArea =
   | "access"
   | "pipeline"
   | "posting"
+  | "chats"
   | "workspaces"
 
 export type AdminAreaInfo = {
@@ -84,6 +86,22 @@ export const ADMIN_AREAS: AdminAreaInfo[] = [
     descriptionKey: "adminPostingDesc",
     href: "/admin/posting",
     icon: Send,
+  },
+  {
+    // Третье ежедневное рабочее место, и стоит оно перед «Папками» намеренно:
+    // это единственное место, где ВИДНО, что пришло сообщение. Всё остальное
+    // про чат — «открой того человека, потом тот проект», то есть требует
+    // заранее знать ответ на вопрос, который и задают.
+    //
+    // Своя область, а не закладка внутри «Папок»: значок в боковом меню носит
+    // число непрочитанных, и прятать его на второй уровень значило бы прятать
+    // сам сигнал. Конвейер, постинг и чаты, возможно, сойдутся потом в одну
+    // область — это будет перестановка областей, а не переписывание раздела.
+    key: "chats",
+    labelKey: "adminChats",
+    descriptionKey: "adminChatsDesc",
+    href: "/admin/chats",
+    icon: MessagesSquare,
   },
   {
     // Второй рабочий инструмент на каждый день, рядом с конвейером: там смотрят,
@@ -316,6 +334,24 @@ export const ADMIN_TOOLS: AdminTool[] = [
     // См. соседа выше: те же две области, зеркально.
     areas: ["posting", "pipeline"],
     capability: "posting.operate",
+    isAreaHub: true,
+  },
+  {
+    // Область одна, в отличие от соседей. Вторым входом напрашивались «Папки»,
+    // но у них своя страница занимает всю ширину и колонки инструментов на ней
+    // нет — запись там была бы обещанием входа, которого не существует. Связь
+    // между инструментами живёт не в меню, а в самой работе: почта владельца в
+    // шапке «Чатов» ведёт на его папки.
+    key: "chats",
+    labelKey: "adminChats",
+    descriptionKey: "adminChatsDesc",
+    href: "/admin/chats",
+    icon: MessagesSquare,
+    areas: ["chats"],
+    // Тот же тег, что у «Папок»: чат проекта — часть работы с чужим проектом,
+    // и ступень здесь первая. Отвечать клиенту можно, не имея права
+    // распоряжаться его проектами.
+    capability: "projects.access",
     isAreaHub: true,
   },
   {

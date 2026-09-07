@@ -130,6 +130,7 @@ export const adminDict = {
     cantSuspendSelf: "Нельзя заблокировать себя.",
     joinedPrefix: "С ",
     editProfile: "Редактировать профиль",
+    openCardHint: "Двойной щелчок — карточка участника",
     removeAdmin: "Снять админа",
     demoteToAdmin: "Понизить до админа",
 
@@ -683,6 +684,21 @@ export const adminDict = {
     settingsSweepSaved: "Настройки обхода сохранены.",
     settingsSweepSaveError: "Не удалось сохранить настройки обхода.",
     settingsSweepStateUnavailable: "Состояние обхода недоступно ({status})",
+    // ─── Чаты ────────────────────────────────────────────────────────────────
+    chatsColumnTitle: "Чаты",
+    chatsSearch: "Проект, имя или почта…",
+    chatsWaiting: "ждут ответа: {count}",
+    chatsAllRead: "всё прочитано",
+    chatsEmpty: "Проектов пока нет.",
+    chatsNothingFound: "Ничего не найдено",
+    chatsLoadError: "Не удалось загрузить чаты",
+    chatsMore: "Показать ещё",
+    chatsNoMessages: "Переписки ещё не было",
+    chatsArchived: "архив",
+    chatsSystem: "Система",
+    chatsUnreadAria: "Новых сообщений: {count}",
+    chatsOpenAria: "Открыть чат проекта «{project}»",
+
     // ─── Части сайта (выключатели) ───
     auditFeatureToggled: "Часть сайта переключена",
     capFeaturesManage: "Части сайта",
@@ -838,6 +854,7 @@ export const adminDict = {
     cantSuspendSelf: "You can't suspend yourself.",
     joinedPrefix: "Joined ",
     editProfile: "Edit profile",
+    openCardHint: "Double-click to open the member card",
     removeAdmin: "Remove admin",
     demoteToAdmin: "Demote to admin",
 
@@ -1384,6 +1401,21 @@ export const adminDict = {
     settingsSweepSaved: "Sweep settings saved.",
     settingsSweepSaveError: "Could not save the sweep settings.",
     settingsSweepStateUnavailable: "Sweep state unavailable ({status})",
+    // ─── Chats ───────────────────────────────────────────────────────────────
+    chatsColumnTitle: "Chats",
+    chatsSearch: "Project, name or email…",
+    chatsWaiting: "waiting: {count}",
+    chatsAllRead: "all caught up",
+    chatsEmpty: "No projects yet.",
+    chatsNothingFound: "Nothing found",
+    chatsLoadError: "Could not load the chats",
+    chatsMore: "Show more",
+    chatsNoMessages: "No messages yet",
+    chatsArchived: "archived",
+    chatsSystem: "System",
+    chatsUnreadAria: "New messages: {count}",
+    chatsOpenAria: "Open the chat of project “{project}”",
+
     // ─── Site parts (feature switches) ───
     auditFeatureToggled: "Site part switched",
     capFeaturesManage: "Site parts",

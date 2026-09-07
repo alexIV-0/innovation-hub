@@ -138,6 +138,9 @@
 | `/api/admin/workspaces/projects/[id]/files/[fileId]` | GET, PATCH, DELETE | Содержимое файла для превью и сайдкаров; переименование и удаление. |
 | `/api/admin/workspaces/projects/[id]/description` | GET, PUT | Описание проекта — бриф от команды клиенту. |
 | `/api/admin/workspaces/projects/[id]/chat` | GET, POST | Тот же чат, со стороны команды. |
+| `/api/admin/workspaces/projects/[id]/chat/read` | POST | Отметка «команда прочитала» (`projects.chat_team_last_read_at`). Одна на проект: сайт отвечает клиенту от лица команды. |
+| `/api/admin/chats` | GET | Раздел «Чаты»: все переписки сайта, свежие сверху. Параметры `q`, `limit`, `offset`; удалённые проекты исключены. |
+| `/api/admin/chats/unread` | GET | Число на значке раздела «Чаты» — сколько сообщений клиентов ждут ответа по всему сайту. |
 | `/api/admin/pipeline/state` | GET, PATCH | Состояние конвейера; PATCH включает/выключает слежение и меняет период обхода. |
 | `/api/admin/pipeline/collect` | POST | Разовая событийная сборка задач. |
 | `/api/admin/pipeline/sweep` | POST | Разовый обход папок IN. |

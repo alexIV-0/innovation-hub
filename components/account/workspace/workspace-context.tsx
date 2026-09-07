@@ -107,6 +107,15 @@ function notifyProjectsChanged() {
   window.dispatchEvent(new Event(PROJECTS_CHANGED_EVENT))
 }
 
+/**
+ * Событие «чат прочитан» — по нему шелл пересчитывает значок раздела «Чаты».
+ *
+ * Нужно потому, что значок живёт выше страницы и опрашивает сервер по таймеру:
+ * без сигнала число над меню ещё полминуты показывало бы сообщения, которые
+ * человек читает прямо сейчас.
+ */
+export const CHAT_READ_EVENT = "ffworks:chat-read"
+
 type PromptRequest = {
   title: string
   label: string
@@ -724,13 +733,16 @@ export function WorkspaceProvider({
       }),
     )
     setMessages(list)
-    // Отметка «прочитано» есть только у пользователя: со стороны команды такого
-    // признака в схеме нет, поэтому в админке шаг просто пропускается.
+    // Отметка «прочитано» — своя у каждой стороны: в кабинете гаснет значок
+    // пользователя, в админке — счётчик команды (раздел «Чаты» и карточка
+    // проекта в «Папках»). Источник без отметки просто пропускает шаг.
     const chatReadUrl = sourceRef.current.chatReadUrl
     if (chatReadUrl) {
-      void fetch(chatReadUrl(projectId), { method: "POST" }).catch(
-        () => undefined,
-      )
+      void fetch(chatReadUrl(projectId), { method: "POST" })
+        .then(() => {
+          window.dispatchEvent(new Event(CHAT_READ_EVENT))
+        })
+        .catch(() => undefined)
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, unreadCount: 0 } : p)),
       )
@@ -876,6 +888,30 @@ export function WorkspaceProvider({
     }, CHAT_POLL_INTERVAL_MS)
     return () => window.clearInterval(timer)
   }, [selectedId, bottomTab, loadMessages])
+
+  /**
+   * Переход «сразу в чат проекта»: `?chat=1` в адресе.
+   *
+   * Приходит из раздела «Чаты» админки: там выбирают, кому отвечать, а
+   * отвечают здесь — рядом с файлами и описанием, ради которых человек в этот
+   * чат и идёт. Отдельного окна переписки поэтому нет: ссылка ведёт в тот же
+   * проект, просто с открытой нужной закладкой.
+   *
+   * Один раз на проект, а не на каждый рендер: дальше закладки переключает
+   * человек, и возвращать его в чат, пока `chat=1` висит в адресе, значило бы
+   * не давать уйти в «Описание» или «Настройки».
+   */
+  const deepLinkChat = searchParams.get("chat")
+  const chatLinkDone = useRef<string | null>(null)
+  useEffect(() => {
+    if (deepLinkChat !== "1") {
+      chatLinkDone.current = null
+      return
+    }
+    if (!selectedId || chatLinkDone.current === selectedId) return
+    chatLinkDone.current = selectedId
+    setBottomTab("chat")
+  }, [deepLinkChat, selectedId])
 
   useEffect(() => {
     const close = () => setMenu(null)

@@ -1,5 +1,6 @@
 import { query } from "@/lib/db"
 import type { ProjectRecord } from "@/lib/domain-types"
+import { TEAM_UNREAD_COUNT_SQL } from "@/lib/repositories/project-chat"
 
 /**
  * Запросы «Конвейера» — админского вида на обработку всех проектов сайта.
@@ -63,14 +64,12 @@ export type PipelineProject = ProjectRecord & {
   ownerAutomationEnabled: boolean
   ownerEmail: string
   /**
-   * Сообщения клиента, на которые ещё не ответили.
+   * Сообщения клиента, которых команда ещё не видела.
    *
-   * Отметки «команда прочитала» в схеме нет, но она и не нужна: админка и
-   * YouGile — это один и тот же чат с двух сторон, поэтому «не отвечено»
-   * выводится из самой переписки — сообщения клиента после последнего ответа
-   * команды. Ответили в YouGile — обратная синхронизация принесёт строку
-   * sender_type = 'team', и счётчик обнулится сам; ответили в админке — строка
-   * появится сразу.
+   * Считается ровно так же, как число на значке раздела «Чаты», — одним
+   * выражением из lib/repositories/project-chat.ts: два счётчика по одной
+   * переписке обязаны сходиться. Гасит его и ответ (в админке или в YouGile),
+   * и просто открытый чат в «Папках».
    */
   unreadCount: number
   /** Скольким людям расшарен проект, не считая владельца. */
@@ -108,18 +107,7 @@ export async function listPipelineProjectsByOwner(
             p.yougile_chat_id AS "yougileChatId",
             COALESCE(u.automation_enabled, FALSE) AS "ownerAutomationEnabled",
             u.email AS "ownerEmail",
-            COALESCE((
-              SELECT COUNT(*)::int
-                FROM project_chat_messages m
-               WHERE m.project_id = p.id
-                 AND m.sender_type = 'client'
-                 AND m.created_at > COALESCE((
-                       SELECT MAX(a.created_at)
-                         FROM project_chat_messages a
-                        WHERE a.project_id = p.id
-                          AND a.sender_type = 'team'
-                     ), '-infinity'::timestamptz)
-            ), 0) AS "unreadCount",
+            ${TEAM_UNREAD_COUNT_SQL} AS "unreadCount",
             -- Расшаренность показываем числом, но НЕ раскрываем, кому именно:
             -- проект принадлежит владельцу, а с кем он им делится — не вопрос
             -- конвейера. Владельца из счёта исключаем, чтобы число означало

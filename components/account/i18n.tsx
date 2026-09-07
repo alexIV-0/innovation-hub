@@ -944,6 +944,9 @@ export const dict = {
     adminPosting: "Автопостинг",
     adminPostingDesc:
       "Публикация роликов на площадки: очередь, маршруты и ошибки.",
+    adminChats: "Чаты",
+    adminChatsDesc:
+      "Переписка по всем проектам сайта: кто написал, в каком проекте и когда.",
     adminHubTools: "Инструменты",
     adminOverviewEyebrow: "Дашборд",
     adminOverviewTitle: "Обзор студии",
@@ -2434,6 +2437,9 @@ export const dict = {
     adminPosting: "Autoposting",
     adminPostingDesc:
       "Publishing videos to platforms: queue, routes and errors.",
+    adminChats: "Chats",
+    adminChatsDesc:
+      "Conversations across every project: who wrote, in which project and when.",
     adminHubTools: "Tools",
     adminOverviewEyebrow: "Dashboard",
     adminOverviewTitle: "Studio overview",

@@ -63,8 +63,13 @@ export type PostRoute = {
   /** Что делать с исходником после успешной публикации. */
   afterPost: AfterPost
   /**
-   * Куда переносить при `move` — путь внутри проекта, ещё С МАСКАМИ.
-   * Пусто — переносить некуда, значит «оставить».
+   * Сколько уровней вверх от проекта. 0 — своя папка, 1 — соседний проект
+   * (первый сегмент пути тогда его имя). Больше единицы сюда не доходит.
+   */
+  afterPostUp: number
+  /**
+   * Куда переносить при `move` — путь, ещё С МАСКАМИ. Пусто — переносить
+   * некуда, значит «оставить».
    */
   afterPostFolder: string
 
@@ -172,6 +177,32 @@ export type AfterPost = "keep" | "delete" | "move"
  * принята за действие. Это записано в подсказке свойства; выдумывать разбор
  * кавычек ради такого имени папки дороже, чем его переименовать.
  */
+/**
+ * Чипы назначения → «на сколько уровней вверх» + сегменты пути.
+ *
+ * `..` в НАЧАЛЕ означает выход за пределы проекта — в соседний проект того же
+ * человека. `..` в середине (`A/../B`) по-прежнему просто поднимается на
+ * уровень внутри пути, как в чип-навигации программы: два разных смысла у
+ * одного символа развести можно только по позиции.
+ */
+function splitDestination(chips: string[]): { up: number; segments: string[] } {
+  const segments: string[] = []
+  let up = 0
+  for (const chip of chips) {
+    for (const raw of chip.split("/")) {
+      const segment = raw.trim()
+      if (!segment || segment === ".") continue
+      if (segment === "..") {
+        if (segments.length > 0) segments.pop()
+        else up += 1
+        continue
+      }
+      segments.push(segment)
+    }
+  }
+  return { up, segments }
+}
+
 function normalizeAction(raw: unknown): AfterPost | null {
   const value = String(raw ?? "").trim().toLowerCase()
   if (!value) return null
@@ -187,7 +218,13 @@ function normalizeAction(raw: unknown): AfterPost | null {
  * `$YYYY.$MM` можно только когда известен файл, то есть при постановке задачи
  * (см. `scan.ts`). Здесь мы знаем лишь маршрут.
  *
- * Два случая, когда «перенести» превращается в «оставить»:
+ * `../` в начале уводит В СОСЕДНИЙ ПРОЕКТ того же человека: `../Другой/IN`.
+ * Ровно один уровень, не больше. Выше проектов лежат чужие папки и чужие люди,
+ * и «подняться на два» означало бы дать графу дотянуться туда, куда его автору
+ * доступа никто не давал. Поэтому два и более `../` — это не «выше», а отказ:
+ * файл остаётся на месте.
+ *
+ * Ещё два случая, когда «перенести» превращается в «оставить»:
  *
  *   • путь пуст — значение по умолчанию, самое частое. Оставить файл на месте
  *     это ровно то, чего ждёт человек, ничего не выбравший;
@@ -197,21 +234,31 @@ function normalizeAction(raw: unknown): AfterPost | null {
  */
 function resolveAfterPost(poster: QueueStep): {
   afterPost: AfterPost
+  afterPostUp: number
   afterPostFolder: string
 } {
+  const keep = { afterPost: "keep" as const, afterPostUp: 0, afterPostFolder: "" }
+
   const raw = poster.afterPost
   const chips = (Array.isArray(raw) ? raw : raw != null && raw !== "" ? [raw] : [])
     .map(String)
     .filter((chip) => chip.trim() !== "")
 
   const action = normalizeAction(chips[0])
-  if (action !== null) return { afterPost: action, afterPostFolder: "" }
-
-  const folder = folderFromValue(chips)
-  if (!folder || isLocalOnlyFolder(folder)) {
-    return { afterPost: "keep", afterPostFolder: "" }
+  if (action !== null) {
+    return { afterPost: action, afterPostUp: 0, afterPostFolder: "" }
   }
-  return { afterPost: "move", afterPostFolder: folder }
+
+  if (chips.length > 0 && isLocalOnlyFolder(chips[0].trim())) return keep
+
+  const { up, segments } = splitDestination(chips)
+  if (up > 1 || segments.length === 0) return keep
+
+  return {
+    afterPost: "move",
+    afterPostUp: up,
+    afterPostFolder: segments.join("/"),
+  }
 }
 
 /** Ветка `Poster` в скомпилированном пайплайне Finder'а. */

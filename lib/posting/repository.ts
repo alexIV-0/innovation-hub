@@ -250,3 +250,33 @@ export async function recordScanRun(input: {
     [input.created, input.error],
   )
 }
+
+/**
+ * Проект того же человека по имени — для переноса «на уровень выше».
+ *
+ * Только СВОЙ: чужой проект с таким же именем не должен становиться целью
+ * переноса, иначе граф одного человека дотянулся бы до файлов другого.
+ * Удалённые исключены; архивные оставлены намеренно — «сложить готовое в архив»
+ * законное намерение.
+ *
+ * Имя сравниваем без учёта регистра и краевых пробелов: человек печатает его
+ * в графе руками, и «Клиент А» против «клиент А» не должно быть двумя разными
+ * проектами.
+ */
+export async function findSiblingProjectByName(input: {
+  ownerId: string
+  name: string
+}): Promise<{ projectId: string; storageOwnerId: string } | null> {
+  const result = await query<{ projectId: string; storageOwnerId: string }>(
+    `SELECT id AS "projectId",
+            COALESCE(storage_owner_id, user_id) AS "storageOwnerId"
+       FROM projects
+      WHERE user_id = $1
+        AND deleted_at IS NULL
+        AND lower(btrim(name)) = lower(btrim($2))
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [input.ownerId, input.name],
+  )
+  return result.rows[0] ?? null
+}

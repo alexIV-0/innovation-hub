@@ -1,4 +1,6 @@
 import { query, withTransaction } from "@/lib/db"
+import type { ProjectFileRecord } from "@/lib/domain-types"
+import { copySingleFile } from "@/lib/storage/copy"
 import { readAccountSecret, setAccountCooldown } from "@/lib/social/accounts"
 import { VkApiError, vkErrorHint } from "@/lib/social/vk"
 import {
@@ -31,9 +33,11 @@ type ClaimedJobRow = {
   platform: string
   accountId: string
   target: { kind?: string; id?: string; name?: string }
-  meta: { title?: string; description?: string }
+  meta: { title?: string; description?: string; afterPostNote?: string }
   afterPost: "keep" | "delete" | "move"
   afterPostFolder: string
+  /** Проект-получатель. Отличается от своего — перенос в соседний проект. */
+  afterPostProjectId: string | null
   attempts: number
   maxAttempts: number
 }
@@ -138,19 +142,20 @@ async function finishOk(input: {
   job: ClaimedJobRow
   externalId: string
   externalUrl: string
+  note?: string | null
 }): Promise<void> {
   await withTransaction(async (client) => {
     await client.query(
       `UPDATE post_jobs
           SET status = 'done',
-              error = NULL,
+              error = $4,
               external_id = $2,
               external_url = $3,
               published_at = NOW(),
               lease_expires_at = NULL,
               updated_at = NOW()
         WHERE id = $1`,
-      [input.job.id, input.externalId, input.externalUrl],
+      [input.job.id, input.externalId, input.externalUrl, input.note ?? null],
     )
     // Реестр — в той же транзакции. Разъедься они, и повтор задачи опубликовал
     // бы файл второй раз: очередь считает по реестру, а не по своим статусам.
@@ -216,22 +221,88 @@ async function applyAfterPost(
   }
 
   const folder = job.afterPostFolder.trim()
-  // Пустая папка сюда дойти не должна (обход превращает такое в «оставить»),
-  // но перенос в корень проекта по недосмотру — не то, что имел в виду автор.
-  if (!folder) return
+  const destProjectId = job.afterPostProjectId ?? job.projectId
 
-  // Папку создаём, если её ещё нет: человек указал её в графе, а не завёл
-  // руками, и «перенести некуда» здесь было бы отказом на ровном месте.
-  await writeEnsureFolderPath({
-    storageOwnerId: source.storageOwnerId,
-    projectId: job.projectId,
-    folderPath: folder,
+  /**
+   * Свой проект — обычное переименование: ключ в R2 при этом не меняется, и
+   * реестр опубликованного продолжает узнавать файл после переезда.
+   */
+  if (destProjectId === job.projectId) {
+    // Пустая папка сюда дойти не должна (обход превращает такое в «оставить»),
+    // но перенос в корень проекта по недосмотру — не то, что имел в виду автор.
+    if (!folder) return
+
+    // Папку создаём, если её ещё нет: человек указал её в графе, а не завёл
+    // руками, и «перенести некуда» здесь было бы отказом на ровном месте.
+    await writeEnsureFolderPath({
+      storageOwnerId: source.storageOwnerId,
+      projectId: job.projectId,
+      folderPath: folder,
+    })
+    await writeRename({
+      storageOwnerId: source.storageOwnerId,
+      projectId: job.projectId,
+      fileId: job.fileId,
+      folderPath: folder,
+    })
+    return
+  }
+
+  /**
+   * Соседний проект — это уже не переименование: у каждого проекта свой
+   * префикс ключей в R2 (`projects/{storageOwner}/{projectId}/…`), и строку
+   * каталога туда просто так не переставить. Поэтому копия объекта плюс
+   * удаление исходника — тем же путём, каким копирует между проектами кабинет.
+   *
+   * Порядок обязателен: сначала копия, потом удаление. Обратный дал бы файл,
+   * удалённый до того, как копия удалась.
+   */
+  const dest = await query<{ storageOwnerId: string }>(
+    `SELECT COALESCE(storage_owner_id, user_id) AS "storageOwnerId"
+       FROM projects WHERE id = $1 AND deleted_at IS NULL`,
+    [destProjectId],
+  )
+  const destStorageOwnerId = dest.rows[0]?.storageOwnerId
+  // Проект успели удалить, пока задача ждала очереди. Файл остаётся на месте:
+  // это лучше, чем деть его неизвестно куда.
+  if (!destStorageOwnerId) return
+
+  const row = await query<ProjectFileRecord & {
+    etag: string | null
+    contentHash: string | null
+    originMtime: number | null
+  }>(
+    `SELECT id,
+            project_id   AS "projectId",
+            folder_path  AS "folderPath",
+            name,
+            is_folder    AS "isFolder",
+            s3_key       AS "s3Key",
+            size_bytes::float8 AS "sizeBytes",
+            content_type AS "contentType",
+            etag,
+            content_hash AS "contentHash",
+            origin_mtime AS "originMtime"
+       FROM project_files
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [job.fileId],
+  )
+  const file = row.rows[0]
+  if (!file) return
+
+  await copySingleFile({
+    sourceProjectId: job.projectId,
+    destProjectId,
+    destStorageOwnerId,
+    destFolderPath: folder,
+    source: file,
+    actor: { userId: source.ownerId, isUploader: false },
   })
-  await writeRename({
+  await writeFileDelete({
     storageOwnerId: source.storageOwnerId,
     projectId: job.projectId,
     fileId: job.fileId,
-    folderPath: folder,
+    deletedBy: source.ownerId,
   })
 }
 
@@ -305,6 +376,10 @@ export async function drainPostQueue(limit = 1): Promise<DrainResult> {
         job,
         externalId: `${published.ownerId}_${published.videoId}`,
         externalUrl: published.permalink,
+        // Замечание по переносу (например, «проект не найден») кладём рядом с
+        // успехом. Публикация состоялась, и статус это говорит; замечание
+        // объясняет, почему файл остался на месте.
+        note: job.meta.afterPostNote ?? null,
       })
       // Площадка снова принимает — пауза, если была, больше не нужна.
       await setAccountCooldown({

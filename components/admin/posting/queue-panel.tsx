@@ -181,8 +181,19 @@ export function PostingQueuePanel({
                     </td>
                     <td className={cn("px-3 py-2", STATUS_TONE[job.status])}>
                       {t[STATUS_KEY[job.status]] as string}
+                      {/* У опубликованной задачи текст в этом поле — не
+                          ошибка, а замечание: публикация состоялась, а вот
+                          перенести файл не вышло. Красный цвет тут говорил бы
+                          неправду. */}
                       {job.error ? (
-                        <span className="mt-0.5 flex items-start gap-1 text-[11px] leading-snug text-destructive">
+                        <span
+                          className={cn(
+                            "mt-0.5 flex items-start gap-1 text-[11px] leading-snug",
+                            job.status === "done"
+                              ? "text-amber-200/80"
+                              : "text-destructive",
+                          )}
+                        >
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                           {job.error}
                         </span>

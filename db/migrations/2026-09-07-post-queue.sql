@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS post_jobs (
                    CHECK (after_post IN ('keep', 'delete', 'move')),
   -- Куда переносить при `move`. Путь внутри проекта; пусто — переносить некуда.
   after_post_folder TEXT NOT NULL DEFAULT '',
+  -- Проект-получатель, когда путь начинался с `../` (соседний проект того же
+  -- человека). NULL — переносим внутри своего проекта.
+  --
+  -- Разрешается РОВНО ОДИН уровень вверх: выше лежат чужие папки, и «подняться
+  -- на два» дало бы графу доступ туда, куда его автору его никто не давал.
+  -- Проект резолвится по имени ПРИ ПОСТАНОВКЕ и запоминается id: имя могут
+  -- поменять, пока задача ждёт очереди, и тогда файл уехал бы не туда.
+  after_post_project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
 
   status         TEXT NOT NULL DEFAULT 'queued'
                    CHECK (status IN ('queued', 'running', 'done', 'failed', 'skipped')),

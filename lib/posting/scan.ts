@@ -11,6 +11,7 @@ import { readFileTypeDictionary } from "@/lib/repositories/automation-settings"
 import { findAccountByLabel } from "@/lib/social/accounts"
 import { resolveMasks } from "./masks"
 import {
+  findSiblingProjectByName,
   hasJobInFlight,
   lastPublishedAt,
   listFolderCandidates,
@@ -129,6 +130,73 @@ function resolveTarget(
   if (!route.target || route.target === "Profile") return { kind: "profile" }
   const found = targets.find((target) => target.name === route.target)
   return found ? { kind: "group", id: found.id, name: found.name } : null
+}
+
+/**
+ * Куда именно уедет исходник после публикации.
+ *
+ * Считается ПРИ ПОСТАНОВКЕ, а не при публикации, и запоминается у задачи:
+ *
+ *   • маски (`VK_posted/$YYYY.$MM`) должны разложиться по тому месяцу, когда
+ *     файл поставили в очередь, а не по тому, когда до него дошла очередь;
+ *   • имя соседнего проекта резолвится в id: проект могут переименовать, пока
+ *     задача ждёт, и тогда файл уехал бы не туда.
+ *
+ * Неразрешимое назначение НЕ отменяет публикацию — она уже настроена и ждёт
+ * своего интервала, а опечатка в пути назначения к ней отношения не имеет.
+ * Файл остаётся на месте, а причина едет с задачей и видна в очереди.
+ */
+async function resolveDestination(
+  route: PostRoute,
+  project: { projectId: string; ownerId: string },
+  context: Parameters<typeof resolveMasks>[1],
+): Promise<{
+  afterPost: "keep" | "delete" | "move"
+  folder: string
+  projectId: string | null
+  note: string | null
+}> {
+  const keep = { afterPost: "keep" as const, folder: "", projectId: null }
+
+  if (route.afterPost !== "move") {
+    return { afterPost: route.afterPost, folder: "", projectId: null, note: null }
+  }
+
+  const segments = resolveMasks(route.afterPostFolder, context)
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+
+  // Путь, ставший пустым после раскрытия масок: переносить некуда.
+  if (segments.length === 0) return { ...keep, note: null }
+
+  if (route.afterPostUp === 0) {
+    return {
+      afterPost: "move",
+      folder: segments.join("/"),
+      projectId: project.projectId,
+      note: null,
+    }
+  }
+
+  // `../` — соседний проект: первый сегмент это его имя.
+  const [projectName, ...rest] = segments
+  const sibling = await findSiblingProjectByName({
+    ownerId: project.ownerId,
+    name: projectName,
+  })
+  if (!sibling) {
+    return {
+      ...keep,
+      note: `after-post: project "${projectName}" not found, file left in place`,
+    }
+  }
+  return {
+    afterPost: "move",
+    folder: rest.join("/"),
+    projectId: sibling.projectId,
+    note: null,
+  }
 }
 
 export async function collectPostJobs(): Promise<ScanResult> {
@@ -289,22 +357,7 @@ export async function collectPostJobs(): Promise<ScanResult> {
         description: resolveMasks(route.description, context),
       }
 
-      /**
-       * Путь «куда перенести» раскрываем здесь же и тем же контекстом, что и
-       * описание: `VK_posted/$YYYY.$MM` должен разложиться по тому месяцу,
-       * когда файл поставили в очередь, а не по тому, когда до него дошла
-       * очередь. Пустой после раскрытия путь означает «переносить некуда».
-       */
-      const afterPostFolder =
-        route.afterPost === "move"
-          ? resolveMasks(route.afterPostFolder, context)
-              .split("/")
-              .map((segment) => segment.trim())
-              .filter(Boolean)
-              .join("/")
-          : ""
-      const afterPost =
-        route.afterPost === "move" && !afterPostFolder ? "keep" : route.afterPost
+      const destination = await resolveDestination(route, project, context)
 
       // `DO NOTHING` ловит гонку двух обходов: частичный уникальный индекс не
       // даёт второй живой задачи по тому же файлу. Возврат id отличает вставку
@@ -312,8 +365,9 @@ export async function collectPostJobs(): Promise<ScanResult> {
       const inserted = await query<{ id: string }>(
         `INSERT INTO post_jobs
            (id, project_id, file_id, source_key, finder_id, platform,
-            account_id, target, meta, after_post, after_post_folder)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11)
+            account_id, target, meta, after_post, after_post_folder,
+            after_post_project_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12)
          ON CONFLICT DO NOTHING
          RETURNING id`,
         [
@@ -325,9 +379,10 @@ export async function collectPostJobs(): Promise<ScanResult> {
           route.platform,
           account.id,
           JSON.stringify(target),
-          JSON.stringify(meta),
-          afterPost,
-          afterPostFolder,
+          JSON.stringify({ ...meta, afterPostNote: destination.note ?? undefined }),
+          destination.afterPost,
+          destination.folder,
+          destination.projectId,
         ],
       )
       if (inserted.rows.length === 0) {

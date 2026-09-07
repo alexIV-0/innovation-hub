@@ -22,6 +22,7 @@ import type { ExposedOptionChange } from "@/lib/options/apply"
 import type { ExposedOption } from "@/lib/options/types"
 import { uploadProjectFileDirect } from "@/lib/project-direct-upload"
 import {
+  TRASH_RETENTION_DAYS,
   findChildByName,
   folderPathOf,
   freeNameIn,
@@ -1037,7 +1038,10 @@ export function WorkspaceProvider({
     (id: string) => {
       setConfirm({
         title: t.deleteProject,
-        description: t.confirmDeleteProject,
+        // Удаление мягкое — и спрашивать надо ровно про то, что произойдёт.
+        // Прежнее «удалить безвозвратно?» пугало сильнее, чем следует, и вдобавок
+        // было неправдой: проект уезжает в корзину и оттуда возвращается.
+        description: tf(t.confirmDeleteProject, { days: TRASH_RETENTION_DAYS }),
         confirmLabel: t.mDelete,
         destructive: true,
         onConfirm: () => {
@@ -1644,14 +1648,28 @@ export function WorkspaceProvider({
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
-          toast.error(data.message ?? "Restore failed")
+          toast.error(data.message ?? t.restoreProjectFailed)
           return
         }
-        toast.success(t.mUnarchive)
+        toast.success(t.restoreProjectDone)
         await loadProjects()
+        // Проект уехал из корзины в свой раздел — уводим туда и человека, если
+        // он на него смотрел. Иначе рабочая область осталась бы открытой на
+        // проекте, которого в колонке слева уже нет: корзина опустела, а он в
+        // ней стоит.
+        if (project.id === selectedId) {
+          setProjectTab(tabOf({ ...project, deletedAt: null }))
+        }
       })()
     },
-    [loadProjects, t.mUnarchive],
+    [
+      loadProjects,
+      selectedId,
+      setProjectTab,
+      tabOf,
+      t.restoreProjectDone,
+      t.restoreProjectFailed,
+    ],
   )
 
   // ---------- контекстное меню ----------

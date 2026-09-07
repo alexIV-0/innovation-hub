@@ -30,6 +30,7 @@ const LABEL_KEY: Record<AdminCapability, keyof Dict> = {
   "users.manage": "capUsersManage",
   "content.manage": "capContentManage",
   "pipeline.operate": "capPipelineOperate",
+  "posting.operate": "capPostingOperate",
   "settings.write": "capSettingsWrite",
   "machines.manage": "capMachinesManage",
   "projects.access": "capProjectsAccess",
@@ -50,6 +51,7 @@ const PRESET_KEY: Record<CapabilityPreset, keyof Dict> = {
   support: "capsPresetSupport",
   manager: "capsPresetManager",
   pipeline: "capsPresetPipeline",
+  posting: "capsPresetPosting",
   full: "capsPresetFull",
 }
 

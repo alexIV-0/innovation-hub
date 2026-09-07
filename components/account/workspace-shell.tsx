@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils"
 import type { UserRole } from "@/lib/domain-types"
 import { BalanceWidget } from "@/components/account/balance-widget"
+import { isKeysPath } from "@/components/account/keys/keys-shell"
 import { ResizeGrip } from "@/components/account/resize-grip"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { useProjectCounts } from "@/components/account/use-project-counts"
@@ -38,6 +39,7 @@ import {
   useI18n,
 } from "@/components/account/i18n"
 import {
+  areaHref,
   isAreaActive,
   visibleAreas,
 } from "@/components/admin/shell/nav-config"
@@ -301,17 +303,23 @@ function SidebarContent({
               </div>
             )
           })}
-          {/* Свои ключи от внешних сервисов. Отдельным пунктом, а не полем в
-              настройках проекта: ключ у человека один на все его проекты, и
-              заводить его изнутри проекта означало бы «найди тот проект, где я
-              его вводил» — при заведении, при замене и при отзыве. */}
+          {/* Чужие секреты человека: ключи сервисов и аккаунты площадок.
+              Отдельным пунктом, а не полем в настройках проекта, — и то и
+              другое у него ОДНО на все проекты, и заводить их изнутри проекта
+              означало бы «найди тот проект, где я это вводил» при заведении,
+              при замене и при отзыве.
+
+              Пункт один, инструментов внутри два: их различают в колонке
+              раздела (KeysShell). Двумя пунктами меню это было бы честно, но
+              боковое меню кабинета — про рабочее место, и секретам в нём место
+              одно. */}
           <div onClick={onNavigate}>
             <NavItem
               href="/account/vendor-keys"
-              active={pathname === "/account/vendor-keys"}
+              active={isKeysPath(pathname)}
               collapsed={collapsed}
               icon={<KeyRound className="h-5 w-5" />}
-              label={t.vendorKeysNav}
+              label={t.keysAreaNav}
             />
           </div>
         </nav>
@@ -342,7 +350,15 @@ function SidebarContent({
                 return (
                   <div key={area.key} onClick={onNavigate}>
                     <NavItem
-                      href={area.href}
+                      // Не `area.href`: у «Конвейера» и «Автопостинга» хаб —
+                      // сам инструмент со своим тегом, и кнопка должна вести
+                      // туда, куда этого человека пустят.
+                      href={areaHref(
+                        area,
+                        user.role,
+                        user.capabilities,
+                        disabledAdminTools,
+                      )}
                       active={isAreaActive(area, pathname)}
                       collapsed={collapsed}
                       icon={<Icon className="h-5 w-5" />}

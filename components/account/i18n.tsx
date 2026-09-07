@@ -505,7 +505,8 @@ export const dict = {
     folderNamePrompt: "Имя папки",
     renamePrompt: "Новое имя",
     confirmDelete: "Удалить этот элемент?",
-    confirmDeleteProject: "Удалить проект безвозвратно?",
+    confirmDeleteProject:
+      "Проект уедет в корзину. Оттуда его можно вернуть в течение {days} дней — потом он сотрётся вместе с файлами.",
     adminPanel: "Админка",
     adminOverview: "Обзор",
     adminContent: "Контент",
@@ -672,6 +673,78 @@ export const dict = {
     vendorKeysRevoked: "Ключ отключён",
     vendorKeysLoadError: "Не удалось загрузить ключи",
     vendorKeysSaveError: "Не удалось сохранить",
+    // ─── Ключи и аккаунты: раздел из двух инструментов ──────────────────────
+    keysAreaNav: "Ключи и аккаунты",
+    keysToolVendor: "Ключи сервисов",
+    keysToolVendorDesc: "Свои ключи к внешним сервисам обработки.",
+    keysToolSocial: "Аккаунты площадок",
+    keysToolSocialDesc: "Чем сайт публикует ролики: ВКонтакте, Telegram, YouTube.",
+
+    // ─── Аккаунты площадок ──────────────────────────────────────────────────
+    socialTitle: "Аккаунты площадок",
+    socialSub:
+      "Аккаунты, от имени которых сайт публикует ваши ролики. Аккаунт один на все ваши проекты: подключили однажды — работает везде. Токен хранится зашифрованным и обратно не показывается — только заменить.",
+    socialEmpty: "Подключённых аккаунтов нет.",
+    socialVaultOff:
+      "Сейф не настроен: администратору нужно задать VAULT_MASTER_KEY. Пока его нет, подключить аккаунт нельзя.",
+    socialConnect: "Подключить аккаунт",
+    socialConnectTitle: "Подключить аккаунт площадки",
+    socialPlatform: "Площадка",
+    socialSoon: "скоро",
+    socialNotConnectable: "Подключение этой площадки ещё не сделано.",
+    socialNoPosting:
+      "Публикация этой площадкой ещё не сделана — аккаунт можно подключить заранее.",
+    socialOpenLogin: "Открыть вход в новой вкладке",
+    socialOpenLoginAgain: "Открыть вход ещё раз",
+    socialLoginOpened: "Вход в площадку открыт в соседней вкладке.",
+    socialLoginBlocked:
+      "Браузер не дал открыть вкладку со входом — откройте её кнопкой.",
+    socialPaste: "Адрес после входа или сам токен",
+    socialPasteVk:
+      "1. В соседней вкладке открылся вход в VK — войдите там.\n2. После входа откроется пустая страница, а в адресной строке будет blank.html#access_token=…\n3. Скопируйте весь адрес целиком и вставьте сюда.",
+    socialPasteTelegram:
+      "Токен бота выдаёт @BotFather прямо в Telegram: /newbot для нового или /token для существующего. Бот должен быть админом канала, куда будете публиковать.",
+    socialLabelField: "Имя аккаунта",
+    socialLabelHint:
+      "Под этим именем аккаунт видно в настройках проекта. Пусто — возьмём имя с площадки.",
+    socialLabelWarn:
+      "Это имя записано в настройках проекта. Переименовав здесь, поправьте и там — иначе публикация перестанет находить аккаунт.",
+    socialSubmit: "Подключить",
+    socialConnected: "Аккаунт подключён",
+    socialReplacedToast: "Токен обновлён",
+    socialErrParse:
+      "Не нашли токен в том, что вставили. Вставьте адрес blank.html#access_token=… или сам токен.",
+    socialErrRejected: "Площадка отказала",
+    socialErrVault: "Сейф не настроен — подключить аккаунт нельзя.",
+    socialErrLoad: "Не удалось загрузить аккаунты",
+    socialErrAccounts: "Список аккаунтов не прочитался: {message}",
+    socialRefresh: "Обновить список",
+    socialRefreshed: "Список обновлён",
+    socialRename: "Переименовать",
+    socialRenamed: "Аккаунт переименован",
+    socialRemove: "Убрать",
+    socialRemoved: "Аккаунт убран",
+    socialRemoveConfirm:
+      "Убрать аккаунт вместе с токеном? Публикации, которые на него опираются, остановятся.",
+    socialTargetsVk: "Сообщества",
+    socialTargetsTelegram: "Каналы и чаты",
+    socialTargetsYoutube: "Каналы",
+    socialTargetsEmptyVk: "Сообществ, где вы администратор, не нашлось.",
+    socialTargetsEmptyTelegram:
+      "Бот пока нигде ничего не получал. Напишите что-нибудь в канал и обновите список.",
+    socialTargetsEmptyYoutube: "Каналов не нашлось.",
+    socialTargetsAt: "обновлён {date}",
+    socialTokenBad: "Токен не отвечает",
+    socialCheckedAt: "проверен {date}",
+
+    // ─── Контролы аккаунта и цели во вкладке настроек проекта ───────────────
+    optionsSocialPick: "Выберите аккаунт",
+    optionsSocialTargetPick: "Выберите цель",
+    optionsSocialAdd: "Подключить аккаунт…",
+    optionsSocialManage: "Мои аккаунты площадок",
+    optionsSocialMissing: "аккаунт не подключён",
+    optionsSocialNeedAccount: "Сначала выберите аккаунт",
+    optionsSocialNoTargets: "Список пуст — обновите его на странице аккаунтов",
     servicesDelete: "Удалить",
     servicesDeleted: "Сервис удалён",
     servicesDeleteConfirm:
@@ -868,6 +941,9 @@ export const dict = {
     adminPipelineDesc:
       "Очередь задач, машины в работе и общие словари обработки.",
     adminPipelineEyebrow: "Обработка",
+    adminPosting: "Автопостинг",
+    adminPostingDesc:
+      "Публикация роликов на площадки: очередь, маршруты и ошибки.",
     adminHubTools: "Инструменты",
     adminOverviewEyebrow: "Дашборд",
     adminOverviewTitle: "Обзор студии",
@@ -1327,8 +1403,17 @@ export const dict = {
       "Следующий шаг после правки титров: озвучка по дорожкам персонажей.",
     toolVoiceOverLong:
       "Берёт тот же документ и ту же папку, что редактор титров, и озвучивает реплики синтезом голоса — по дорожкам персонажей, каждую отдельно. Текст для синтеза можно поправить, не трогая титр, и добавить теги эмоций провайдера. Результат встаёт на свою дорожку: начало, скорость и громкость подстраиваются прямо на клипе, прежние варианты остаются и возвращаются одним движением. Синтез пока поддельный — путь работает целиком, голоса настоящего провайдера подключатся позже.",
-    trashNotWired:
-      "Корзина пока не подключена на бэкенде: удаление файлов безвозвратно. Раздел появится, как только заведём хранение удалённых 30 дней.",
+    emptyTrash: "В корзине пусто",
+    trashBannerViewOnly:
+      "Проект в корзине: файлы можно смотреть и скачивать, менять — нет.",
+    trashRetention:
+      "Удалённые проекты лежат здесь {days} дней, потом стираются вместе с файлами. До этого их можно вернуть.",
+    mRestore: "Восстановить",
+    restoreProjectDone: "Проект восстановлен",
+    restoreProjectFailed: "Не удалось восстановить проект",
+    trashDeletedOn: "Удалён {date}",
+    trashDaysLeft: "осталось {days} дн.",
+    trashLastDay: "сотрётся сегодня",
     sidebarExpand: "Развернуть панель",
     sidebarCollapse: "Свернуть панель",
     emptyArchive: "В архиве пусто",
@@ -1913,7 +1998,8 @@ export const dict = {
     folderNamePrompt: "Folder name",
     renamePrompt: "New name",
     confirmDelete: "Delete this item?",
-    confirmDeleteProject: "Delete this project permanently?",
+    confirmDeleteProject:
+      "The project goes to the trash. You can bring it back within {days} days — after that it is erased along with its files.",
     adminPanel: "Admin",
     adminOverview: "Overview",
     adminContent: "Content",
@@ -2078,6 +2164,78 @@ export const dict = {
     vendorKeysRevoked: "Key disconnected",
     vendorKeysLoadError: "Failed to load keys",
     vendorKeysSaveError: "Failed to save",
+    // ─── Keys and accounts: one area, two tools ─────────────────────────────
+    keysAreaNav: "Keys and accounts",
+    keysToolVendor: "Service keys",
+    keysToolVendorDesc: "Your own keys to external processing services.",
+    keysToolSocial: "Platform accounts",
+    keysToolSocialDesc: "What the site publishes with: VK, Telegram, YouTube.",
+
+    // ─── Platform accounts ──────────────────────────────────────────────────
+    socialTitle: "Platform accounts",
+    socialSub:
+      "Accounts the site publishes your videos as. One account covers all your projects: connect it once and it works everywhere. The token is stored encrypted and is never shown back — only replaced.",
+    socialEmpty: "No accounts connected yet.",
+    socialVaultOff:
+      "The vault is not configured: an administrator must set VAULT_MASTER_KEY. Until then accounts cannot be connected.",
+    socialConnect: "Connect an account",
+    socialConnectTitle: "Connect a platform account",
+    socialPlatform: "Platform",
+    socialSoon: "soon",
+    socialNotConnectable: "Connecting this platform is not implemented yet.",
+    socialNoPosting:
+      "Publishing to this platform is not implemented yet — you can still connect the account in advance.",
+    socialOpenLogin: "Open sign-in in a new tab",
+    socialOpenLoginAgain: "Open sign-in again",
+    socialLoginOpened: "The platform sign-in is open in the next tab.",
+    socialLoginBlocked:
+      "The browser blocked the sign-in tab — open it with the button.",
+    socialPaste: "The URL after sign-in, or the token itself",
+    socialPasteVk:
+      "1. VK sign-in has opened in the next tab — sign in there.\n2. You then land on a blank page whose address is blank.html#access_token=…\n3. Copy the whole address and paste it here.",
+    socialPasteTelegram:
+      "@BotFather issues bot tokens inside Telegram: /newbot for a new one, /token for an existing one. The bot must be an admin of the channel you publish to.",
+    socialLabelField: "Account name",
+    socialLabelHint:
+      "The name the account shows under in project settings. Leave empty to use the name from the platform.",
+    socialLabelWarn:
+      "This name is written into project settings. If you rename it here, update it there too — otherwise publishing will stop finding the account.",
+    socialSubmit: "Connect",
+    socialConnected: "Account connected",
+    socialReplacedToast: "Token updated",
+    socialErrParse:
+      "No token found in what you pasted. Paste the blank.html#access_token=… address or the token itself.",
+    socialErrRejected: "The platform refused",
+    socialErrVault: "The vault is not configured — accounts cannot be connected.",
+    socialErrLoad: "Failed to load accounts",
+    socialErrAccounts: "Could not read the account list: {message}",
+    socialRefresh: "Refresh list",
+    socialRefreshed: "List refreshed",
+    socialRename: "Rename",
+    socialRenamed: "Account renamed",
+    socialRemove: "Remove",
+    socialRemoved: "Account removed",
+    socialRemoveConfirm:
+      "Remove the account together with its token? Anything publishing through it will stop.",
+    socialTargetsVk: "Communities",
+    socialTargetsTelegram: "Channels and chats",
+    socialTargetsYoutube: "Channels",
+    socialTargetsEmptyVk: "No communities where you are an administrator.",
+    socialTargetsEmptyTelegram:
+      "The bot has not received anything anywhere yet. Post something in the channel and refresh.",
+    socialTargetsEmptyYoutube: "No channels found.",
+    socialTargetsAt: "refreshed {date}",
+    socialTokenBad: "The token does not respond",
+    socialCheckedAt: "checked {date}",
+
+    // ─── Account and target controls on the project settings tab ────────────
+    optionsSocialPick: "Pick an account",
+    optionsSocialTargetPick: "Pick a target",
+    optionsSocialAdd: "Connect an account…",
+    optionsSocialManage: "My platform accounts",
+    optionsSocialMissing: "account not connected",
+    optionsSocialNeedAccount: "Pick an account first",
+    optionsSocialNoTargets: "The list is empty — refresh it on the accounts page",
     servicesDelete: "Delete",
     servicesDeleted: "Service deleted",
     servicesDeleteConfirm:
@@ -2273,6 +2431,9 @@ export const dict = {
     adminPipelineDesc:
       "Task queue, machines at work and the shared processing dictionaries.",
     adminPipelineEyebrow: "Processing",
+    adminPosting: "Autoposting",
+    adminPostingDesc:
+      "Publishing videos to platforms: queue, routes and errors.",
     adminHubTools: "Tools",
     adminOverviewEyebrow: "Dashboard",
     adminOverviewTitle: "Studio overview",
@@ -2731,8 +2892,17 @@ export const dict = {
     toolVoiceOverShort: "The step after subtitle editing: voicing lines per character track.",
     toolVoiceOverLong:
       "Takes the same document and folder as the subtitle editor and voices cues with speech synthesis — per character track, one cue at a time. The text sent to synthesis can be edited without touching the subtitle, with the provider's emotion tags added. The result lands on its own track: start, speed and volume are tuned right on the clip, and earlier versions stay one click away. Synthesis is a stub for now — the whole path works, a real provider plugs in later.",
-    trashNotWired:
-      "Trash is not wired up on the backend yet: deleting files is permanent. This section will appear once 30-day retention is in place.",
+    emptyTrash: "Trash is empty",
+    trashBannerViewOnly:
+      "This project is in the trash: files can be viewed and downloaded, but not changed.",
+    trashRetention:
+      "Deleted projects stay here for {days} days, then they are erased along with their files. Until then you can bring one back.",
+    mRestore: "Restore",
+    restoreProjectDone: "Project restored",
+    restoreProjectFailed: "Could not restore the project",
+    trashDeletedOn: "Deleted {date}",
+    trashDaysLeft: "{days} days left",
+    trashLastDay: "erased today",
     sidebarExpand: "Expand sidebar",
     sidebarCollapse: "Collapse sidebar",
     emptyArchive: "Archive is empty",

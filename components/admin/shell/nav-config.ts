@@ -10,6 +10,7 @@ import {
   Monitor,
   Plug,
   ScrollText,
+  Send,
   ShieldCheck,
   Ticket,
   ToggleRight,
@@ -50,6 +51,7 @@ export type AdminArea =
   | "billing"
   | "access"
   | "pipeline"
+  | "posting"
   | "workspaces"
 
 export type AdminAreaInfo = {
@@ -70,6 +72,18 @@ export const ADMIN_AREAS: AdminAreaInfo[] = [
     descriptionKey: "adminPipelineDesc",
     href: "/admin/pipeline",
     icon: Workflow,
+  },
+  {
+    // Сразу за конвейером: это второй рабочий цикл установки и устроен он так
+    // же — пульт, обход папок, очередь. Разница в том, что обработка гоняет
+    // файлы по нашим машинам, а постинг публикует их наружу, от имени чужого
+    // аккаунта. Поэтому область своя, а не закладка внутри конвейера: у них
+    // разные тумблеры пуска, разные очереди и разные права.
+    key: "posting",
+    labelKey: "adminPosting",
+    descriptionKey: "adminPostingDesc",
+    href: "/admin/posting",
+    icon: Send,
   },
   {
     // Второй рабочий инструмент на каждый день, рядом с конвейером: там смотрят,
@@ -282,8 +296,26 @@ export const ADMIN_TOOLS: AdminTool[] = [
     descriptionKey: "adminPipelineDesc",
     href: "/admin/pipeline",
     icon: Workflow,
-    areas: ["pipeline"],
+    // Обработка и постинг — два рабочих цикла ОДНОЙ области: обе следят за
+    // папками, обе держат очередь, обе включаются пультом. Поэтому каждый
+    // виден в колонке инструментов у обоих, и переключаться между ними можно
+    // одним кликом, не возвращаясь в меню.
+    //
+    // Областей при этом ДВЕ, а не одна: у каждой свой значок в боковом меню —
+    // это разные ежедневные рабочие места, и открывают их напрямую.
+    areas: ["pipeline", "posting"],
     capability: "pipeline.operate",
+    isAreaHub: true,
+  },
+  {
+    key: "posting",
+    labelKey: "adminPosting",
+    descriptionKey: "adminPostingDesc",
+    href: "/admin/posting",
+    icon: Send,
+    // См. соседа выше: те же две области, зеркально.
+    areas: ["posting", "pipeline"],
+    capability: "posting.operate",
     isAreaHub: true,
   },
   {
@@ -358,6 +390,36 @@ export function visibleAreas(
   return ADMIN_AREAS.filter(
     (area) => toolsInArea(area.key, role, capabilities, disabled).length > 0,
   )
+}
+
+/**
+ * Куда ведёт кнопка области в боковом меню.
+ *
+ * Обычно на её хаб. Но у «Конвейера» и «Автопостинга» хаб — это САМ инструмент,
+ * закрытый своим тегом, а видимость области считается по любому доступному
+ * инструменту внутри. Человеку с одним лишь `posting.operate` кнопка
+ * «Конвейер» вела бы прямо в отказ: область он видит (в ней лежит доступный ему
+ * автопостинг), а её хаб ему закрыт.
+ *
+ * Поэтому: хаб доступен — ведём на него; хаб закрыт — на первый доступный
+ * инструмент области. Областей без инструмента-хаба (главная, доступ, деньги)
+ * правило не касается: у них хаб — обычная страница со списком карточек,
+ * которая сама показывает только разрешённое.
+ */
+export function areaHref(
+  area: AdminAreaInfo,
+  role: UserRole,
+  capabilities: readonly AdminCapability[],
+  disabled: readonly string[] = [],
+): string {
+  const hubTool = ADMIN_TOOLS.find(
+    (tool) => tool.isAreaHub && tool.areas[0] === area.key,
+  )
+  if (!hubTool) return area.href
+
+  const tools = toolsInArea(area.key, role, capabilities, disabled)
+  if (tools.some((tool) => tool.href === hubTool.href)) return area.href
+  return tools[0]?.href ?? area.href
 }
 
 export function isAreaActive(area: AdminAreaInfo, pathname: string) {

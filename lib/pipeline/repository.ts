@@ -46,6 +46,9 @@ export async function listPipelineUsers(): Promise<PipelineUser[]> {
                 COUNT(*) FILTER (WHERE COALESCE(is_archived, FALSE)) AS archived,
                 MAX(updated_at) AS last_activity
            FROM projects
+          -- Корзина в счётчиках колонки 1 не участвует: иначе число проектов
+          -- не сойдётся со списком в колонке 2, который их уже не показывает.
+          WHERE deleted_at IS NULL
           GROUP BY user_id
        ) p ON p.user_id = u.id
       ORDER BY COALESCE(u.automation_enabled, FALSE) DESC,
@@ -77,6 +80,11 @@ export type PipelineProject = ProjectRecord & {
 /**
  * Проекты одного пользователя для колонки 2, включая архивные: админ должен
  * видеть их и понимать, что они не обрабатываются.
+ *
+ * А вот удалённые (`deleted_at`) — не включая. Архив и корзина здесь разные
+ * вещи: архивный проект живой, его можно открыть и вернуть в работу, а
+ * удалённый уже недоступен всему остальному — `findProjectById` его не отдаёт,
+ * и карточка в списке открывалась бы с «Project not found».
  */
 export async function listPipelineProjectsByOwner(
   ownerId: string,
@@ -125,6 +133,7 @@ export async function listPipelineProjectsByOwner(
        FROM projects p
        JOIN users u ON u.id = p.user_id
       WHERE p.user_id = $1
+        AND p.deleted_at IS NULL
       ORDER BY COALESCE(p.is_archived, FALSE),
                p.created_at DESC`,
     [ownerId],
@@ -164,6 +173,11 @@ export type WatchedProject = {
  * шаблоны пробного набора исключены всегда. Наличие options.json здесь не
  * проверяется: это поход в объектное хранилище, и сканер делает его сам, уже
  * зная, что по проекту есть новые события.
+ *
+ * Корзина отсекается отдельно от паузы и архива: объекты удалённого проекта
+ * лежат в R2 до истечения срока хранения, и без этого условия сканер ещё
+ * неделями собирал бы по ним задачи — с оплатой за работу, результат которой
+ * владельцу уже негде посмотреть.
  */
 export async function listWatchedProjects(): Promise<WatchedProject[]> {
   const result = await query<WatchedProject>(
@@ -180,6 +194,7 @@ export async function listWatchedProjects(): Promise<WatchedProject[]> {
        JOIN users u ON u.id = p.user_id
       WHERE u.is_active
         AND COALESCE(u.automation_enabled, FALSE)
+        AND p.deleted_at IS NULL
         AND COALESCE(p.is_paused, FALSE) = FALSE
         AND COALESCE(p.is_archived, FALSE) = FALSE
         -- Шаблон пробного набора не обрабатывает сам себя: иначе его _stats

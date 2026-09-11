@@ -151,6 +151,16 @@ export type WatchedProject = {
    * освобождение иногда нужно и не-админу.
    */
   ownerBillingExempt: boolean
+  /**
+   * Чей кошелёк платит за работу в проекте: плательщик владельца или сам
+   * владелец (docs/COMPANY_ACCOUNTS_PLAN.md §7). По нему конвейер читает деньги.
+   */
+  payerId: string
+  /**
+   * За владельца платит другой. Нужен для причины остановки: деньги кончились
+   * не у него, и «пополните баланс» послало бы его туда, где он бессилен.
+   */
+  ownerHasPayer: boolean
 }
 
 /**
@@ -177,7 +187,9 @@ export async function listWatchedProjects(): Promise<WatchedProject[]> {
             p.pay_base  AS "payBase",
             p.pay_meter AS "payMeter",
             p.estimate_units::float8 AS "estimateUnits",
-            COALESCE(u.billing_exempt, FALSE) AS "ownerBillingExempt"
+            COALESCE(u.billing_exempt, FALSE) AS "ownerBillingExempt",
+            COALESCE(u.payer_user_id, u.id) AS "payerId",
+            (u.payer_user_id IS NOT NULL) AS "ownerHasPayer"
        FROM projects p
        JOIN users u ON u.id = p.user_id
       WHERE u.is_active

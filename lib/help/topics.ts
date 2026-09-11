@@ -120,6 +120,20 @@ export const HELP_TOPICS = [
     section: "site",
     audience: "features.manage",
   },
+  // Компании — в «Установке», а не в «Деньгах»: общий кошелёк это следствие, а
+  // сам раздел про то, как устроена площадка и кто на ней есть.
+  {
+    id: "companies.overview",
+    section: "site",
+    audience: "companies.manage",
+    seeAlso: ["companies.people", "billing.promo.payer"],
+  },
+  {
+    id: "companies.people",
+    section: "site",
+    audience: "companies.manage",
+    seeAlso: ["companies.overview", "billing.promo.payer"],
+  },
   {
     id: "pipeline.file-types",
     section: "pipeline",
@@ -280,6 +294,7 @@ export const HELP_TOPICS = [
       "billing.promo.user",
       "billing.promo.grant",
       "billing.promo.projects",
+      "billing.promo.payer",
       "billing.promo.overdraft",
       "billing.promo.history",
       "billing.trial",
@@ -308,6 +323,12 @@ export const HELP_TOPICS = [
     section: "billing",
     audience: "billing.promo",
     seeAlso: ["billing.promo", "billing.rates.limits"],
+  },
+  {
+    id: "billing.promo.payer",
+    section: "billing",
+    audience: "billing.promo",
+    seeAlso: ["billing.promo", "billing.promo.grant", "billing.promo.overdraft"],
   },
   {
     id: "billing.promo.history",

@@ -262,7 +262,9 @@ export function ProjectCard({
                   ? t.projectPausedTrialOver
                   : billingStop === "no-vendor-key"
                     ? t.projectPausedNoVendorKey
-                    : t.projectPausedNoFunds}
+                    : billingStop === "payer-no-funds"
+                      ? t.projectPausedPayerNoFunds
+                      : t.projectPausedNoFunds}
               </span>
             ) : null}
             {showArchivedBadge ? (

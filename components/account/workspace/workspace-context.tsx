@@ -329,7 +329,15 @@ type WorkspaceValue = {
   openMoveDialog: (items: DriveFile[]) => void
   closeMoveDialog: () => void
   /** Перенос внутри проекта: меняется только логический путь. */
-  moveItems: (items: DriveFile[], destFolderPath: string) => Promise<void>
+  /**
+   * Перенести в папку. Оба проекта по умолчанию — выбранный; разные `from` и
+   * `to` — перенос между проектами (копия туда, оригинал в корзину).
+   */
+  moveItems: (
+    items: DriveFile[],
+    destFolderPath: string,
+    projects?: { from?: string; to?: string },
+  ) => Promise<void>
 
   // буфер обмена
   clipboard: Clipboard | null
@@ -376,6 +384,26 @@ export function useWorkspace() {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error("useWorkspace must be used within WorkspaceProvider")
   return ctx
+}
+
+/**
+ * Дождаться фоновой работы хранилища: копирования, переноса между проектами.
+ * Ждём ограниченно, полминуты: дольше работа доедет и без нас, просто без
+ * тоста. `pending` значит «ещё идёт, а мы перестали ждать».
+ */
+async function waitForStorageJob(
+  jobId: string,
+): Promise<{ state: "done" | "failed" | "pending"; error?: string | null }> {
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 1000))
+    const res = await fetch(`/api/storage/v1/jobs/${jobId}`)
+    if (!res.ok) break
+    const data = await res.json()
+    const state = data.job?.state
+    if (state === "done") return { state: "done" }
+    if (state === "failed") return { state: "failed", error: data.job?.error }
+  }
+  return { state: "pending" }
 }
 
 async function uploadViaXhr(
@@ -1034,11 +1062,17 @@ export function WorkspaceProvider({
         // Общее «Failed» отправило бы человека искать ошибку там, где её нет.
         if (res.status === 409) {
           const body = (await res.json().catch(() => ({}))) as { code?: string }
-          if (body.code === "trial-over" || body.code === "no-funds") {
+          if (
+            body.code === "trial-over" ||
+            body.code === "no-funds" ||
+            body.code === "payer-no-funds"
+          ) {
             toast.error(
               body.code === "trial-over"
                 ? t.trialBannerOver
-                : t.trialBannerNoFunds,
+                : body.code === "payer-no-funds"
+                  ? t.resumePayerNoFunds
+                  : t.trialBannerNoFunds,
             )
             return
           }
@@ -1849,19 +1883,66 @@ export function WorkspaceProvider({
   const closeMoveDialog = useCallback(() => setMoveTargets(null), [])
 
   /**
-   * Перенос идёт через storage v1: `/rename` меняет логический путь,
-   * объект в R2 остаётся на месте (см. docs/BACKEND_PLAN.md, модель B).
+   * Внутри проекта перенос идёт через storage v1: `/rename` меняет логический
+   * путь, объект в R2 остаётся на месте (см. docs/BACKEND_PLAN.md, модель B).
+   * Между проектами — `/move`: копия туда и оригинал в корзину одной работой.
    */
   const moveItems = useCallback(
-    async (items: DriveFile[], destFolderPath: string) => {
-      if (!selectedId || items.length === 0) return
+    async (
+      items: DriveFile[],
+      destFolderPath: string,
+      projects?: { from?: string; to?: string },
+    ) => {
+      const fromId = projects?.from ?? selectedId
+      const toId = projects?.to ?? selectedId
+      if (!selectedId || !fromId || !toId || items.length === 0) return
+
+      if (fromId !== toId) {
+        const url = sourceRef.current.crossProjectMoveUrl?.()
+        if (!url) {
+          toast.error(t.moveCrossProject)
+          return
+        }
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: fromId,
+            fileIds: items.map((f) => f.id),
+            destProjectId: toId,
+            destFolderPath,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error(data.message ?? "Move failed")
+          return
+        }
+        setSelection([])
+        setClipboard(null)
+        if (res.status === 202 && data.jobId) {
+          // Папку ждём в фоне: диалог и буфер отпускаем сразу, а дерево
+          // перечитаем, когда работа доедет.
+          toast.message(t.moveStarted)
+          void waitForStorageJob(data.jobId).then(async (job) => {
+            if (job.state === "done") toast.success(t.mMove)
+            if (job.state === "failed") toast.error(job.error ?? "Move failed")
+            await loadDrive(selectedId, true)
+          })
+          return
+        }
+        toast.success(t.mMove)
+        await loadDrive(selectedId, true)
+        return
+      }
+
       let failed = 0
       for (const file of items) {
         const res = await fetch(sourceRef.current.moveUrl(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            projectId: selectedId,
+            projectId: fromId,
             fileId: file.id,
             folderPath: destFolderPath,
           }),
@@ -1877,7 +1958,7 @@ export function WorkspaceProvider({
       setClipboard(null)
       await loadDrive(selectedId, true)
     },
-    [selectedId, t.mMove, loadDrive],
+    [selectedId, t.mMove, t.moveCrossProject, t.moveStarted, loadDrive],
   )
 
   // ---------- буфер обмена ----------
@@ -1905,12 +1986,12 @@ export function WorkspaceProvider({
     (destFolderPath: string) => {
       if (!clipboard || !selectedId) return
       if (clipboard.op === "cut") {
-        // Буфер переживает смену проекта, а /rename работает внутри одного.
-        if (clipboard.projectId !== selectedId) {
-          toast.error(t.moveCrossProject)
-          return
-        }
-        void moveItems(clipboard.items, destFolderPath)
+        // Буфер переживает смену проекта: вырезанное в другом проекте
+        // переезжает между проектами.
+        void moveItems(clipboard.items, destFolderPath, {
+          from: clipboard.projectId,
+          to: selectedId,
+        })
         return
       }
       void (async () => {
@@ -1931,22 +2012,9 @@ export function WorkspaceProvider({
         }
         if (res.status === 202 && data.jobId) {
           toast.message(`Copy started (${data.jobId.slice(0, 8)}…)`)
-          // Poll briefly then refresh.
-          for (let i = 0; i < 30; i++) {
-            await new Promise((r) => setTimeout(r, 1000))
-            const jobRes = await fetch(`/api/storage/v1/jobs/${data.jobId}`)
-            if (!jobRes.ok) break
-            const jobData = await jobRes.json()
-            const state = jobData.job?.state
-            if (state === "done") {
-              toast.success(t.clipboardPaste)
-              break
-            }
-            if (state === "failed") {
-              toast.error(jobData.job?.error ?? "Copy failed")
-              break
-            }
-          }
+          const job = await waitForStorageJob(data.jobId)
+          if (job.state === "done") toast.success(t.clipboardPaste)
+          if (job.state === "failed") toast.error(job.error ?? "Copy failed")
         } else {
           toast.success(t.clipboardPaste)
         }
@@ -1954,14 +2022,7 @@ export function WorkspaceProvider({
         await loadDrive(selectedId, true)
       })()
     },
-    [
-      clipboard,
-      selectedId,
-      moveItems,
-      loadDrive,
-      t.clipboardPaste,
-      t.moveCrossProject,
-    ],
+    [clipboard, selectedId, moveItems, loadDrive, t.clipboardPaste],
   )
 
   const isCut = useCallback(

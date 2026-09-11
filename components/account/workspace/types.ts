@@ -48,7 +48,7 @@ export type Project = {
    * Почему проект стоит: `null` — остановил человек, иначе биллинг. Тумблер в
    * этом случае обратно не включается, пока платить нечем.
    */
-  pausedReason?: "no-funds" | "trial-over" | "no-vendor-key" | null
+  pausedReason?: "no-funds" | "trial-over" | "no-vendor-key" | "payer-no-funds" | null
   /** В архиве: скрыт из рабочего списка, обработки по нему не идут. */
   isArchived: boolean
   /** Soft-deleted project (cabinet trash tab). */
@@ -261,6 +261,11 @@ export type WorkspaceSource = {
   uploadUrl: (projectId: string, params: URLSearchParams) => string
   /** Перемещение элемента между папками. */
   moveUrl: () => string
+  /**
+   * Перенос в другой проект: копия туда, оригинал в корзину, одной работой.
+   * Пусто — чужие проекты в диалоге переноса видны, но кнопка выключена.
+   */
+  crossProjectMoveUrl?: () => string
   /**
    * Архив папки: `archivePlanUrl` — состав частей, `archivePartUrl` — сама
    * часть потоком. У обеих зон адреса совпадают: это /api/storage/v1, он

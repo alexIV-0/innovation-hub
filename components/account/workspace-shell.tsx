@@ -119,18 +119,18 @@ function NavItem({
         collapsed && "justify-center px-2",
         nested && !collapsed && "py-2 text-[13px]",
         active
-          ? "bg-[rgba(45,131,206,0.16)] text-[#eef1f6]"
-          : "text-[#c3c8d2] hover:bg-white/5 hover:text-[#eef1f6]",
+          ? "bg-primary/15 text-foreground"
+          : "text-secondary-foreground hover:bg-white/5 hover:text-foreground",
         dimmed && "opacity-45",
       )}
     >
       {active && (
-        <span className="absolute bottom-[9px] left-0 top-[9px] w-[3px] rounded-[3px] bg-[#2f80ed]" />
+        <span className="absolute bottom-[9px] left-0 top-[9px] w-[3px] rounded-[3px] bg-primary" />
       )}
       <span
         className={cn(
           "relative",
-          active ? "text-[#6aa5e8]" : "text-[#8b909c]",
+          active ? "text-primary" : "text-muted-foreground/90",
         )}
       >
         {icon}
@@ -146,7 +146,7 @@ function NavItem({
               {unread > 99 ? "99+" : unread}
             </span>
           ) : typeof count === "number" && count > 0 ? (
-            <span className="shrink-0 text-[12.5px] tabular-nums text-[#7c8290]">
+            <span className="shrink-0 text-[12.5px] tabular-nums text-muted-foreground/80">
               {count}
             </span>
           ) : null}
@@ -213,7 +213,7 @@ function SidebarContent({
           onClick={onToggle}
           title={collapsed ? t.sidebarExpand : t.sidebarCollapse}
           aria-label={collapsed ? t.sidebarExpand : t.sidebarCollapse}
-          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border border-[rgba(91,155,224,0.4)] bg-gradient-to-br from-[#1f3a63] to-[#16273f] text-[12px] font-bold tracking-wide text-[#7fb0f0]"
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border border-primary/40 bg-gradient-to-br from-primary/25 to-primary/10 text-[12px] font-bold tracking-wide text-primary/90"
         >
           FF
         </button>
@@ -224,14 +224,14 @@ function SidebarContent({
               onClick={onToggle}
               title={t.sidebarExpand}
               aria-label={t.sidebarExpand}
-              className="flex h-[22px] w-[34px] shrink-0 items-center justify-center rounded-md text-[#9aa0ac] hover:bg-white/5 hover:text-[#eef1f6]"
+              className="flex h-[22px] w-[34px] shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           ) : null
         ) : (
           <>
-            <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-[#eef1f6]">
+            <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-foreground">
               {SITE_NAME}
             </span>
             {onToggle && (
@@ -240,7 +240,7 @@ function SidebarContent({
                 onClick={onToggle}
                 title={t.sidebarCollapse}
                 aria-label={t.sidebarCollapse}
-                className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-[#9aa0ac] hover:bg-white/5 hover:text-[#eef1f6]"
+                className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -256,7 +256,7 @@ function SidebarContent({
         <div className="shrink-0 px-3 pb-1 pt-1.5">
           <div
             className={cn(
-              "rounded-xl border border-[rgba(91,155,224,0.28)] bg-gradient-to-br from-[rgba(45,131,206,0.16)] to-[rgba(45,131,206,0.03)]",
+              "rounded-xl border border-primary/30 bg-gradient-to-br from-primary/15 to-primary/[0.03]",
               collapsed ? "p-2.5" : "p-3.5",
             )}
           >
@@ -266,9 +266,9 @@ function SidebarContent({
                 collapsed && "justify-center",
               )}
             >
-              <Wallet className="h-[19px] w-[19px] text-[#8fb8ea]" />
+              <Wallet className="h-[19px] w-[19px] text-primary/90" />
               {!collapsed && (
-                <span className="flex-1 text-[10.5px] font-semibold tracking-[1.4px] text-[#8fb8ea]">
+                <span className="flex-1 text-[10.5px] font-semibold tracking-[1.4px] text-primary/90">
                   {t.balance}
                 </span>
               )}
@@ -285,7 +285,7 @@ function SidebarContent({
                   action={
                     <button
                       type="button"
-                      className="shrink-0 rounded-lg bg-white/10 px-2.5 py-1 text-[12px] text-[#eef1f6] hover:bg-white/[0.18]"
+                      className="shrink-0 rounded-lg bg-white/10 px-2.5 py-1 text-[12px] text-foreground hover:bg-white/[0.18]"
                     >
                       {t.topup}
                     </button>
@@ -298,7 +298,7 @@ function SidebarContent({
 
         <nav className="flex shrink-0 flex-col gap-1 px-3 py-2">
           {!collapsed && (
-            <div className="px-2.5 pb-1.5 pt-3.5 text-[11px] font-semibold tracking-[1.4px] text-[#5a606e]">
+            <div className="px-2.5 pb-1.5 pt-3.5 text-[11px] font-semibold tracking-[1.4px] text-muted-foreground/60">
               {t.workspaceSection}
             </div>
           )}
@@ -368,7 +368,7 @@ function SidebarContent({
                 )}
               />
               {!collapsed ? (
-                <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6b7280]">
+                <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
                   {t.adminPanel}
                 </p>
               ) : null}
@@ -403,7 +403,7 @@ function SidebarContent({
       <div className={cn("shrink-0 px-3 pt-2.5", collapsed && "px-2")}>
         <div
           className={cn(
-            "flex gap-1 rounded-[9px] border border-white/10 bg-[#0d121c] p-[3px]",
+            "flex gap-1 rounded-[9px] border border-white/10 bg-surface-1 p-[3px]",
             collapsed ? "flex-col" : "flex-row",
           )}
         >
@@ -417,8 +417,8 @@ function SidebarContent({
                 "rounded-md text-[13px] font-semibold tracking-wide",
                 collapsed ? "h-7 w-full" : "h-7 flex-1",
                 lang === l
-                  ? "bg-[rgba(45,131,206,0.35)] text-[#eef1f6]"
-                  : "bg-transparent text-[#8b909c] hover:text-[#eef1f6]",
+                  ? "bg-primary/30 text-foreground"
+                  : "bg-transparent text-muted-foreground/90 hover:text-foreground",
               )}
             >
               {l.toUpperCase()}
@@ -432,7 +432,7 @@ function SidebarContent({
           className={cn(
             "flex items-center gap-2.5 rounded-xl border p-2.5",
             isProfile
-              ? "border-[rgba(91,155,224,0.45)] bg-[rgba(45,131,206,0.12)]"
+              ? "border-primary/40 bg-primary/10"
               : "border-white/10 bg-transparent",
             collapsed && "justify-center p-1.5",
           )}
@@ -445,15 +445,15 @@ function SidebarContent({
               collapsed ? "justify-center" : "flex-1",
             )}
           >
-            <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7fb0f0] to-[#4a7fd6] text-[13px] font-bold text-[#0d1626]">
+            <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary/90 to-primary text-[13px] font-bold text-primary-foreground">
               {initials}
             </div>
             {!collapsed && (
               <div className="min-w-0 flex-1 text-left">
-                <div className="truncate text-[13.5px] text-[#eef1f6]">
+                <div className="truncate text-[13.5px] text-foreground">
                   {user.fullName || user.email}
                 </div>
-                <div className="truncate text-[11.5px] text-[#7c8290]">
+                <div className="truncate text-[11.5px] text-muted-foreground/80">
                   {user.email}
                 </div>
               </div>
@@ -464,7 +464,7 @@ function SidebarContent({
               type="button"
               title={t.logout}
               onClick={signOut}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-[#8b909c] hover:bg-white/10 hover:text-[#eef1f6]"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-muted-foreground/90 hover:bg-white/10 hover:text-foreground"
             >
               <LogOut className="h-[18px] w-[18px]" />
             </button>
@@ -533,13 +533,13 @@ function WorkspaceShellInner({
 
   return (
     <div
-      className="flex h-dvh w-full overflow-hidden bg-[hsl(226_31%_7%)] font-[family-name:var(--font-ibm-plex)] text-[#eef1f6]"
+      className="flex h-dvh w-full overflow-hidden bg-background font-[family-name:var(--font-ibm-plex)] text-foreground"
       style={{ fontFamily: "var(--font-ibm-plex), system-ui, sans-serif" }}
     >
       {/* Desktop sidebar */}
       <aside
         style={{ width: sidebarWidth }}
-        className="relative hidden shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-[hsl(226_28%_9%)] lg:flex"
+        className="relative hidden shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-sidebar lg:flex"
       >
         <SidebarContent
           user={user}
@@ -558,18 +558,18 @@ function WorkspaceShellInner({
 
       {/* Mobile top bar */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex h-[58px] shrink-0 items-center gap-2.5 border-b border-white/[0.07] bg-[hsl(226_28%_9%)] px-3 lg:hidden">
+        <div className="flex h-[58px] shrink-0 items-center gap-2.5 border-b border-white/[0.07] bg-sidebar px-3 lg:hidden">
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-[11px] border border-[rgba(91,155,224,0.4)] bg-gradient-to-br from-[#1f3a63] to-[#16273f] text-[12px] font-bold text-[#7fb0f0]"
+            className="flex h-10 w-10 items-center justify-center rounded-[11px] border border-primary/40 bg-gradient-to-br from-primary/25 to-primary/10 text-[12px] font-bold text-primary/90"
           >
             <Menu className="h-5 w-5" />
           </button>
           <span className="flex-1 text-[16px] font-semibold">{title}</span>
           <Link
             href="/account/profile"
-            className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-gradient-to-br from-[#7fb0f0] to-[#4a7fd6] text-[12.5px] font-bold text-[#0d1626]"
+            className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-gradient-to-br from-primary/90 to-primary text-[12.5px] font-bold text-primary-foreground"
           >
             {avatarInitials(fullName, email)}
           </Link>
@@ -585,14 +585,14 @@ function WorkspaceShellInner({
           onClick={() => setDrawerOpen(false)}
         >
           <div
-            className="flex h-full w-[274px] max-w-[82%] flex-col border-r border-white/10 bg-[hsl(226_28%_9%)]"
+            className="flex h-full w-[274px] max-w-[82%] flex-col border-r border-white/10 bg-sidebar"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-end p-2">
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-[#9aa0ac] hover:bg-white/5"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-white/5"
               >
                 <X className="h-5 w-5" />
               </button>

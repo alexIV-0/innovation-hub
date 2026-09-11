@@ -19,9 +19,9 @@ import { useWorkspace } from "./workspace-context"
 /**
  * Выбор папки назначения: слева проекты пользователя, справа их папки.
  *
- * Перенос между проектами упирается в бэкенд — `/api/storage/v1/rename`
- * работает внутри одного проекта (см. docs/BACKEND_PLAN.md §6.2).
- * Поэтому чужие проекты открыть можно, а кнопка переноса выключена.
+ * Внутри проекта перенос — `/api/storage/v1/rename`, между проектами —
+ * `/api/storage/v1/move`: копия туда и оригинал в корзину одной работой
+ * (lib/storage/move.ts). Во втором случае нужна запись и в проекте-получателе.
  */
 export function MoveDialog() {
   const {
@@ -32,6 +32,8 @@ export function MoveDialog() {
     moveTargets,
     closeMoveDialog,
     moveItems,
+    source,
+    capabilitiesFor,
   } = useWorkspace()
 
   const [pickedProjectId, setPickedProjectId] = useState<string | null>(null)
@@ -82,17 +84,25 @@ export function MoveDialog() {
   // Папку нельзя положить внутрь себя же или своего потомка.
   const intoItself = path.some((n) => movedIds.has(n.id))
 
-  const blockedReason = !sameProject
-    ? t.moveCrossProject
-    : intoItself
+  const pickedProject = projects.find((p) => p.id === pickedProjectId) ?? null
+
+  const blockedReason = sameProject
+    ? intoItself
       ? t.moveIntoItself
       : null
+    : !source.crossProjectMoveUrl
+      ? t.moveCrossProject
+      : !capabilitiesFor(pickedProject).move
+        ? t.moveNoWriteAccess
+        : null
 
   const submit = async () => {
     if (!moveTargets || blockedReason) return
     setBusy(true)
     try {
-      await moveItems(moveTargets, destFolderPath)
+      await moveItems(moveTargets, destFolderPath, {
+        to: pickedProjectId ?? undefined,
+      })
       closeMoveDialog()
     } finally {
       setBusy(false)

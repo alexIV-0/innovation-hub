@@ -24,7 +24,8 @@ import {
   OPTIONS_FILE_NAME,
   OPTIONS_FOLDER_NAME,
 } from "@/lib/storage/keys"
-import { writeSidecarPut } from "@/lib/storage/write-path"
+import { assertMovableAcrossProjects, moveEventId } from "@/lib/storage/move"
+import { writeFileDelete, writeSidecarPut } from "@/lib/storage/write-path"
 import { rebuildCatalogSnapshot } from "@/lib/storage/catalog"
 import { purgeDeletedProjects } from "@/lib/storage/project-trash"
 import { purgeExpiredTrash } from "@/lib/storage/trash"
@@ -95,6 +96,114 @@ async function runCopyJob(job: StorageJobRecord): Promise<void> {
     createdIds.push(file.id)
     done++
     await setJobProgress(job.id, done, items.length, { fileIds: createdIds })
+  }
+
+  await finishJob(job.id, {
+    state: "done",
+    done: createdIds.length,
+    payload: { fileIds: createdIds },
+  })
+}
+
+/**
+ * Перенос между проектами (lib/storage/move.ts): копия целиком, потом
+ * оригиналы в корзину.
+ *
+ * Отметка `copied` делит работу на две половины. Процесс перезапустят после
+ * копирования — второй прогон только доудалит оригиналы и не положит вторую
+ * копию рядом с первой. Перезапуск посреди копирования так не спасти: копия
+ * начнётся заново, и доехавшая часть останется лишней, — зато оригинал цел.
+ */
+async function runMoveJob(job: StorageJobRecord): Promise<void> {
+  const payload = job.payload as {
+    sourceProjectId?: string
+    sourceStorageOwnerId?: string
+    destProjectId?: string
+    destStorageOwnerId?: string
+    destFolderPath?: string
+    /**
+     * Что переносим. Не `fileIds`, как у copy: туда по ходу пишутся id копий,
+     * и второй прогон не нашёл бы, что удалять.
+     */
+    sourceFileIds?: string[]
+    eventId?: string
+    actorUserId?: string
+    actorIsUploader?: boolean
+    copied?: boolean
+    fileIds?: string[]
+  }
+
+  const {
+    sourceProjectId,
+    sourceStorageOwnerId,
+    destProjectId,
+    destStorageOwnerId,
+  } = payload
+  const destFolderPath = payload.destFolderPath ?? ""
+  const sourceFileIds = payload.sourceFileIds ?? []
+
+  if (
+    !sourceProjectId ||
+    !sourceStorageOwnerId ||
+    !destProjectId ||
+    !destStorageOwnerId ||
+    sourceFileIds.length === 0
+  ) {
+    await finishJob(job.id, {
+      state: "failed",
+      error: "Invalid move job payload.",
+    })
+    return
+  }
+
+  const actor = {
+    userId: payload.actorUserId ?? job.userId,
+    isUploader: payload.actorIsUploader !== false,
+  }
+  let createdIds = payload.fileIds ?? []
+
+  if (!payload.copied) {
+    const { items, roots } = await buildCopyPlan({
+      projectId: sourceProjectId,
+      fileIds: sourceFileIds,
+    })
+    assertMovableAcrossProjects(roots, destFolderPath)
+    await setJobProgress(job.id, 0, items.length, { fileIds: [] })
+
+    const folderPathMap = new Map<string, string>()
+    createdIds = []
+    for (const item of items) {
+      const file = await copyPlanItem({
+        destProjectId,
+        destStorageOwnerId,
+        destFolderPath,
+        item,
+        folderPathMap,
+        eventId: moveEventId(payload.eventId, "copy", item.source.id),
+        actor,
+        keepUploader: true,
+      })
+      createdIds.push(file.id)
+      await setJobProgress(job.id, createdIds.length, items.length, {
+        fileIds: createdIds,
+      })
+    }
+    await setJobProgress(job.id, createdIds.length, items.length, {
+      copied: true,
+    })
+  }
+
+  // Уже лежащий в корзине оригинал (второй прогон) writeFileDelete просто не
+  // найдёт — повтор безопасен.
+  for (const fileId of sourceFileIds) {
+    await writeFileDelete({
+      storageOwnerId: sourceStorageOwnerId,
+      projectId: sourceProjectId,
+      fileId,
+      deletedBy: actor.userId,
+      eventId: moveEventId(payload.eventId, "delete", fileId),
+      actor,
+    })
   }
 
   await finishJob(job.id, {
@@ -408,10 +517,7 @@ export async function executeJob(jobId: string): Promise<StorageJobRecord | null
         await runPurgeJob(claimed)
         break
       case "move":
-        await finishJob(claimed.id, {
-          state: "failed",
-          error: "Cross-project move jobs are not implemented yet.",
-        })
+        await runMoveJob(claimed)
         break
       default:
         await finishJob(claimed.id, {

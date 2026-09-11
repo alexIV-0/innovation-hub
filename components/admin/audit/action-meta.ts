@@ -2,6 +2,7 @@
 
 import {
   ArrowLeftRight,
+  Building2,
   FolderTree,
   Gift,
   TriangleAlert,
@@ -187,6 +188,40 @@ export const ACTION_META: Record<
   // Дожим — «neutral»: он не двигает чужие деньги, а доводит до конца то, что
   // человек уже запросил сам.
   "trial.resumed": { labelKey: "auditTrialResumed", icon: Gift, tone: "neutral" },
+  // «access»: смена плательщика даёт одному человеку право тратить чужой
+  // кошелёк — по весу это выдача доступа, а не правка профиля.
+  "billing.payer_changed": {
+    labelKey: "auditPayerChanged",
+    icon: ArrowLeftRight,
+    tone: "access",
+  },
+  "company.created": {
+    labelKey: "auditCompanyCreated",
+    icon: Building2,
+    tone: "access",
+  },
+  // «danger»: перевод меняет и принадлежность человека, и кошелёк, с которого
+  // идут списания за его работу, — по весу это ближе к смене владельца проекта.
+  "company.member_transferred": {
+    labelKey: "auditCompanyMemberTransferred",
+    icon: ArrowLeftRight,
+    tone: "danger",
+  },
+  "company.enabled": {
+    labelKey: "auditCompanyEnabled",
+    icon: Building2,
+    tone: "neutral",
+  },
+  "company.disabled": {
+    labelKey: "auditCompanyDisabled",
+    icon: Building2,
+    tone: "access",
+  },
+  "company.deleted": {
+    labelKey: "auditCompanyDeleted",
+    icon: Trash2,
+    tone: "danger",
+  },
 }
 
 export const TONE_CLASS = {

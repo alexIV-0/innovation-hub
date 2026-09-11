@@ -65,6 +65,17 @@ export const AUDIT_ACTIONS = [
   // Дожим застрявшей выдачи: копии поехали не сами, а по команде админа. Без
   // записи «проекты появились через неделю после активации» объяснить нечем.
   "trial.resumed",
+  // Кто за кого платит. Пишется на каждую смену: после неё счёт за чужую работу
+  // приходит другому человеку, и первый его вопрос — «кто это решил».
+  "billing.payer_changed",
+  // Компания как сущность (docs/COMPANY_ACCOUNTS_PLAN.md, этап 3). Заведение —
+  // вместе со служебным кошельком; перевод — единственное действие, которое
+  // меняет чью-то принадлежность и общий кошелёк одновременно.
+  "company.created",
+  "company.member_transferred",
+  "company.enabled",
+  "company.disabled",
+  "company.deleted",
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

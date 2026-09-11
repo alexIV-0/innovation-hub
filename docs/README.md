@@ -91,8 +91,8 @@
 | [ADMIN_WORKSPACE_PLAN.md](./ADMIN_WORKSPACE_PLAN.md) | разделение конвейера и администрирования папок: перенос проектов, две ступени прав — этап 1 в коде, миграция не применена 🟡 |
 | [FOLDER_STATE_SSOT_PLAN.md](./FOLDER_STATE_SSOT_PLAN.md) | источник правды для тумблера — решение принято и реализовано |
 | [PROJECT_STATE_DB_S3_PROPOSAL.md](./PROJECT_STATE_DB_S3_PROPOSAL.md) | Postgres + S3 вместо файла на Drive — реализовано |
-| [COMPANY_ACCOUNTS_PLAN.md](./COMPANY_ACCOUNTS_PLAN.md) | компании внутри сайта: общий кошелёк, scope админки, оформление — решение принято, код не начат ⬜ |
-| [THEMING_PLAN.md](./THEMING_PLAN.md) | светлая тема, переключатель, оформление компании и миграция хардкода на токены — план ⬜ |
+| [COMPANY_ACCOUNTS_PLAN.md](./COMPANY_ACCOUNTS_PLAN.md) | компании внутри сайта: роли в компании, консоль `/company`, общий кошелёк, задел под пайплайны и чаты — этап 1 (общий кошелёк) в коде, миграция не применена 🟡 |
+| [THEMING_PLAN.md](./THEMING_PLAN.md) | светлая тема, переключатель, оформление компании — этап 1 (хардкод → токены) выполнен 🟡 |
 
 ## Архив
 

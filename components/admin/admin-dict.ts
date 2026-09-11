@@ -178,6 +178,12 @@ export const adminDict = {
     auditTrialRevoked: "Тестовый период отозван",
     auditTrialReset: "Тестовый период разрешён заново",
     auditTrialResumed: "Выдача периода дожата",
+    auditPayerChanged: "Сменён плательщик",
+    auditCompanyCreated: "Компания заведена",
+    auditCompanyMemberTransferred: "Человек переведён",
+    auditCompanyEnabled: "Компания включена",
+    auditCompanyDisabled: "Компания выключена",
+    auditCompanyDeleted: "Компания удалена",
 
     // capability tags
     capsMenuItem: "Доступы",
@@ -703,6 +709,7 @@ export const adminDict = {
     // ─── Части сайта (выключатели) ───
     auditFeatureToggled: "Часть сайта переключена",
     capFeaturesManage: "Части сайта",
+    capCompaniesManage: "Компании",
     featuresEyebrow: "Установка",
     featuresTitle: "Части сайта",
     featuresDescription:
@@ -903,6 +910,12 @@ export const adminDict = {
     auditTrialRevoked: "Trial period revoked",
     auditTrialReset: "Trial period allowed again",
     auditTrialResumed: "Trial provisioning resumed",
+    auditPayerChanged: "Payer changed",
+    auditCompanyCreated: "Company created",
+    auditCompanyMemberTransferred: "Person moved",
+    auditCompanyEnabled: "Company enabled",
+    auditCompanyDisabled: "Company disabled",
+    auditCompanyDeleted: "Company deleted",
 
     // capability tags
     capsMenuItem: "Access",
@@ -1421,6 +1434,7 @@ export const adminDict = {
     // ─── Site parts (feature switches) ───
     auditFeatureToggled: "Site part switched",
     capFeaturesManage: "Site parts",
+    capCompaniesManage: "Companies",
     featuresEyebrow: "Installation",
     featuresTitle: "Site parts",
     featuresDescription:

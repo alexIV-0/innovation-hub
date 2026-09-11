@@ -2,6 +2,7 @@ import type { PoolClient } from "pg"
 import { query, queryVia, withTransaction } from "@/lib/db"
 import { activateGrant, createGrant, findTrialGrant } from "@/lib/billing/grants"
 import { listTemplateProjects } from "@/lib/billing/projects"
+import { readPayer } from "@/lib/billing/payer"
 import { readBillingSettings } from "@/lib/billing/settings"
 import {
   createJob,
@@ -27,7 +28,7 @@ import { provisionEventId, type GrantRecord } from "@/lib/billing/types"
  */
 
 export type TrialState =
-  | { status: "unavailable"; reason: "disabled" | "no-templates" }
+  | { status: "unavailable"; reason: "disabled" | "no-templates" | "paid-by-other" }
   | { status: "available"; amountCents: number; lifetimeDays: number | null }
   | {
       status: "provisioning" | "active" | "exhausted" | "expired" | "revoked"
@@ -48,6 +49,14 @@ export async function readTrialState(userId: string): Promise<TrialState> {
       grant: existing,
       projectIds: projects.rows.map((r) => r.projectId),
     }
+  }
+
+  // За кого платит другой, тому период не выдаётся: подарок лёг бы на него, а
+  // деньги читаются у плательщика — начисленное повисло бы невидимым. Период —
+  // механизм для одиночки; компания заходит с деньгами
+  // (docs/COMPANY_ACCOUNTS_PLAN.md §7.8).
+  if (await readPayer(userId)) {
+    return { status: "unavailable", reason: "paid-by-other" }
   }
 
   const { settings } = await readBillingSettings()
@@ -79,7 +88,7 @@ export type ActivateResult =
        */
       resumed: boolean
     }
-  | { ok: false; reason: "disabled" | "no-templates" | "already-used" }
+  | { ok: false; reason: "disabled" | "no-templates" | "already-used" | "paid-by-other" }
 
 /**
  * Выдать тестовый период.
@@ -95,6 +104,10 @@ export type ActivateResult =
  * использован»: право на период человек потратил, а получил пока ничего.
  */
 export async function activateTrial(userId: string): Promise<ActivateResult> {
+  // Та же причина, что в readTrialState: кнопку он не увидит, но запрос в
+  // обход интерфейса не должен выдать то, что интерфейс не предлагает.
+  if (await readPayer(userId)) return { ok: false, reason: "paid-by-other" }
+
   const { settings } = await readBillingSettings()
   if (!settings.trial.enabled) return { ok: false, reason: "disabled" }
 

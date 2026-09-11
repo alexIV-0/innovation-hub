@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { requireUserApi } from "@/lib/admin-auth"
 import { getFunds } from "@/lib/billing/funds"
+import { personLabel, readPayer } from "@/lib/billing/payer"
 import { approximateRuntime } from "@/lib/billing/purchasing"
 import { readBillingSettings } from "@/lib/billing/settings"
 import { activateTrial, readTrialState } from "@/lib/billing/trial"
@@ -17,10 +18,25 @@ export async function GET(request: NextRequest) {
   const auth = await requireUserApi(request)
   if (auth instanceof NextResponse) return auth
 
-  const [state, funds] = await Promise.all([
+  const [state, payer] = await Promise.all([
     readTrialState(auth.userId),
-    getFunds(auth.userId),
+    readPayer(auth.userId),
   ])
+
+  // За кого платит другой, тому ни сумм, ни периода: деньги не его
+  // (docs/COMPANY_ACCOUNTS_PLAN.md §7.7). Карточка по `paidBy` пишет, кто платит.
+  if (payer) {
+    return NextResponse.json({
+      trial: state,
+      balances: { own: 0, gift: 0 },
+      availableOwnCents: 0,
+      availableGiftCents: 0,
+      purchasing: null,
+      paidBy: { name: personLabel(payer) },
+    })
+  }
+
+  const funds = await getFunds(auth.userId)
 
   const { settings } = await readBillingSettings()
   // Хронометраж считаем по пробному набору, если он есть: обещание «столько-то

@@ -32,6 +32,8 @@ type TrialResponse = {
   availableOwnCents: number
   availableGiftCents: number
   purchasing: { runtimeSec: number; basis: "history" | "rate" } | null
+  /** За этого человека платит другой — вместо сумм показываем, кто. */
+  paidBy?: { name: string } | null
 }
 
 export function TrialCard({
@@ -105,7 +107,11 @@ export function TrialCard({
       if (res.status === 409) {
         const body = (await res.json()) as { code?: string }
         toast.error(
-          body.code === "already-used" ? t.trialAlreadyUsed : t.trialUnavailable,
+          body.code === "already-used"
+            ? t.trialAlreadyUsed
+            : body.code === "paid-by-other"
+              ? t.trialPaidByOther
+              : t.trialUnavailable,
         )
         return
       }
@@ -124,6 +130,29 @@ export function TrialCard({
     } finally {
       setActivating(false)
     }
+  }
+
+  // Деньги не его: ни суммы, ни периода, ни пополнения — только кто платит.
+  if (data?.paidBy) {
+    return (
+      <div
+        className={cn(
+          "rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/20 to-primary/5 p-[22px]",
+          className,
+        )}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold tracking-[1.4px] text-primary/90">
+            {t.cardBalance}
+          </span>
+          <Wallet className="h-5 w-5 text-primary/70" />
+        </div>
+        <div className="mt-4 text-[15px] font-medium text-foreground">
+          {tf(t.paidByLine, { name: data.paidBy.name })}
+        </div>
+        <p className="mt-2 text-[13px] text-muted-foreground">{t.paidByHint}</p>
+      </div>
+    )
   }
 
   const trial = data?.trial

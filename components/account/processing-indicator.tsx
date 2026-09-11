@@ -155,24 +155,24 @@ export function ProcessingIndicator({ className }: { className?: string }) {
         )}
       >
         {live > 0 ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#7fb0f0]" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary/90" />
         ) : (
-          <CheckCircle2 className="h-3.5 w-3.5 text-[#3fb950]" />
+          <CheckCircle2 className="h-3.5 w-3.5 text-success" />
         )}
         <span className="hidden sm:inline">{t.processingTitle}</span>
         {live > 0 ? (
-          <span className="tabular-nums text-[#8b909c]">{live}</span>
+          <span className="tabular-nums text-muted-foreground/90">{live}</span>
         ) : null}
         <ChevronDown
           className={cn(
-            "h-3.5 w-3.5 text-[#6d7380] transition-transform",
+            "h-3.5 w-3.5 text-muted-foreground/70 transition-transform",
             open && "rotate-180",
           )}
         />
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+7px)] z-30 max-h-[min(60vh,520px)] w-[min(340px,calc(100vw-2rem))] overflow-y-auto rounded-[13px] border border-white/[0.09] bg-[hsl(226_28%_10%)] py-1 shadow-[0_16px_40px_rgba(0,0,0,0.5)]">
+        <div className="absolute right-0 top-[calc(100%+7px)] z-30 max-h-[min(60vh,520px)] w-[min(340px,calc(100vw-2rem))] overflow-y-auto rounded-[13px] border border-white/[0.09] bg-surface-1 py-1 shadow-[0_16px_40px_rgba(0,0,0,0.5)]">
           {tasks.map((task) => (
             <Row
               key={task.id}
@@ -235,31 +235,31 @@ function Row({
       className="block border-b border-white/[0.05] px-3 py-2 last:border-b-0 hover:bg-white/[0.04]">
       <div className="flex items-center gap-2">
         <StatusIcon status={task.status} />
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[#eef1f6]">
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
           {task.isFolder ? (
-            <Folder className="mr-1 inline h-3 w-3 -translate-y-px text-[#8b909c]" />
+            <Folder className="mr-1 inline h-3 w-3 -translate-y-px text-muted-foreground/90" />
           ) : null}
           {task.name}
         </span>
         {elapsed ? (
-          <span className="shrink-0 text-[11px] tabular-nums text-[#8b909c]">
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/90">
             {elapsed}
           </span>
         ) : null}
       </div>
 
       <div className="mt-1 flex items-center gap-2 pl-[22px]">
-        <span className="min-w-0 flex-1 truncate text-[11px] text-[#6d7380]">
+        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
           {task.projectName}
         </span>
         <span
           className={cn(
             "shrink-0 text-[11px]",
             task.status === "failed"
-              ? "text-[#f85149]"
+              ? "text-destructive"
               : task.status === "done"
-                ? "text-[#3fb950]"
-                : "text-[#8b909c]",
+                ? "text-success"
+                : "text-muted-foreground/90",
           )}
         >
           {label}
@@ -270,18 +270,18 @@ function Row({
         <div className="ml-[22px] mt-1.5 flex items-center gap-1.5">
           <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/[0.08]">
             <span
-              className="block h-full rounded-full bg-[#7fb0f0] transition-[width] duration-500"
+              className="block h-full rounded-full bg-primary/90 transition-[width] duration-500"
               style={{ width: `${percent}%` }}
             />
           </span>
-          <span className="shrink-0 text-[10.5px] tabular-nums text-[#6d7380]">
+          <span className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground/70">
             {percent}%
           </span>
         </div>
       ) : null}
 
       {task.status === "failed" ? (
-        <p className="ml-[22px] mt-1 text-[11px] leading-snug text-[#8b909c]">
+        <p className="ml-[22px] mt-1 text-[11px] leading-snug text-muted-foreground/90">
           {t.processingFailedHint}
         </p>
       ) : null}
@@ -291,10 +291,10 @@ function Row({
 
 function StatusIcon({ status }: { status: AccountTask["status"] }) {
   const className = "h-3.5 w-3.5 shrink-0"
-  if (status === "queued") return <Clock className={cn(className, "text-[#8b909c]")} />
+  if (status === "queued") return <Clock className={cn(className, "text-muted-foreground/90")} />
   if (status === "running")
-    return <Loader2 className={cn(className, "animate-spin text-[#7fb0f0]")} />
+    return <Loader2 className={cn(className, "animate-spin text-primary/90")} />
   if (status === "done")
-    return <CheckCircle2 className={cn(className, "text-[#3fb950]")} />
-  return <TriangleAlert className={cn(className, "text-[#f85149]")} />
+    return <CheckCircle2 className={cn(className, "text-success")} />
+  return <TriangleAlert className={cn(className, "text-destructive")} />
 }

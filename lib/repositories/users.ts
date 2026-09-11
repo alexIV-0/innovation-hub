@@ -35,7 +35,8 @@ const FULL_USER_FIELDS = `
   COALESCE(balance_cents, 0) AS "balanceCents",
   drive_folder_id AS "driveFolderId",
   COALESCE(must_change_password, FALSE) AS "mustChangePassword",
-  COALESCE(automation_enabled, FALSE) AS "automationEnabled"
+  COALESCE(automation_enabled, FALSE) AS "automationEnabled",
+  kind
 `
 
 /**
@@ -92,9 +93,14 @@ export async function findUserByEmail(
   return result.rows[0] ?? null
 }
 
+/**
+ * Список людей — единственная выборка «покажи всех» (docs/COMPANY_ACCOUNTS_PLAN.md
+ * §2). Служебный кошелёк компании (kind = 'company_wallet') сюда не попадает: он
+ * не показывается ни в одном списке людей.
+ */
 export async function listUsers(): Promise<UserRecord[]> {
   const result = await query<UserRecord>(
-    `SELECT ${PUBLIC_USER_FIELDS} FROM users ORDER BY created_at DESC`,
+    `SELECT ${PUBLIC_USER_FIELDS} FROM users WHERE kind = 'person' ORDER BY created_at DESC`,
   )
   return result.rows
 }

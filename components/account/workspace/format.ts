@@ -330,7 +330,8 @@ export function mapProject(raw: Record<string, unknown>): Project {
     pausedReason:
       raw.pausedReason === "no-funds" ||
       raw.pausedReason === "trial-over" ||
-      raw.pausedReason === "no-vendor-key"
+      raw.pausedReason === "no-vendor-key" ||
+      raw.pausedReason === "payer-no-funds"
         ? raw.pausedReason
         : null,
     gift: mapGift(raw.gift),

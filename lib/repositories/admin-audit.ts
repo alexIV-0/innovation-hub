@@ -13,6 +13,8 @@ export type AuditEvent = {
   targetType: string | null
   targetId: string | null
   targetLabel: string | null
+  /** Компания, в которой произошло действие — читает консоль компании, этап 4. */
+  companyId: string | null
   meta: Record<string, unknown>
   ip: string | null
   createdAt: Date
@@ -25,6 +27,7 @@ const EVENT_FIELDS = `
   action,
   target_type AS "targetType",
   target_id   AS "targetId",
+  company_id  AS "companyId",
   meta,
   ip,
   created_at  AS "createdAt"
@@ -46,6 +49,8 @@ export async function recordAuditEvent(input: {
   targetId?: string | null
   /** Человекочитаемая подпись цели на момент события: email, имя компьютера. */
   targetLabel?: string | null
+  /** Компания, в которой произошло действие. Пишем с первого дня — план §12.3. */
+  companyId?: string | null
   meta?: Record<string, unknown>
   ip?: string | null
 }): Promise<void> {
@@ -55,14 +60,15 @@ export async function recordAuditEvent(input: {
 
     await query(
       `INSERT INTO admin_audit_log
-         (actor_id, actor_email, action, target_type, target_id, meta, ip)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
+         (actor_id, actor_email, action, target_type, target_id, company_id, meta, ip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
       [
         input.actorId,
         input.actorEmail,
         input.action,
         input.targetType ?? null,
         input.targetId ?? null,
+        input.companyId ?? null,
         JSON.stringify(meta),
         input.ip ?? null,
       ],

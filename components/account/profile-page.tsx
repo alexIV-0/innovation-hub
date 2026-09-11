@@ -132,11 +132,11 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
   }
 
   const inputClass =
-    "h-[46px] w-full rounded-[10px] border border-white/10 bg-surface-1 px-3.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/65 focus:border-primary"
+    "h-[46px] w-full rounded-[10px] border border-foreground/10 bg-surface-1 px-3.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/65 focus:border-primary"
 
   return (
     <main className="flex h-full min-w-0 flex-col overflow-hidden bg-background">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4 md:px-6">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-foreground/[0.07] px-4 md:px-6">
         <div className="text-[13px] text-muted-foreground/90">
           <span
             className="cursor-pointer hover:text-foreground"
@@ -161,7 +161,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
           <p className="mt-2 text-[15px] text-muted-foreground">{tf(t.profileSub, { site: SITE_NAME })}</p>
 
           {/* Cover card */}
-          <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]">
+          <div className="mt-6 overflow-hidden rounded-2xl border border-foreground/10 bg-foreground/[0.02]">
             <div className="h-[100px] bg-gradient-to-br from-primary/25 via-chart-2/20 to-primary/10 md:h-[118px]" />
             <div className="-mt-11 flex flex-wrap items-end gap-5 px-5 pb-6 md:px-7">
               <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-4 border-background bg-gradient-to-br from-primary/90 to-primary text-[28px] font-bold text-primary-foreground md:h-24 md:w-24 md:text-[30px]">
@@ -175,7 +175,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
                   {current.email}
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <span className="rounded-full bg-white/5 px-3 py-1 text-[12.5px] text-secondary-foreground">
+                  <span className="rounded-full bg-foreground/5 px-3 py-1 text-[12.5px] text-secondary-foreground">
                     {isElevated(current.role) ? t.adminBadge : t.memberBadge}
                   </span>
                   <span className="rounded-full border border-success/50 px-3 py-1 text-[12.5px] text-success">
@@ -192,7 +192,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
           {/* Personal info */}
           <form
             onSubmit={profileForm.handleSubmit(onSaveProfile)}
-            className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5 md:p-7"
+            className="mt-6 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-5 md:p-7"
           >
             <h3 className="text-[20px] font-bold md:text-[22px]">
               {t.personalInfo}
@@ -254,7 +254,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
               </p>
             )}
 
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-4 border-t border-white/[0.07] pt-5">
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-4 border-t border-foreground/[0.07] pt-5">
               <span className="mr-auto text-[13px] text-muted-foreground/80">
                 {t.upToDate}
               </span>
@@ -288,7 +288,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
           {/* Password */}
           <form
             onSubmit={passwordForm.handleSubmit(onChangePassword)}
-            className="mt-6 rounded-2xl border border-white/10 bg-white/[0.02] p-5 md:p-7"
+            className="mt-6 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-5 md:p-7"
           >
             <h3 className="text-[20px] font-bold md:text-[22px]">
               {t.changePassword}
@@ -332,7 +332,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end border-t border-white/[0.07] pt-5">
+            <div className="mt-6 flex justify-end border-t border-foreground/[0.07] pt-5">
               <button
                 type="submit"
                 disabled={passwordForm.formState.isSubmitting}

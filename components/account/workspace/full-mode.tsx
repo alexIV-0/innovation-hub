@@ -21,7 +21,7 @@ function NoProjectSelected() {
   if (projectTab === "trash") {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-foreground/10 bg-foreground/[0.04]">
           <Trash2 className="h-7 w-7 text-ws-3" />
         </span>
         <div className="space-y-1.5">
@@ -36,7 +36,7 @@ function NoProjectSelected() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-foreground/10 bg-foreground/[0.04]">
         <FolderOpen className="h-7 w-7 text-ws-3" />
       </span>
       <div className="space-y-1.5">
@@ -83,7 +83,7 @@ export function FullMode() {
               {selected.name}
             </h3>
             {selected.isPaused ? (
-              <span className="flex shrink-0 items-center gap-1 rounded-full border border-white/[0.14] px-2.5 py-[3px] text-[12px] text-ws-3">
+              <span className="flex shrink-0 items-center gap-1 rounded-full border border-foreground/[0.14] px-2.5 py-[3px] text-[12px] text-ws-3">
                 <Pause className="h-3.5 w-3.5" />
                 {t.paused}
               </span>
@@ -112,7 +112,7 @@ export function FullMode() {
 
         {/* Превью выбранного файла живёт в закладке нижней панели и в окне
             быстрого просмотра (пробел), поэтому вся ширина здесь — файлам. */}
-        <div className="relative mt-2.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.07] bg-ws-panel shadow-ws-panel">
+        <div className="relative mt-2.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-foreground/[0.07] bg-ws-panel shadow-ws-panel">
           <FileBrowser
             root={rootFiles}
             path={path}

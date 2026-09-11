@@ -26,6 +26,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { CompanyBrandingPanel } from "@/components/admin/companies/branding-panel"
+import { readBranding } from "@/lib/branding"
 import { slugify } from "@/lib/slug"
 
 /**
@@ -42,6 +44,8 @@ type CompanyRow = {
   title: string
   isActive: boolean
   memberCount: number
+  domain: string | null
+  branding: Record<string, unknown>
 }
 
 type CompanyRole = "member" | "admin" | "owner"
@@ -193,11 +197,23 @@ export function AdminCompanies() {
       </Section>
 
       {selected ? (
-        <CompanyMembers
-          company={selected}
-          onBack={() => setSelectedId(null)}
-          onChanged={load}
-        />
+        <>
+          <CompanyMembers
+            company={selected}
+            onBack={() => setSelectedId(null)}
+            onChanged={load}
+          />
+          <CompanyBrandingPanel
+            key={selected.id}
+            companyId={selected.id}
+            companyTitle={selected.title}
+            initial={{
+              ...readBranding(selected.branding),
+              domain: selected.domain,
+            }}
+            onSaved={load}
+          />
+        </>
       ) : null}
 
       <CreateCompanyDialog

@@ -96,7 +96,7 @@ export function UsersColumn({
   return (
     <section
       style={{ width: size }}
-      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-ws-well"
+      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-foreground/[0.08] bg-ws-well"
     >
       <div className="shrink-0 px-4 pb-3 pt-4">
         <div className="flex items-baseline justify-between gap-2">
@@ -120,7 +120,7 @@ export function UsersColumn({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t.pipelineUserSearch}
-            className="h-[38px] w-full rounded-[9px] border border-white/10 bg-ws-control pl-[34px] pr-3 text-[13px] text-ws-1 outline-none placeholder:text-ws-4 focus:border-ws-select"
+            className="h-[38px] w-full rounded-[9px] border border-foreground/10 bg-ws-control pl-[34px] pr-3 text-[13px] text-ws-1 outline-none placeholder:text-ws-4 focus:border-ws-select"
           />
         </div>
       </div>
@@ -144,7 +144,7 @@ export function UsersColumn({
                   <div
                     className={cn(
                       "mb-1 flex items-start gap-2.5 rounded-[10px] px-2.5 py-2.5",
-                      active ? "bg-ws-hover" : "hover:bg-white/[0.04]",
+                      active ? "bg-ws-hover" : "hover:bg-foreground/[0.04]",
                       // Заблокированный аккаунт и снятый гейт приглушаем: строка
                       // остаётся читаемой, но видно, что обработки по ней нет.
                       !user.isActive || !user.automationEnabled
@@ -161,7 +161,7 @@ export function UsersColumn({
                       onClick={() => void toggle(user)}
                       className={cn(
                         "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40",
-                        user.automationEnabled ? "bg-ws-action" : "bg-white/10",
+                        user.automationEnabled ? "bg-ws-action" : "bg-foreground/10",
                       )}
                     >
                       <span

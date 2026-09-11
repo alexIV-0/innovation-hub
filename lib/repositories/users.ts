@@ -18,7 +18,9 @@ const PUBLIC_USER_FIELDS = `
   COALESCE(balance_cents, 0) AS "balanceCents",
   drive_folder_id AS "driveFolderId",
   COALESCE(must_change_password, FALSE) AS "mustChangePassword",
-  COALESCE(automation_enabled, FALSE) AS "automationEnabled"
+  COALESCE(automation_enabled, FALSE) AS "automationEnabled",
+  company_id AS "companyId",
+  company_role AS "companyRole"
 `
 
 const FULL_USER_FIELDS = `

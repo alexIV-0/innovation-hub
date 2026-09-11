@@ -3,6 +3,7 @@
 import {
   ArrowLeftRight,
   Building2,
+  Palette,
   FolderTree,
   Gift,
   TriangleAlert,
@@ -221,6 +222,30 @@ export const ACTION_META: Record<
     labelKey: "auditCompanyDeleted",
     icon: Trash2,
     tone: "danger",
+  },
+  // Вторая ось прав (план §4). «access» — как у сайтовых собратьев: это раздача
+  // полномочий, а не правка профиля.
+  "company.role_changed": {
+    labelKey: "auditCompanyRoleChanged",
+    icon: ShieldCheck,
+    tone: "access",
+  },
+  "company.capability_granted": {
+    labelKey: "auditCompanyCapabilityGranted",
+    icon: ShieldCheck,
+    tone: "access",
+  },
+  "company.capability_revoked": {
+    labelKey: "auditCompanyCapabilityRevoked",
+    icon: ShieldCheck,
+    tone: "access",
+  },
+  // «neutral»: оформление не раздаёт доступ. Домен — исключение по весу, но
+  // отдельным действием он не пишется: экран у них один.
+  "company.branding_changed": {
+    labelKey: "auditCompanyBrandingChanged",
+    icon: Palette,
+    tone: "neutral",
   },
 }
 

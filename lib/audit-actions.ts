@@ -76,6 +76,15 @@ export const AUDIT_ACTIONS = [
   "company.enabled",
   "company.disabled",
   "company.deleted",
+  // Консоль компании (план §6). Пишутся отдельно от сайтовых `user.role_changed`
+  // и `capability.*`: это вторая ось прав, и смешивать их в ленте значило бы
+  // прятать «кто стал владельцем компании» среди смен ролей на сайте.
+  "company.role_changed",
+  "company.capability_granted",
+  "company.capability_revoked",
+  // Оформление: акцент, логотип, домен. Пишется, потому что смена домена
+  // меняет то, что видит человек на странице входа, ещё не войдя.
+  "company.branding_changed",
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

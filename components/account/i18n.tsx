@@ -684,6 +684,126 @@ export const dict = {
       "На кошельке компании есть движение денег — удаление стёрло бы ленту",
     companyDeleteHasDependents:
       "Кошелёк компании ещё за кого-то платит — сначала переведите их",
+
+    // ─── Оформление компании ───
+    brandTitle: "Оформление",
+    brandSub:
+      "Акцент, значок и адрес компании. Тему — светлую или тёмную — выбирает сам человек, компания задаёт только акцент.",
+    brandAccent: "Акцент",
+    brandAccentHint:
+      "Слева образец для светлой темы, справа для тёмной. «Свой цвет» — задать пару самому.",
+    brandCustom: "Свой цвет",
+    brandForLight: "Для светлой темы",
+    brandForDark: "Для тёмной темы",
+    brandSample: "Кнопка",
+    brandContrastOk: "Контраст {ratio}:1 — читается",
+    brandContrastLow: "Контраст {ratio}:1, нужно от {min}:1",
+    brandContrastFix: "Подобрать",
+    brandContrastFail: "Цвет не проходит по контрасту — подпись на кнопке не прочитается",
+    brandContrastHopeless:
+      "Этот оттенок не читается ни при какой светлоте — поменяйте цвет",
+    brandLogoUpload: "Загрузить файл",
+    brandLogoClear: "Убрать",
+    brandLogoPending: "Файл выбран — загрузится при сохранении.",
+    brandLogoFailed: "Не удалось загрузить логотип",
+    brandLogoType: "Подойдёт PNG, JPEG или WebP",
+    brandMonogram: "Монограмма",
+    brandMonogramHint: "Две буквы на значке. Пусто — считаем из названия.",
+    brandLogo: "Логотип",
+    brandLogoHint:
+      "PNG, JPEG или WebP. Пусто — рисуем монограмму. SVG пока не принимаем: в нём может лежать скрипт, а отдаём мы файл со своего адреса.",
+    brandDomain: "Домен",
+    brandDomainHint:
+      "По нему страница входа покажет оформление компании. Пусто — общий адрес.",
+    brandDomainTaken: "Этот домен уже занят другой компанией",
+
+    // ─── Тема оформления ───
+    themeTitle: "Оформление",
+    themeSystem: "Как в системе",
+    themeLight: "Светлая",
+    themeDark: "Тёмная",
+
+    // ─── Консоль компании (/company) ───
+    coConsole: "Компания",
+    coSwitch: "Компания:",
+    coPeople: "Люди",
+    coPeopleDesc: "Сотрудники компании и кто за кого отвечает.",
+    coRoles: "Права",
+    coRolesDesc: "Кто чем распоряжается внутри компании.",
+    coWallet: "Кошелёк",
+    coWalletDesc: "Остаток компании, лента расходов и подарки.",
+    coStatistics: "Статистика",
+    coStatisticsDesc: "Работа компании: файлы, задачи и расходы по сотрудникам.",
+    coKeys: "Ключи сервисов",
+    coKeysDesc: "Учётки внешних сервисов, общие для сотрудников компании.",
+    coAudit: "Журнал",
+    coAuditDesc: "Что происходило в компании и кто это сделал.",
+    coRoleMember: "Участник",
+    coRoleAdmin: "Админ",
+    coRoleOwner: "Владелец",
+    coEmpty: "Пока пусто",
+    coSaved: "Сохранено",
+    coSaveFailed: "Не удалось сохранить",
+    coLoadFailed: "Не удалось загрузить",
+
+    // Люди
+    coPeopleTitle: "Сотрудники",
+    coPeopleSub:
+      "Все, кто числится в компании. Роль в компании не связана с ролью на сайте.",
+    coPeopleRole: "Роль в компании",
+    coPeopleLastOwner: "Нельзя снять последнего владельца",
+    coPeopleSelfRole: "Свою роль в компании не меняют",
+    coPeopleSuspended: "Заблокирован",
+
+    // Права
+    coRolesTitle: "Права в компании",
+    coRolesSub:
+      "Владельцу открыто всё. Админу — только то, что ему выдали. Выдать можно лишь то, что есть у вас самих.",
+    coRolesNoAdmins: "Админов в компании пока нет",
+    coRolesBeyond: "Нельзя выдать право, которого нет у вас самих",
+    coCapWallet: "Кошелёк",
+    coCapStatistics: "Статистика",
+    coCapPeople: "Люди",
+    coCapRoles: "Права",
+    coCapKeys: "Ключи сервисов",
+    coRolesOwnerAll: "Владельцу открыто всё — галочки ему не выдаются",
+
+    // Кошелёк
+    coWalletTitle: "Кошелёк компании",
+    coWalletSub:
+      "С него списываются расходы за работу всех сотрудников компании. Сами они денег не видят.",
+    coWalletOwn: "Свои средства",
+    coWalletGift: "Подарки",
+    coWalletReserved: "В резерве",
+    coWalletAvailable: "Доступно",
+    coWalletReservedHint:
+      "Оценка задач, которые уже в работе у сотрудников. Спишется по завершении.",
+    coWalletLedger: "Лента расходов",
+    coWalletLedgerEmpty: "Движения средств ещё не было",
+    coWalletPayers: "За кого платит компания",
+    coWalletTopup: "Пополнение",
+    coWalletTopupHint:
+      "Пополнение кошелька компании делает администратор сайта — напишите нам.",
+
+    // Журнал
+    coAuditTitle: "Журнал компании",
+    coAuditSub: "Только события этой компании. Виден всем её админам.",
+    coAuditEmpty: "Событий пока не было",
+    coAuditMore: "Показать ещё",
+
+    // Ключи
+    coKeysTitle: "Ключи внешних сервисов",
+    coKeysSub:
+      "Учётки компании: сотрудники видят их метки при настройке узла, но не сами ключи.",
+    coKeysEmpty: "Учёток компании пока нет",
+    coKeysLabel: "Метка",
+    coKeysService: "Сервис",
+    coKeysHint:
+      "Порядок поиска учётки: своя у сотрудника → компании → платформенная.",
+
+    // Статистика
+    coStatsTitle: "Статистика компании",
+    coStatsSub: "Работа всех сотрудников компании, с разрезом по людям.",
     promoGrantToPayer:
       "За этого человека платит {who}: подарок ляжет на кошелёк плательщика и будет действовать только в выбранных проектах",
     promoProjectsRequired:
@@ -2301,6 +2421,125 @@ export const dict = {
       "This company's wallet has money history — deleting it would erase the ledger",
     companyDeleteHasDependents:
       "This company's wallet still pays for someone — reassign them first",
+
+    // ─── Company branding ───
+    brandTitle: "Branding",
+    brandSub:
+      "Accent, badge and address. Light or dark is the person's own choice; a company sets only the accent.",
+    brandAccent: "Accent",
+    brandAccentHint:
+      "Left swatch is for the light theme, right one for the dark. \"Custom\" lets you set the pair yourself.",
+    brandCustom: "Custom",
+    brandForLight: "For the light theme",
+    brandForDark: "For the dark theme",
+    brandSample: "Button",
+    brandContrastOk: "Contrast {ratio}:1 — readable",
+    brandContrastLow: "Contrast {ratio}:1, needs at least {min}:1",
+    brandContrastFix: "Adjust",
+    brandContrastFail: "This colour fails the contrast check — button text would be unreadable",
+    brandContrastHopeless: "This hue is unreadable at any lightness — pick another colour",
+    brandLogoUpload: "Upload a file",
+    brandLogoClear: "Remove",
+    brandLogoPending: "File chosen — it uploads when you save.",
+    brandLogoFailed: "Could not upload the logo",
+    brandLogoType: "Use a PNG, JPEG or WebP image",
+    brandMonogram: "Monogram",
+    brandMonogramHint: "Two letters on the badge. Empty — derived from the title.",
+    brandLogo: "Logo",
+    brandLogoHint:
+      "PNG, JPEG or WebP. Empty — the monogram is drawn instead. SVG is not accepted yet: it can carry a script, and we serve the file from our own origin.",
+    brandDomain: "Domain",
+    brandDomainHint:
+      "The sign-in page at this address shows the company's branding. Empty — the shared address.",
+    brandDomainTaken: "This domain already belongs to another company",
+
+    // ─── Theme ───
+    themeTitle: "Appearance",
+    themeSystem: "Match system",
+    themeLight: "Light",
+    themeDark: "Dark",
+
+    // ─── Company console (/company) ───
+    coConsole: "Company",
+    coSwitch: "Company:",
+    coPeople: "People",
+    coPeopleDesc: "Company staff and who is responsible for whom.",
+    coRoles: "Rights",
+    coRolesDesc: "Who controls what inside the company.",
+    coWallet: "Wallet",
+    coWalletDesc: "Company balance, spending feed and grants.",
+    coStatistics: "Statistics",
+    coStatisticsDesc: "Company work: files, tasks and spending per person.",
+    coKeys: "Service keys",
+    coKeysDesc: "External service accounts shared by company staff.",
+    coAudit: "Audit log",
+    coAuditDesc: "What happened in the company and who did it.",
+    coRoleMember: "Member",
+    coRoleAdmin: "Admin",
+    coRoleOwner: "Owner",
+    coEmpty: "Nothing here yet",
+    coSaved: "Saved",
+    coSaveFailed: "Could not save",
+    coLoadFailed: "Could not load",
+
+    // People
+    coPeopleTitle: "Staff",
+    coPeopleSub:
+      "Everyone in this company. A company role is independent from the site role.",
+    coPeopleRole: "Company role",
+    coPeopleLastOwner: "The last owner cannot be demoted",
+    coPeopleSelfRole: "You cannot change your own company role",
+    coPeopleSuspended: "Suspended",
+
+    // Rights
+    coRolesTitle: "Rights in the company",
+    coRolesSub:
+      "The owner has everything. An admin has only what was granted. You can only grant what you have yourself.",
+    coRolesNoAdmins: "No company admins yet",
+    coRolesBeyond: "You cannot grant a right you don't have yourself",
+    coCapWallet: "Wallet",
+    coCapStatistics: "Statistics",
+    coCapPeople: "People",
+    coCapRoles: "Rights",
+    coCapKeys: "Service keys",
+    coRolesOwnerAll: "The owner has everything — no checkboxes are granted",
+
+    // Wallet
+    coWalletTitle: "Company wallet",
+    coWalletSub:
+      "Work by every person in the company is charged here. They see no money themselves.",
+    coWalletOwn: "Own funds",
+    coWalletGift: "Grants",
+    coWalletReserved: "Reserved",
+    coWalletAvailable: "Available",
+    coWalletReservedHint:
+      "Estimate for tasks already running for staff. Charged on completion.",
+    coWalletLedger: "Spending feed",
+    coWalletLedgerEmpty: "No money has moved yet",
+    coWalletPayers: "Who the company pays for",
+    coWalletTopup: "Top up",
+    coWalletTopupHint:
+      "The company wallet is topped up by a site administrator — get in touch.",
+
+    // Audit
+    coAuditTitle: "Company audit log",
+    coAuditSub: "Only this company's events. Visible to all of its admins.",
+    coAuditEmpty: "No events yet",
+    coAuditMore: "Show more",
+
+    // Keys
+    coKeysTitle: "External service keys",
+    coKeysSub:
+      "Company accounts: staff see their labels when configuring a node, never the keys.",
+    coKeysEmpty: "No company accounts yet",
+    coKeysLabel: "Label",
+    coKeysService: "Service",
+    coKeysHint:
+      "Account lookup order: the person's own → the company's → the platform's.",
+
+    // Statistics
+    coStatsTitle: "Company statistics",
+    coStatsSub: "Work by everyone in the company, broken down per person.",
     promoGrantToPayer:
       "{who} pays for this person: the gift goes to the payer's wallet and works only in the selected projects",
     promoProjectsRequired:

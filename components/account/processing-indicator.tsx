@@ -150,8 +150,8 @@ export function ProcessingIndicator({ className }: { className?: string }) {
         className={cn(
           "flex items-center gap-1.5 rounded-[9px] border px-2.5 py-1.5 text-[13px] transition-colors",
           open
-            ? "border-white/15 bg-white/[0.07] text-ws-1"
-            : "border-transparent text-ws-2 hover:bg-white/5 hover:text-ws-1",
+            ? "border-foreground/15 bg-foreground/[0.07] text-ws-1"
+            : "border-transparent text-ws-2 hover:bg-foreground/5 hover:text-ws-1",
         )}
       >
         {live > 0 ? (
@@ -172,7 +172,7 @@ export function ProcessingIndicator({ className }: { className?: string }) {
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-[calc(100%+7px)] z-30 max-h-[min(60vh,520px)] w-[min(340px,calc(100vw-2rem))] overflow-y-auto rounded-[13px] border border-white/[0.09] bg-surface-1 py-1 shadow-[0_16px_40px_rgba(0,0,0,0.5)]">
+        <div className="absolute right-0 top-[calc(100%+7px)] z-30 max-h-[min(60vh,520px)] w-[min(340px,calc(100vw-2rem))] overflow-y-auto rounded-[13px] border border-foreground/[0.09] bg-surface-1 py-1 shadow-[0_16px_40px_rgba(0,0,0,0.5)]">
           {tasks.map((task) => (
             <Row
               key={task.id}
@@ -232,7 +232,7 @@ function Row({
     <Link
       href={hrefFor(task)}
       onClick={onOpen}
-      className="block border-b border-white/[0.05] px-3 py-2 last:border-b-0 hover:bg-white/[0.04]">
+      className="block border-b border-foreground/[0.05] px-3 py-2 last:border-b-0 hover:bg-foreground/[0.04]">
       <div className="flex items-center gap-2">
         <StatusIcon status={task.status} />
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">
@@ -268,7 +268,7 @@ function Row({
 
       {task.status === "running" ? (
         <div className="ml-[22px] mt-1.5 flex items-center gap-1.5">
-          <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/[0.08]">
+          <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-foreground/[0.08]">
             <span
               className="block h-full rounded-full bg-primary/90 transition-[width] duration-500"
               style={{ width: `${percent}%` }}

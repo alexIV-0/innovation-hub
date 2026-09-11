@@ -48,7 +48,7 @@ export function ProjectsColumn() {
   return (
     <section
       style={{ width: size }}
-      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-ws-well"
+      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-foreground/[0.08] bg-ws-well"
     >
       <div className="shrink-0 px-4 pb-3 pt-4">
         <div className="flex items-baseline justify-between gap-2">
@@ -72,7 +72,7 @@ export function ProjectsColumn() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t.searchProjects}
-            className="h-[38px] w-full rounded-[9px] border border-white/10 bg-ws-control pl-[34px] pr-3 text-[13px] text-ws-1 outline-none placeholder:text-ws-4 focus:border-ws-select"
+            className="h-[38px] w-full rounded-[9px] border border-foreground/10 bg-ws-control pl-[34px] pr-3 text-[13px] text-ws-1 outline-none placeholder:text-ws-4 focus:border-ws-select"
           />
         </div>
       </div>
@@ -105,11 +105,11 @@ export function ProjectsColumn() {
       </div>
 
       {isTrash ? (
-        <p className="shrink-0 border-t border-white/[0.07] px-4 py-3 text-[11.5px] leading-relaxed text-ws-5">
+        <p className="shrink-0 border-t border-foreground/[0.07] px-4 py-3 text-[11.5px] leading-relaxed text-ws-5">
           {tf(t.trashRetention, { days: TRASH_RETENTION_DAYS })}
         </p>
       ) : source.can.createProject ? (
-        <div className="shrink-0 border-t border-white/[0.07] p-3">
+        <div className="shrink-0 border-t border-foreground/[0.07] p-3">
           <button
             type="button"
             onClick={createProject}

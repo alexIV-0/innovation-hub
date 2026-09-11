@@ -124,7 +124,7 @@ export function ExposedOptionsList({ options, onSave, className }: Props) {
           {t.optionsHeading}
         </p>
 
-        <ul className="divide-y divide-white/[0.07]">
+        <ul className="divide-y divide-foreground/[0.07]">
           {options.map((option) => {
             const key = optionKey(option)
             // Аккаунт площадки и цель публикации рисуются своим контролом,

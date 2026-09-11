@@ -188,7 +188,7 @@ export function Breadcrumbs({
             type="button"
             onClick={() => onNavigate(path.slice(0, c.depth))}
             className={cn(
-              "rounded-md px-1.5 py-0.5 text-[12px] hover:bg-white/5",
+              "rounded-md px-1.5 py-0.5 text-[12px] hover:bg-foreground/5",
               i === crumbs.length - 1 ? "text-ws-2" : "text-ws-4",
             )}
           >
@@ -287,7 +287,7 @@ function FileRow({
       onDoubleClick={onPreview}
       onContextMenu={onContext}
       className={cn(
-        "flex w-full select-none items-center border text-left transition-opacity hover:bg-white/5",
+        "flex w-full select-none items-center border text-left transition-opacity hover:bg-foreground/5",
         isCut(file.id) && "opacity-45",
         roomy
           ? "gap-3.5 rounded-[14px] p-[13px]"
@@ -296,11 +296,11 @@ function FileRow({
           ? "border-ws-accent/55 bg-ws-accent/[0.14]"
           : isSelected
             ? "border-ws-select/50 bg-ws-select/[0.16]"
-            : "border-white/[0.07] bg-ws-control",
+            : "border-foreground/[0.07] bg-ws-control",
       )}
     >
       {roomy ? (
-        <span className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-ws-control">
+        <span className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-foreground/[0.08] bg-ws-control">
           <Icon className={cn("h-6 w-6", fileIconClass(file))} />
         </span>
       ) : (
@@ -365,7 +365,7 @@ function FileCard({
       onContextMenu={onContext}
       className={cn(
         // relative — под отметку обработки в правом верхнем углу плитки.
-        "relative select-none border bg-ws-control text-left transition-opacity hover:border-white/[0.18]",
+        "relative select-none border bg-ws-control text-left transition-opacity hover:border-foreground/[0.18]",
         isCut(file.id) && "opacity-45",
         roomy
           ? "flex items-center gap-3 rounded-2xl p-[18px]"
@@ -374,11 +374,11 @@ function FileCard({
           ? "border-ws-accent/70"
           : isSelected
             ? "border-ws-select"
-            : "border-white/10",
+            : "border-foreground/10",
       )}
     >
       {roomy ? (
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/[0.04]">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.04]">
           <Icon className={cn("h-[26px] w-[26px]", fileIconClass(file))} />
         </span>
       ) : (
@@ -446,7 +446,7 @@ function FileColumn({
       onContextMenu={(e) => openMenu("empty", e, { target: colTarget })}
       {...drop.handlers}
       className={cn(
-        "relative shrink-0 border-r border-white/[0.07] transition-colors",
+        "relative shrink-0 border-r border-foreground/[0.07] transition-colors",
         size === "roomy" ? "w-[212px]" : "w-[190px]",
         drop.active && "outline outline-2 -outline-offset-2 outline-ws-select",
         !drop.active && isMenuHere && "bg-ws-accent/[0.07] outline outline-1 -outline-offset-1 outline-ws-accent/40",
@@ -488,7 +488,7 @@ function FileColumn({
                   }
                 }}
                 className={cn(
-                  "mb-0.5 flex w-full select-none items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-left transition-opacity hover:bg-white/5",
+                  "mb-0.5 flex w-full select-none items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-left transition-opacity hover:bg-foreground/5",
                   ws.isCut(f.id) && "opacity-45",
                   isMenuTarget
                     ? "bg-ws-accent/[0.18] text-ws-1 ring-1 ring-ws-accent/55"

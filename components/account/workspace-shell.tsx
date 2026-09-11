@@ -1,5 +1,4 @@
 "use client"
-import { SITE_NAME } from "@/lib/site"
 import { isElevated } from "@/lib/admin-roles"
 import { useDisabledAdminTools } from "@/components/admin/shell/features-context"
 
@@ -8,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useState } from "react"
 import {
   Archive,
+  Building2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -28,6 +28,8 @@ import type { UserRole } from "@/lib/domain-types"
 import { BalanceWidget } from "@/components/account/balance-widget"
 import { isKeysPath } from "@/components/account/keys/keys-shell"
 import { ResizeGrip } from "@/components/account/resize-grip"
+import { useBranding } from "@/components/branding/branding-context"
+import { ThemeSwitch } from "@/components/account/theme-switch"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { useProjectCounts } from "@/components/account/use-project-counts"
 import { useAdminChatUnread } from "@/components/admin/use-admin-chat-unread"
@@ -75,6 +77,13 @@ export type WorkspaceUser = {
   /** Теги админа: по ним фильтруется свёртка «Админка» в боковом меню. */
   capabilities: AdminCapability[]
   balanceCents: number
+  /**
+   * Пускать ли в консоль компании (/company). Готовый ответ, а не роль с
+   * тегами: «видит ли он консоль» решает гейт на сервере
+   * (lib/company-auth.ts), и повторять это правило в меню значило бы завести
+   * второй источник правды — он однажды разойдётся с первым.
+   */
+  hasCompanyConsole?: boolean
 }
 
 type ShellProps = WorkspaceUser & {
@@ -120,7 +129,7 @@ function NavItem({
         nested && !collapsed && "py-2 text-[13px]",
         active
           ? "bg-primary/15 text-foreground"
-          : "text-secondary-foreground hover:bg-white/5 hover:text-foreground",
+          : "text-secondary-foreground hover:bg-foreground/5 hover:text-foreground",
         dimmed && "opacity-45",
       )}
     >
@@ -172,6 +181,7 @@ function SidebarContent({
   const router = useRouter()
   const { t, lang, setLang } = useI18n()
   const disabledAdminTools = useDisabledAdminTools()
+  const branding = useBranding()
   const initials = avatarInitials(user.fullName, user.email)
 
   const counts = useProjectCounts()
@@ -213,9 +223,20 @@ function SidebarContent({
           onClick={onToggle}
           title={collapsed ? t.sidebarExpand : t.sidebarCollapse}
           aria-label={collapsed ? t.sidebarExpand : t.sidebarCollapse}
-          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[9px] border border-primary/40 bg-gradient-to-br from-primary/25 to-primary/10 text-[12px] font-bold tracking-wide text-primary/90"
+          className="flex h-[34px] w-[34px] shrink-0 items-center justify-center overflow-hidden rounded-[9px] border border-primary/40 bg-gradient-to-br from-primary/25 to-primary/10 text-[12px] font-bold tracking-wide text-primary/90"
         >
-          FF
+          {/* Монограмма, а не литерал «FF»: у компании она своя. Логотип, если
+              задан, вытесняет буквы целиком. */}
+          {branding.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={branding.logoUrl}
+              alt={branding.name}
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            branding.monogram
+          )}
         </button>
         {collapsed ? (
           onToggle ? (
@@ -224,7 +245,7 @@ function SidebarContent({
               onClick={onToggle}
               title={t.sidebarExpand}
               aria-label={t.sidebarExpand}
-              className="flex h-[22px] w-[34px] shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              className="flex h-[22px] w-[34px] shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -232,7 +253,7 @@ function SidebarContent({
         ) : (
           <>
             <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-foreground">
-              {SITE_NAME}
+              {branding.name}
             </span>
             {onToggle && (
               <button
@@ -240,7 +261,7 @@ function SidebarContent({
                 onClick={onToggle}
                 title={t.sidebarCollapse}
                 aria-label={t.sidebarCollapse}
-                className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -285,7 +306,7 @@ function SidebarContent({
                   action={
                     <button
                       type="button"
-                      className="shrink-0 rounded-lg bg-white/10 px-2.5 py-1 text-[12px] text-foreground hover:bg-white/[0.18]"
+                      className="shrink-0 rounded-lg bg-foreground/10 px-2.5 py-1 text-[12px] text-foreground hover:bg-foreground/[0.18]"
                     >
                       {t.topup}
                     </button>
@@ -354,6 +375,21 @@ function SidebarContent({
         <div className="flex-1" />
 
         <nav className="flex shrink-0 flex-col gap-1 px-3 pb-2">
+          {/* Консоль компании — над админкой и отдельно от неё: это разные оси
+              прав (COMPANY_ACCOUNTS_PLAN.md §4). Сотрудник компании обычно
+              обычный пользователь на сайте, и админского блока ниже у него нет
+              вовсе; суперадмин увидит оба, и спутать их нечем — подписи разные. */}
+          {user.hasCompanyConsole && (
+            <div onClick={onNavigate}>
+              <NavItem
+                href="/company"
+                active={pathname === "/company" || pathname.startsWith("/company/")}
+                collapsed={collapsed}
+                icon={<Building2 className="h-5 w-5" />}
+                label={t.coConsole}
+              />
+            </div>
+          )}
           {isElevated(user.role) && (
             <div className="flex flex-col gap-0.5">
               {/* Отбивка: админская зона отделена от рабочего места.
@@ -363,7 +399,7 @@ function SidebarContent({
                   переходом и прятала половину админки от глаз. */}
               <div
                 className={cn(
-                  "mb-1 h-px bg-white/10",
+                  "mb-1 h-px bg-foreground/10",
                   collapsed ? "mx-1" : "mx-2.5",
                 )}
               />
@@ -400,10 +436,16 @@ function SidebarContent({
         </nav>
       </div>
 
+      {/* Тема — рядом с языком: оба про то, как человек смотрит на сайт, а не
+          про его работу. Искать их будут в одном месте. */}
+      <div className={cn("shrink-0 px-3 pt-2.5", collapsed && "px-2")}>
+        <ThemeSwitch collapsed={collapsed} />
+      </div>
+
       <div className={cn("shrink-0 px-3 pt-2.5", collapsed && "px-2")}>
         <div
           className={cn(
-            "flex gap-1 rounded-[9px] border border-white/10 bg-surface-1 p-[3px]",
+            "flex gap-1 rounded-[9px] border border-foreground/10 bg-surface-1 p-[3px]",
             collapsed ? "flex-col" : "flex-row",
           )}
         >
@@ -433,7 +475,7 @@ function SidebarContent({
             "flex items-center gap-2.5 rounded-xl border p-2.5",
             isProfile
               ? "border-primary/40 bg-primary/10"
-              : "border-white/10 bg-transparent",
+              : "border-foreground/10 bg-transparent",
             collapsed && "justify-center p-1.5",
           )}
         >
@@ -464,7 +506,7 @@ function SidebarContent({
               type="button"
               title={t.logout}
               onClick={signOut}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-muted-foreground/90 hover:bg-white/10 hover:text-foreground"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] text-muted-foreground/90 hover:bg-foreground/10 hover:text-foreground"
             >
               <LogOut className="h-[18px] w-[18px]" />
             </button>
@@ -481,6 +523,7 @@ function WorkspaceShellInner({
   role,
   capabilities,
   balanceCents,
+  hasCompanyConsole,
   children,
 }: ShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -490,8 +533,10 @@ function WorkspaceShellInner({
     role,
     capabilities,
     balanceCents,
+    hasCompanyConsole,
   }
   const { t } = useI18n()
+  const branding = useBranding()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -529,7 +574,7 @@ function WorkspaceShellInner({
             ? t.profileTitle
             : pathname.startsWith("/admin")
               ? t.adminPanel
-              : SITE_NAME
+              : branding.name
 
   return (
     <div
@@ -539,7 +584,7 @@ function WorkspaceShellInner({
       {/* Desktop sidebar */}
       <aside
         style={{ width: sidebarWidth }}
-        className="relative hidden shrink-0 flex-col overflow-hidden border-r border-white/[0.08] bg-sidebar lg:flex"
+        className="relative hidden shrink-0 flex-col overflow-hidden border-r border-foreground/[0.08] bg-sidebar lg:flex"
       >
         <SidebarContent
           user={user}
@@ -558,7 +603,7 @@ function WorkspaceShellInner({
 
       {/* Mobile top bar */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex h-[58px] shrink-0 items-center gap-2.5 border-b border-white/[0.07] bg-sidebar px-3 lg:hidden">
+        <div className="flex h-[58px] shrink-0 items-center gap-2.5 border-b border-foreground/[0.07] bg-sidebar px-3 lg:hidden">
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
@@ -585,14 +630,14 @@ function WorkspaceShellInner({
           onClick={() => setDrawerOpen(false)}
         >
           <div
-            className="flex h-full w-[274px] max-w-[82%] flex-col border-r border-white/10 bg-sidebar"
+            className="flex h-full w-[274px] max-w-[82%] flex-col border-r border-foreground/10 bg-sidebar"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-end p-2">
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-white/5"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/5"
               >
                 <X className="h-5 w-5" />
               </button>

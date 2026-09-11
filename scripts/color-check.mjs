@@ -62,6 +62,21 @@ const EXCEPTIONS = new Map([
 
 const COLOR = /[a-z][a-z-]*-\[(#[0-9a-fA-F]{3,8}|rgba?\([^\]]*\)|hsl\([^\]]*\))\]/g
 
+/**
+ * Полупрозрачный БЕЛЫЙ — `bg-white/5`, `border-white/[0.07]`.
+ *
+ * На тёмной теме это законный приём (UI_GUIDE §4), и раньше он был вне долга.
+ * Со светлой темой он становится тем же самым классом ошибки, что и hex: белое
+ * на белом просто исчезает, и переключателем это не чинится. Замена —
+ * `foreground` с той же альфой: на тёмном он почти белый, на светлом почти
+ * чёрный, то есть «оверлей цветом текста» в обеих темах.
+ *
+ * Голый `text-white` и `fill-white` (без слэша) НЕ нарушение: это текст на
+ * цветном фоне — кнопке, значке, плашке, — и он верен в любой теме. Поэтому
+ * слэш в шаблоне обязателен.
+ */
+const WHITE_ALPHA = /\b(?:bg|border|divide|text|ring|from|to|via|shadow|outline|stroke|fill)-white\//g
+
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
@@ -78,9 +93,10 @@ for (const zone of ZONES) {
     const rel = relative(root, file)
     const text = readFileSync(file, "utf8")
     // `var(--token)` внутри значения — это токен, а не хардкод.
-    const hits = [...text.matchAll(COLOR)].filter(
-      (hit) => !hit[0].includes("var(--"),
-    )
+    const hits = [
+      ...[...text.matchAll(COLOR)].filter((hit) => !hit[0].includes("var(--")),
+      ...text.matchAll(WHITE_ALPHA),
+    ].sort((a, b) => a.index - b.index)
     if (hits.length === 0) continue
     if (EXCEPTIONS.has(rel)) {
       allowed += hits.length

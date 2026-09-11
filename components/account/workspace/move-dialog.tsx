@@ -117,7 +117,7 @@ export function MoveDialog() {
         aria-describedby={undefined}
         className="max-w-2xl border-border/60 bg-ws-raised p-0"
       >
-        <DialogHeader className="border-b border-white/[0.07] px-5 py-4">
+        <DialogHeader className="border-b border-foreground/[0.07] px-5 py-4">
           <DialogTitle className="text-[16px] font-semibold text-ws-1">
             {t.moveTitle}
             {count > 1 ? ` (${count})` : ""}
@@ -125,7 +125,7 @@ export function MoveDialog() {
         </DialogHeader>
 
         <div className="flex h-[340px] min-h-0">
-          <div className="scrollbar-elegant w-[200px] shrink-0 overflow-y-auto border-r border-white/[0.07] p-2">
+          <div className="scrollbar-elegant w-[200px] shrink-0 overflow-y-auto border-r border-foreground/[0.07] p-2">
             {projects
               .filter((p) => !p.isArchived)
               .map((p) => (
@@ -137,7 +137,7 @@ export function MoveDialog() {
                     "mb-0.5 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px]",
                     p.id === pickedProjectId
                       ? "bg-ws-select/[0.18] text-ws-1"
-                      : "text-ws-2 hover:bg-white/5",
+                      : "text-ws-2 hover:bg-foreground/5",
                   )}
                 >
                   <FolderOpen className="h-4 w-4 shrink-0 text-ws-4" />
@@ -147,12 +147,12 @@ export function MoveDialog() {
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex flex-none flex-wrap items-center gap-1 border-b border-white/[0.07] px-3 py-2">
+            <div className="flex flex-none flex-wrap items-center gap-1 border-b border-foreground/[0.07] px-3 py-2">
               <button
                 type="button"
                 onClick={() => setPath([])}
                 className={cn(
-                  "rounded-md px-1.5 py-0.5 text-[12px] hover:bg-white/5",
+                  "rounded-md px-1.5 py-0.5 text-[12px] hover:bg-foreground/5",
                   path.length === 0 ? "text-ws-2" : "text-ws-4",
                 )}
               >
@@ -165,7 +165,7 @@ export function MoveDialog() {
                     type="button"
                     onClick={() => setPath(path.slice(0, i + 1))}
                     className={cn(
-                      "rounded-md px-1.5 py-0.5 text-[12px] hover:bg-white/5",
+                      "rounded-md px-1.5 py-0.5 text-[12px] hover:bg-foreground/5",
                       i === path.length - 1 ? "text-ws-2" : "text-ws-4",
                     )}
                   >
@@ -191,7 +191,7 @@ export function MoveDialog() {
                     type="button"
                     disabled={movedIds.has(f.id)}
                     onClick={() => setPath([...path, f])}
-                    className="mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] text-ws-2 hover:bg-white/5 disabled:opacity-40"
+                    className="mb-0.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] text-ws-2 hover:bg-foreground/5 disabled:opacity-40"
                   >
                     <Folder className="h-[18px] w-[18px] shrink-0 text-ws-2" />
                     <span className="min-w-0 flex-1 truncate">{f.name}</span>
@@ -203,7 +203,7 @@ export function MoveDialog() {
           </div>
         </div>
 
-        <DialogFooter className="flex-col items-stretch gap-2 border-t border-white/[0.07] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <DialogFooter className="flex-col items-stretch gap-2 border-t border-foreground/[0.07] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="min-w-0 flex-1 truncate text-[12.5px] text-ws-4">
             {blockedReason ?? `${t.moveDestination}: ${destFolderPath || "/"}`}
           </p>

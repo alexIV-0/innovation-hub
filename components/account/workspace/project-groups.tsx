@@ -83,7 +83,7 @@ function GroupHeader({
       >
         {label}
       </span>
-      <span className="h-px flex-1 bg-white/[0.07]" />
+      <span className="h-px flex-1 bg-foreground/[0.07]" />
       <span
         className={cn("tabular-nums text-ws-4", page ? "text-[13px]" : "text-[12px]")}
       >

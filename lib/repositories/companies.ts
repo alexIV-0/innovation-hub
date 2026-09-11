@@ -49,6 +49,56 @@ export async function findCompanyById(id: string): Promise<CompanyRecord | null>
   return result.rows[0] ?? null
 }
 
+/**
+ * Компания по домену — оформление страницы входа (THEMING_PLAN §6.4).
+ *
+ * Только активная: выключенная компания не должна брендировать чужой вход, а
+ * человек по её адресу увидит обычную установку.
+ */
+export async function findCompanyByDomain(
+  domain: string,
+): Promise<CompanyRecord | null> {
+  const result = await query<CompanyRecord>(
+    `SELECT ${COMPANY_FIELDS} FROM companies WHERE lower(domain) = lower($1) AND is_active`,
+    [domain],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function setCompanyBranding(input: {
+  companyId: string
+  branding: Record<string, unknown>
+}): Promise<CompanyRecord | null> {
+  const result = await query<CompanyRecord>(
+    `UPDATE companies
+        SET branding = $2::jsonb, updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${COMPANY_FIELDS}`,
+    [input.companyId, JSON.stringify(input.branding)],
+  )
+  return result.rows[0] ?? null
+}
+
+export async function setCompanyDomain(input: {
+  companyId: string
+  domain: string | null
+}): Promise<{ ok: true } | { ok: false; reason: "domain-taken" | "not-found" }> {
+  try {
+    const result = await query(
+      `UPDATE companies SET domain = $2, updated_at = NOW() WHERE id = $1`,
+      [input.companyId, input.domain],
+    )
+    return (result.rowCount ?? 0) > 0
+      ? { ok: true }
+      : { ok: false, reason: "not-found" }
+  } catch (error) {
+    if (isUniqueViolation(error, "companies_domain_key")) {
+      return { ok: false, reason: "domain-taken" }
+    }
+    throw error
+  }
+}
+
 export type CreateCompanyResult =
   | { ok: true; company: CompanyRecord }
   | { ok: false; reason: "slug-taken" }

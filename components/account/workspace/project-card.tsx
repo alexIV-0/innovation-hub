@@ -56,7 +56,7 @@ function TrashProjectCard({ project }: { project: Project }) {
           ? "border-ws-accent/75"
           : selected
             ? "border-ws-select/55 bg-gradient-to-b from-ws-select/[0.22] to-ws-select/[0.06] shadow-ws-inset"
-            : "border-white/10 hover:border-white/20",
+            : "border-foreground/10 hover:border-foreground/20",
       )}
     >
       {selected ? (
@@ -88,7 +88,7 @@ function TrashProjectCard({ project }: { project: Project }) {
             e.stopPropagation()
             restoreProject(project)
           }}
-          className="flex shrink-0 items-center gap-1 rounded-full border border-white/[0.12] px-2.5 py-[3px] text-[11px] text-ws-2 hover:brightness-125"
+          className="flex shrink-0 items-center gap-1 rounded-full border border-foreground/[0.12] px-2.5 py-[3px] text-[11px] text-ws-2 hover:brightness-125"
         >
           <RotateCcw className="h-3 w-3" />
           {t.mRestore}
@@ -154,7 +154,7 @@ export function ProjectCard({
         "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-[3px] text-[11px] hover:brightness-125",
         unread
           ? "border-ws-select/50 bg-ws-select/[0.12] text-primary"
-          : "border-white/[0.12] text-ws-3",
+          : "border-foreground/[0.12] text-ws-3",
       )}
     >
       <MessageCircle className="h-3 w-3" />
@@ -184,7 +184,7 @@ export function ProjectCard({
           ? "border-ws-accent/75"
           : selected
             ? "border-ws-select/55 bg-gradient-to-b from-ws-select/[0.22] to-ws-select/[0.06] shadow-ws-inset"
-            : "border-white/10 hover:border-white/20",
+            : "border-foreground/10 hover:border-foreground/20",
         paused && !selected && "opacity-55",
       )}
     >
@@ -242,7 +242,7 @@ export function ProjectCard({
               className={cn(
                 "flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-[3px] text-[11px] hover:brightness-125",
                 paused
-                  ? "border-white/[0.12] text-ws-3"
+                  ? "border-foreground/[0.12] text-ws-3"
                   : "border-ws-out/40 bg-ws-out/10 text-ws-out",
               )}
             >
@@ -270,7 +270,7 @@ export function ProjectCard({
             {showArchivedBadge ? (
               <span
                 title={t.archiveProject}
-                className="flex shrink-0 items-center gap-1 rounded-full border border-white/[0.12] px-2 py-[3px] text-[11px] text-ws-4"
+                className="flex shrink-0 items-center gap-1 rounded-full border border-foreground/[0.12] px-2 py-[3px] text-[11px] text-ws-4"
               >
                 <Archive className="h-3 w-3" />
                 {t.archiveTab}

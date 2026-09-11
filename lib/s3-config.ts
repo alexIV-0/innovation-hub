@@ -70,6 +70,11 @@ export function isAllowedMediaObjectKey(key: string): boolean {
   return (
     key.startsWith("admin/") ||
     key.startsWith("feature-suggestions/") ||
+    // Логотипы компаний (docs/THEMING_PLAN.md §6.1). Открыты без сессии
+    // осознанно: логотип рисуется на СТРАНИЦЕ ВХОДА, когда компания определена
+    // по домену, — то есть его обязан увидеть тот, кто ещё не вошёл. Это тот же
+    // класс, что `admin/`: публичное оформление, а не чужие файлы.
+    key.startsWith("companies/") ||
     key.startsWith("innohub/") ||
     key.startsWith("ffworks/")
   )

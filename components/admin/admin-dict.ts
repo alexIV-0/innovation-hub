@@ -184,6 +184,10 @@ export const adminDict = {
     auditCompanyEnabled: "Компания включена",
     auditCompanyDisabled: "Компания выключена",
     auditCompanyDeleted: "Компания удалена",
+    auditCompanyRoleChanged: "Роль в компании изменена",
+    auditCompanyCapabilityGranted: "Право в компании выдано",
+    auditCompanyCapabilityRevoked: "Право в компании отозвано",
+    auditCompanyBrandingChanged: "Оформление компании изменено",
 
     // capability tags
     capsMenuItem: "Доступы",
@@ -916,6 +920,10 @@ export const adminDict = {
     auditCompanyEnabled: "Company enabled",
     auditCompanyDisabled: "Company disabled",
     auditCompanyDeleted: "Company deleted",
+    auditCompanyRoleChanged: "Company role changed",
+    auditCompanyCapabilityGranted: "Company right granted",
+    auditCompanyCapabilityRevoked: "Company right revoked",
+    auditCompanyBrandingChanged: "Company branding changed",
 
     // capability tags
     capsMenuItem: "Access",

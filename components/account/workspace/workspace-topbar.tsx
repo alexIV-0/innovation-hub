@@ -54,7 +54,7 @@ export function DensitySwitch() {
     { id: "simple", icon: Rows2, label: t.cozy },
   ]
   return (
-    <div className="flex shrink-0 gap-[3px] rounded-[9px] border border-white/10 bg-ws-control p-[3px]">
+    <div className="flex shrink-0 gap-[3px] rounded-[9px] border border-foreground/10 bg-ws-control p-[3px]">
       {options.map((o) => (
         <SegButton
           key={o.id}
@@ -79,7 +79,7 @@ export function ViewSwitch({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex shrink-0 gap-0.5 rounded-[9px] border border-white/10 bg-ws-control p-[3px]",
+        "flex shrink-0 gap-0.5 rounded-[9px] border border-foreground/10 bg-ws-control p-[3px]",
         className,
       )}
     >
@@ -106,20 +106,20 @@ export function WorkspaceTopbar() {
   const rootLabel = density === "simple" ? t.allProjectsCrumb : t.breadcrumbProjects
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/[0.07] px-3 md:px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-foreground/[0.07] px-3 md:px-6">
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
           onClick={clearSelection}
           aria-label={t.allProjectsCrumb}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-white/10 bg-ws-control text-ws-3 hover:bg-ws-hover hover:text-ws-1"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-foreground/10 bg-ws-control text-ws-3 hover:bg-ws-hover hover:text-ws-1"
         >
           <ArrowLeft className="h-[19px] w-[19px]" />
         </button>
         <button
           type="button"
           onClick={clearSelection}
-          className="hidden rounded-lg px-2 py-1 text-[16px] font-medium text-ws-3 hover:bg-white/5 hover:text-ws-1 sm:block"
+          className="hidden rounded-lg px-2 py-1 text-[16px] font-medium text-ws-3 hover:bg-foreground/5 hover:text-ws-1 sm:block"
         >
           {rootLabel}
         </button>

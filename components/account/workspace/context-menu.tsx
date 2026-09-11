@@ -336,13 +336,13 @@ export function WorkspaceContextMenu() {
     >
       <div
         role="menu"
-        className="fixed flex min-w-[216px] flex-col gap-px rounded-[11px] border border-white/10 bg-ws-raised p-1.5 shadow-ws-menu"
+        className="fixed flex min-w-[216px] flex-col gap-px rounded-[11px] border border-foreground/10 bg-ws-raised p-1.5 shadow-ws-menu"
         style={{ left: menu.x, top: menu.y }}
         onClick={(e) => e.stopPropagation()}
       >
         {entries.map((entry, i) =>
           entry.sep ? (
-            <div key={`sep-${i}`} className="mx-1 my-[5px] h-px bg-white/[0.08]" />
+            <div key={`sep-${i}`} className="mx-1 my-[5px] h-px bg-foreground/[0.08]" />
           ) : (
             <button
               key={entry.label}
@@ -353,14 +353,14 @@ export function WorkspaceContextMenu() {
                 entry.onClick()
               }}
               className={cn(
-                "flex w-full items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-left text-[13px] hover:bg-white/[0.07]",
+                "flex w-full items-center gap-2.5 rounded-[7px] px-2.5 py-2 text-left text-[13px] hover:bg-foreground/[0.07]",
                 entry.danger ? "text-destructive" : "text-ws-2",
               )}
             >
               <entry.icon className="h-[18px] w-[18px] shrink-0 opacity-85" />
               <span className="flex-1">{entry.label}</span>
               {entry.hint ? (
-                <kbd className="shrink-0 rounded border border-white/10 px-1.5 py-px text-[11px] font-normal text-ws-4">
+                <kbd className="shrink-0 rounded border border-foreground/10 px-1.5 py-px text-[11px] font-normal text-ws-4">
                   {entry.hint}
                 </kbd>
               ) : null}

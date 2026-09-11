@@ -29,6 +29,13 @@ export type UserRecord = {
    * не меняются. Расшаренные проекты гейтятся флагом владельца.
    */
   automationEnabled: boolean
+  /**
+   * Компания человека. NULL — общий раздел, то есть сайт ровно такой, каким
+   * работал до компаний (docs/COMPANY_ACCOUNTS_PLAN.md §3). Пара с
+   * `companyRole` держится CHECK'ом в базе: либо оба NULL, либо оба заполнены.
+   */
+  companyId: string | null
+  companyRole: CompanyRole | null
 }
 
 export type ProjectGroupName = "personal" | "shared" | "tools" | "archive"

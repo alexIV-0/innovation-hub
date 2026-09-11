@@ -79,6 +79,51 @@ export async function recordAuditEvent(input: {
 }
 
 /**
+ * Журнал ОДНОЙ компании — консоль компании, план §6.4.
+ *
+ * Отдельная функция, а не фильтр у `listAuditEvents`: там `companyId` был бы
+ * ещё одним необязательным параметром среди прочих, и роут консоли мог бы
+ * позвать её, забыв его передать, — то есть показать админу компании весь
+ * журнал сайта. Здесь companyId первый и обязательный, пропустить его нельзя.
+ */
+export async function listCompanyAuditEvents(options: {
+  companyId: string
+  limit: number
+  before?: string | null
+}): Promise<{ events: AuditEvent[]; nextCursor: string | null }> {
+  const params: unknown[] = [options.companyId]
+  let cursor = ""
+  if (options.before) {
+    params.push(options.before)
+    cursor = `AND id < $${params.length}::bigint`
+  }
+  params.push(options.limit + 1)
+
+  const result = await query<AuditEvent>(
+    `SELECT ${EVENT_FIELDS}
+       FROM admin_audit_log
+      WHERE company_id = $1
+        ${cursor}
+      ORDER BY id DESC
+      LIMIT $${params.length}`,
+    params,
+  )
+
+  const rows = result.rows
+  const hasMore = rows.length > options.limit
+  const events = hasMore ? rows.slice(0, options.limit) : rows
+
+  return {
+    events: events.map((row) => ({
+      ...row,
+      targetLabel:
+        typeof row.meta?.label === "string" ? (row.meta.label as string) : null,
+    })),
+    nextCursor: hasMore ? (events[events.length - 1]?.id ?? null) : null,
+  }
+}
+
+/**
  * Лента, «сначала свежее». Курсор — по `id`, а не по времени: id монотонен и
  * уникален, поэтому страницы не разъезжаются, когда в одну секунду попало
  * несколько событий.

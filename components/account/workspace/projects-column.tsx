@@ -7,14 +7,16 @@ import { ResizeGrip } from "@/components/account/resize-grip"
 import { useDragSize } from "@/components/account/use-drag-size"
 import { TRASH_RETENTION_DAYS } from "./format"
 import { ProjectCard } from "./project-card"
+import { ProjectGroups } from "./project-groups"
 import { sectionHeading, sectionEmptyText } from "./sections"
 import { useWorkspace } from "./workspace-context"
 
 /**
  * Колонка проектов полного режима.
  *
- * Раздел выбирается в боковом меню, поэтому внутри — плоский список
- * без групп и без раскрывающихся заголовков. Ширина тянется за правый край.
+ * Раздел выбирается в боковом меню. Список внутри плоский, кроме «Проектов»
+ * при наличии расшаренных: там свои и чужие идут двумя сворачиваемыми
+ * группами. Ширина тянется за правый край.
  */
 export function ProjectsColumn() {
   const {
@@ -89,11 +91,16 @@ export function ProjectsColumn() {
                 t.userHasNoProjects}
           </p>
         ) : (
-          <div className="pt-1">
-            {visibleProjects.map((p) => (
-              <ProjectCard key={p.id} project={p} groupName={p.groupName} />
-            ))}
-          </div>
+          <ProjectGroups
+            size="column"
+            renderItems={(items) => (
+              <div className="pt-1">
+                {items.map((p) => (
+                  <ProjectCard key={p.id} project={p} groupName={p.groupName} />
+                ))}
+              </div>
+            )}
+          />
         )}
       </div>
 

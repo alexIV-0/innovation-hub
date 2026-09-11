@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils"
 import { BottomPanel } from "./bottom-panel"
 import { Breadcrumbs, FileBrowser, useLivePath } from "./file-browser"
 import { GiftCorner } from "./gift-badge"
+import { ProjectGroups } from "./project-groups"
 import {
   TRASH_RETENTION_DAYS,
   fmtDate,
@@ -445,6 +446,103 @@ function TrashTile({ project }: { project: Project }) {
   )
 }
 
+/** Плитка проекта на витрине: имя, дата, статус обработки и чат. */
+function ProjectTile({ project: p }: { project: Project }) {
+  const { t, lang, selectProject, openChat, openMenu } = useWorkspace()
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => selectProject(p.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          selectProject(p.id)
+        }
+      }}
+      onContextMenu={(e) => openMenu("project", e, { project: p })}
+      className={cn(
+        "flex cursor-pointer flex-col gap-4 rounded-2xl border border-white/10 bg-ws-panel p-[22px] text-left hover:border-white/[0.18] hover:bg-ws-hover",
+        // Проекты на паузе не должны спорить за внимание с активными.
+        p.isPaused && "opacity-[0.45] hover:opacity-100",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span
+          className={cn(
+            "relative flex h-[46px] w-[46px] items-center justify-center rounded-full border",
+            p.isPaused
+              ? "border-white/10 bg-white/[0.04]"
+              : "border-ws-out/30 bg-ws-out/[0.08]",
+          )}
+        >
+          <FolderOpen
+            className={cn(
+              "h-[22px] w-[22px]",
+              p.isPaused ? "text-ws-4" : "text-ws-out",
+            )}
+          />
+          {p.gift ? <GiftCorner gift={p.gift} /> : null}
+        </span>
+        {p.memberCount > 0 ? (
+          <span
+            title={tf(t.projectSharedWith, { users: p.memberCount })}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[12.5px] tabular-nums text-ws-4"
+          >
+            <Users className="h-[15px] w-[15px]" />
+            {p.memberCount}
+          </span>
+        ) : null}
+      </div>
+      <div>
+        <p
+          className={cn(
+            "text-[20px] font-semibold tracking-tight",
+            p.isPaused ? "text-ws-2" : "text-ws-1",
+          )}
+        >
+          {p.name}
+        </p>
+        <p className="mt-2.5 text-[13px] text-ws-4">
+          {fmtDate(p.createdAt, lang)}
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] pt-4">
+        <span
+          className={cn(
+            "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-[5px] text-[13px]",
+            p.isPaused
+              ? "border-white/[0.10] text-ws-4"
+              : "border-ws-out/40 bg-ws-out/10 text-ws-out",
+          )}
+        >
+          {p.isPaused ? (
+            <Pause className="h-3.5 w-3.5" />
+          ) : (
+            <Play className="h-3.5 w-3.5" />
+          )}
+          {p.isPaused ? t.statusPaused : t.statusActive}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            openChat(p.id)
+          }}
+          className="flex items-center gap-2 rounded-[9px] border border-white/10 px-3.5 py-2 text-[13px] text-ws-2 hover:bg-white/5"
+        >
+          <MessageCircle className="h-[17px] w-[17px]" />
+          {t.chat}
+          {p.unreadCount > 0 ? (
+            <span className="h-1.5 w-1.5 rounded-full bg-ws-select" />
+          ) : null}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Витрина проектов: упрощённый режим без выбранного проекта и мобильная версия.
  * Раздел приходит из бокового меню через `?tab=…`.
@@ -452,16 +550,12 @@ function TrashTile({ project }: { project: Project }) {
 export function AllProjectsPage() {
   const {
     t,
-    lang,
     visibleProjects,
     projectTab,
     query,
     setQuery,
     creating,
     createProject,
-    selectProject,
-    openChat,
-    openMenu,
   } = useWorkspace()
 
   const isProjects = projectTab === "projects"
@@ -525,104 +619,20 @@ export function AllProjectsPage() {
               {sectionEmptyText(projectTab, t)}
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3">
-              {visibleProjects.map((p) =>
-                p.deletedAt ? (
-                  <TrashTile key={p.id} project={p} />
-                ) : (
-                  <div
-                    key={p.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => selectProject(p.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault()
-                        selectProject(p.id)
-                      }
-                    }}
-                    onContextMenu={(e) => openMenu("project", e, { project: p })}
-                    className={cn(
-                      "flex cursor-pointer flex-col gap-4 rounded-2xl border border-white/10 bg-ws-panel p-[22px] text-left hover:border-white/[0.18] hover:bg-ws-hover",
-                      // Проекты на паузе не должны спорить за внимание с активными.
-                      p.isPaused && "opacity-[0.45] hover:opacity-100",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <span
-                        className={cn(
-                          "relative flex h-[46px] w-[46px] items-center justify-center rounded-full border",
-                          p.isPaused
-                            ? "border-white/10 bg-white/[0.04]"
-                            : "border-ws-out/30 bg-ws-out/[0.08]",
-                        )}
-                      >
-                        <FolderOpen
-                          className={cn(
-                            "h-[22px] w-[22px]",
-                            p.isPaused ? "text-ws-4" : "text-ws-out",
-                          )}
-                        />
-                        {p.gift ? <GiftCorner gift={p.gift} /> : null}
-                      </span>
-                      {p.memberCount > 0 ? (
-                        <span
-                          title={tf(t.projectSharedWith, { users: p.memberCount })}
-                          className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[12.5px] tabular-nums text-ws-4"
-                        >
-                          <Users className="h-[15px] w-[15px]" />
-                          {p.memberCount}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div>
-                      <p
-                        className={cn(
-                          "text-[20px] font-semibold tracking-tight",
-                          p.isPaused ? "text-ws-2" : "text-ws-1",
-                        )}
-                      >
-                        {p.name}
-                      </p>
-                      <p className="mt-2.5 text-[13px] text-ws-4">
-                        {fmtDate(p.createdAt, lang)}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] pt-4">
-                      <span
-                        className={cn(
-                          "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-[5px] text-[13px]",
-                          p.isPaused
-                            ? "border-white/[0.10] text-ws-4"
-                            : "border-ws-out/40 bg-ws-out/10 text-ws-out",
-                        )}
-                      >
-                        {p.isPaused ? (
-                          <Pause className="h-3.5 w-3.5" />
-                        ) : (
-                          <Play className="h-3.5 w-3.5" />
-                        )}
-                        {p.isPaused ? t.statusPaused : t.statusActive}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openChat(p.id)
-                        }}
-                        className="flex items-center gap-2 rounded-[9px] border border-white/10 px-3.5 py-2 text-[13px] text-ws-2 hover:bg-white/5"
-                      >
-                        <MessageCircle className="h-[17px] w-[17px]" />
-                        {t.chat}
-                        {p.unreadCount > 0 ? (
-                          <span className="h-1.5 w-1.5 rounded-full bg-ws-select" />
-                        ) : null}
-                      </button>
-                    </div>
-                  </div>
-                ),
+            <ProjectGroups
+              size="page"
+              renderItems={(items) => (
+                <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2 xl:grid-cols-3">
+                  {items.map((p) =>
+                    p.deletedAt ? (
+                      <TrashTile key={p.id} project={p} />
+                    ) : (
+                      <ProjectTile key={p.id} project={p} />
+                    ),
+                  )}
+                </div>
               )}
-            </div>
+            />
           )}
         </div>
       </div>

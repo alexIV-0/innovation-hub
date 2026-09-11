@@ -92,6 +92,7 @@
 | [FOLDER_STATE_SSOT_PLAN.md](./FOLDER_STATE_SSOT_PLAN.md) | источник правды для тумблера — решение принято и реализовано |
 | [PROJECT_STATE_DB_S3_PROPOSAL.md](./PROJECT_STATE_DB_S3_PROPOSAL.md) | Postgres + S3 вместо файла на Drive — реализовано |
 | [COMPANY_ACCOUNTS_PLAN.md](./COMPANY_ACCOUNTS_PLAN.md) | компании внутри сайта: общий кошелёк, scope админки, оформление — решение принято, код не начат ⬜ |
+| [THEMING_PLAN.md](./THEMING_PLAN.md) | светлая тема, переключатель, оформление компании и миграция хардкода на токены — план ⬜ |
 
 ## Архив
 

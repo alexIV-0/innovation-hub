@@ -69,16 +69,13 @@ const DELTA_INTERVAL_MS = 4000
 /**
  * Раздел списка проектов. Живёт в URL (`?tab=…`), потому что в боковом меню
  * это обычные ссылки, а не состояние страницы.
+ *
+ * Расшаренные — не раздел, а группа внутри «Проектов» (project-groups.tsx).
+ * Старые ссылки `?tab=shared` приводят туда же: неизвестный раздел — «Проекты».
  */
-export type ProjectTab = "projects" | "shared" | "tools" | "archive" | "trash"
+export type ProjectTab = "projects" | "tools" | "archive" | "trash"
 
-const PROJECT_TABS: ProjectTab[] = [
-  "projects",
-  "shared",
-  "tools",
-  "archive",
-  "trash",
-]
+const PROJECT_TABS: ProjectTab[] = ["projects", "tools", "archive", "trash"]
 
 function parseTab(raw: string | null): ProjectTab {
   return PROJECT_TABS.includes(raw as ProjectTab)
@@ -978,11 +975,12 @@ export function WorkspaceProvider({
 
   /**
    * Раздел проекта: архив перекрывает группу, неизвестная группа считается личной.
-   * Разделы в боковом меню плоские, поэтому группировки внутри списка больше нет.
+   * Расшаренный живёт в «Проектах» — там он отдельной группой (project-groups.tsx).
+   * Проверяется до архива, как и раньше, когда у него был свой раздел.
    */
   const tabOf = useCallback((p: Project): ProjectTab => {
     if (p.deletedAt) return "trash"
-    if (p.sharedWithMe) return "shared"
+    if (p.sharedWithMe) return "projects"
     if (p.isArchived) return "archive"
     if (p.groupName === "tools") return "tools"
     return "projects"
@@ -991,7 +989,6 @@ export function WorkspaceProvider({
   const counts = useMemo(() => {
     const acc: Record<ProjectTab, number> = {
       projects: 0,
-      shared: 0,
       tools: 0,
       archive: 0,
       trash: 0,
@@ -1908,6 +1905,11 @@ export function WorkspaceProvider({
     (destFolderPath: string) => {
       if (!clipboard || !selectedId) return
       if (clipboard.op === "cut") {
+        // Буфер переживает смену проекта, а /rename работает внутри одного.
+        if (clipboard.projectId !== selectedId) {
+          toast.error(t.moveCrossProject)
+          return
+        }
         void moveItems(clipboard.items, destFolderPath)
         return
       }
@@ -1952,7 +1954,14 @@ export function WorkspaceProvider({
         await loadDrive(selectedId, true)
       })()
     },
-    [clipboard, selectedId, moveItems, loadDrive, t.clipboardPaste],
+    [
+      clipboard,
+      selectedId,
+      moveItems,
+      loadDrive,
+      t.clipboardPaste,
+      t.moveCrossProject,
+    ],
   )
 
   const isCut = useCallback(

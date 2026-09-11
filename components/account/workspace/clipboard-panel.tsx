@@ -17,7 +17,6 @@ export function ClipboardPanel() {
     clipboard,
     removeFromClipboard,
     clearClipboard,
-    openMoveDialog,
     pasteClipboard,
     currentTarget,
   } = useWorkspace()
@@ -90,16 +89,13 @@ export function ClipboardPanel() {
       </ul>
 
       <footer className="border-t border-white/[0.07] p-2">
+        {/* Вставляем в открытую папку: папку уже выбрали, открыв её. */}
         <button
           type="button"
-          onClick={() =>
-            isCut
-              ? openMoveDialog(clipboard.items)
-              : pasteClipboard(currentTarget.folderPath)
-          }
+          onClick={() => pasteClipboard(currentTarget.folderPath)}
           className="h-8 w-full rounded-lg bg-ws-action text-[13px] font-medium text-white hover:bg-ws-action-hover"
         >
-          {isCut ? t.moveTitle : t.clipboardPaste}
+          {t.clipboardPaste}
         </button>
       </footer>
     </aside>

@@ -14,7 +14,6 @@ import {
   FolderOpen,
   KeyRound,
   Trash2,
-  Users,
   Wrench,
   type LucideIcon,
   LayoutDashboard,
@@ -59,11 +58,11 @@ const SIDEBAR_SNAP = 150
  */
 const PROJECT_SECTIONS: {
   tab: ProjectTab
-  labelKey: "projects" | "sharedTab" | "toolsTab" | "archiveTab" | "trashTab"
+  labelKey: "projects" | "toolsTab" | "archiveTab" | "trashTab"
   icon: LucideIcon
 }[] = [
+  // Расшаренные своего пункта не имеют: они группой внутри «Проектов».
   { tab: "projects", labelKey: "projects", icon: FolderOpen },
-  { tab: "shared", labelKey: "sharedTab", icon: Users },
   { tab: "tools", labelKey: "toolsTab", icon: Wrench },
   { tab: "archive", labelKey: "archiveTab", icon: Archive },
   { tab: "trash", labelKey: "trashTab", icon: Trash2 },

@@ -56,9 +56,8 @@ type Resolution =
 /**
  * Кто смотрит и в какой компании. Общая часть обоих гвардов — и API, и страниц.
  *
- * Порядок веток значим: своя компания сотрудника проверяется ПЕРЕД
- * переключателем суперадмина. Человек, который и суперадмин сайта, и владелец
- * своей компании, должен по умолчанию попадать в свою, а не в первую попавшуюся.
+ * Порядок веток значим: сначала суперадмин с переключателем, потом сотрудник со
+ * своей компанией. Разбор — в комментарии у самой ветки.
  */
 async function resolve(token: string | undefined): Promise<Resolution> {
   if (!token) return { ok: false, reason: "unauthorized" }
@@ -69,19 +68,30 @@ async function resolve(token: string | undefined): Promise<Resolution> {
   const user = await findUserById(session.userId)
   if (!user || !user.isActive) return { ok: false, reason: "unauthorized" }
 
-  if (user.companyId && user.companyRole) {
-    const company = await findCompanyById(user.companyId)
+  /**
+   * СУПЕРАДМИН — первым, и это важно.
+   *
+   * Раньше здесь сначала проверялась своя компания, и суперадмин, оказавшийся в
+   * какой-нибудь компании, намертво прилипал к ней: переключатель в шапке
+   * рисовался (layout строит его по роли на сайте), кука ставилась, а гейт до
+   * неё не доходил — выбор молча не срабатывал. Обещание, которого код не
+   * держал.
+   *
+   * Порядок внутри ветки сохраняет прежнее умолчание: не выбрал ничего —
+   * попадает в СВОЮ компанию, а не в первую попавшуюся.
+   */
+  if (isSuperAdmin(user.role)) {
+    const cookieStore = await cookies()
+    const picked = cookieStore.get(COMPANY_SCOPE_COOKIE)?.value
+    const company =
+      (picked ? await findCompanyById(picked) : null) ??
+      (user.companyId ? await findCompanyById(user.companyId) : null) ??
+      (await listCompanies())[0] ??
+      null
     if (!company) return { ok: false, reason: "no-company" }
-    // Выключенная компания закрыта и для своих: пауза должна что-то означать,
-    // иначе она только вводит в заблуждение. Владельцу и суперадмину вход
-    // оставляем — им же её и включать обратно.
-    if (!company.isActive && user.companyRole !== "owner" && !isSuperAdmin(user.role)) {
-      return { ok: false, reason: "inactive" }
-    }
-    // Участник консоли не видит вовсе (§4): она про распоряжение, а он в ней
-    // ничем не распоряжается.
-    if (user.companyRole === "member") return { ok: false, reason: "no-company" }
 
+    // Действует как владелец любой компании (§4) — даже выключенной: её же ему
+    // и включать обратно.
     return {
       ok: true,
       context: {
@@ -89,35 +99,42 @@ async function resolve(token: string | undefined): Promise<Resolution> {
         email: user.email,
         companyId: company.id,
         companyTitle: company.title,
-        companyRole: user.companyRole,
-        capabilities:
-          user.companyRole === "owner"
-            ? [...COMPANY_CAPABILITIES]
-            : await listCompanyCapabilitiesFor(user.id),
-        isSiteSuperAdmin: isSuperAdmin(user.role),
+        companyRole: "owner",
+        capabilities: [...COMPANY_CAPABILITIES],
+        isSiteSuperAdmin: true,
       },
     }
   }
 
-  if (!isSuperAdmin(user.role)) return { ok: false, reason: "no-company" }
+  if (!user.companyId || !user.companyRole) {
+    return { ok: false, reason: "no-company" }
+  }
 
-  // Суперадмин вне компании: смотрит выбранную переключателем, иначе первую.
-  const cookieStore = await cookies()
-  const picked = cookieStore.get(COMPANY_SCOPE_COOKIE)?.value
-  const company = picked ? await findCompanyById(picked) : null
-  const fallback = company ?? (await listCompanies())[0] ?? null
-  if (!fallback) return { ok: false, reason: "no-company" }
+  const company = await findCompanyById(user.companyId)
+  if (!company) return { ok: false, reason: "no-company" }
+  // Выключенная компания закрыта и для своих: пауза должна что-то означать,
+  // иначе она только вводит в заблуждение. Владельцу вход оставляем — ему же её
+  // и включать обратно.
+  if (!company.isActive && user.companyRole !== "owner") {
+    return { ok: false, reason: "inactive" }
+  }
+  // Участник консоли не видит вовсе (§4): она про распоряжение, а он в ней
+  // ничем не распоряжается.
+  if (user.companyRole === "member") return { ok: false, reason: "no-company" }
 
   return {
     ok: true,
     context: {
       userId: user.id,
       email: user.email,
-      companyId: fallback.id,
-      companyTitle: fallback.title,
-      companyRole: "owner",
-      capabilities: [...COMPANY_CAPABILITIES],
-      isSiteSuperAdmin: true,
+      companyId: company.id,
+      companyTitle: company.title,
+      companyRole: user.companyRole,
+      capabilities:
+        user.companyRole === "owner"
+          ? [...COMPANY_CAPABILITIES]
+          : await listCompanyCapabilitiesFor(user.id),
+      isSiteSuperAdmin: false,
     },
   }
 }

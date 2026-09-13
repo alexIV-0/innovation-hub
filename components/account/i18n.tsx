@@ -659,6 +659,8 @@ export const dict = {
     companyDeleteHasMembers: "Сначала переведите всех людей из компании",
     companyDeleteFailed: "Не удалось удалить компанию",
     companyManage: "Управлять",
+    companyEnter: "Войти",
+    companyEnterFailed: "Не удалось войти в компанию",
     companyBack: "Назад к списку",
     companyPeopleTitle: "Люди компании",
     companyPeopleDesc:
@@ -726,6 +728,8 @@ export const dict = {
     // ─── Консоль компании (/company) ───
     coConsole: "Компания",
     coSwitch: "Компания:",
+    coExitCompany: "Выйти из компании",
+    coExitFailed: "Не удалось выйти из компании",
     coPeople: "Люди",
     coPeopleDesc: "Сотрудники компании и кто за кого отвечает.",
     coRoles: "Права",
@@ -2397,6 +2401,8 @@ export const dict = {
     companyDeleteHasMembers: "Move all people out of the company first",
     companyDeleteFailed: "Could not delete the company",
     companyManage: "Manage",
+    companyEnter: "Enter",
+    companyEnterFailed: "Could not enter the company",
     companyBack: "Back to the list",
     companyPeopleTitle: "Company people",
     companyPeopleDesc:
@@ -2462,6 +2468,8 @@ export const dict = {
     // ─── Company console (/company) ───
     coConsole: "Company",
     coSwitch: "Company:",
+    coExitCompany: "Leave the company",
+    coExitFailed: "Could not leave the company",
     coPeople: "People",
     coPeopleDesc: "Company staff and who is responsible for whom.",
     coRoles: "Rights",

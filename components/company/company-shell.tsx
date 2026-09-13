@@ -1,13 +1,17 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Building2 } from "lucide-react"
+import { Building2, Loader2, LogOut } from "lucide-react"
+import { toast } from "sonner"
+import { HelpPageButton } from "@/components/help/help-page-button"
 import { useI18n } from "@/components/account/i18n"
 import {
   isCompanyToolActive,
   visibleCompanyTools,
 } from "@/components/company/nav-config"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -35,6 +39,7 @@ export function CompanyShell({
   capabilities,
   companies,
   currentCompanyId,
+  isSiteSuperAdmin,
   children,
 }: {
   companyTitle: string
@@ -43,11 +48,14 @@ export function CompanyShell({
   /** Непусто только у суперадмина сайта — ему одному есть между чем выбирать. */
   companies: CompanyPick[]
   currentCompanyId: string
+  /** Суперадмин смотрит компанию гостем: ему одному и выходить. */
+  isSiteSuperAdmin: boolean
   children: React.ReactNode
 }) {
   const { t } = useI18n()
   const pathname = usePathname() ?? ""
   const router = useRouter()
+  const [exiting, setExiting] = useState(false)
   const tools = visibleCompanyTools(companyRole, capabilities)
 
   const switchCompany = async (companyId: string) => {
@@ -57,6 +65,27 @@ export function CompanyShell({
       body: JSON.stringify({ companyId }),
     })
     router.refresh()
+  }
+
+  /**
+   * Выход из просмотра: сброс куки переключателя и возврат в админку, откуда
+   * обычно и зашли. Просто ссылки назад мало: пока кука стоит, следующий заход
+   * в `/company` снова открыл бы ту же компанию.
+   */
+  const exitConsole = async () => {
+    setExiting(true)
+    try {
+      const res = await fetch("/api/company/scope", { method: "DELETE" })
+      if (!res.ok) {
+        toast.error(t.coExitFailed)
+        return
+      }
+      router.push("/admin/companies")
+    } catch {
+      toast.error(t.coExitFailed)
+    } finally {
+      setExiting(false)
+    }
   }
 
   return (
@@ -70,30 +99,56 @@ export function CompanyShell({
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/80">
               {t.coConsole}
             </p>
-            <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-              {companyTitle}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
+                {companyTitle}
+              </h1>
+              {/* Вход в справку при названии — одно место на всю консоль, как в
+                  шапке страниц админки. */}
+              <HelpPageButton id="companies.console" />
+            </div>
           </div>
         </div>
 
-        {companies.length > 1 ? (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{t.coSwitch}</span>
-            <Select
-              value={currentCompanyId}
-              onValueChange={(value) => void switchCompany(value)}
-            >
-              <SelectTrigger className="h-9 w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {companies.map((company) => (
-                  <SelectItem key={company.id} value={company.id}>
-                    {company.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {companies.length > 1 || isSiteSuperAdmin ? (
+          <div className="flex flex-wrap items-center gap-3">
+            {companies.length > 1 ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t.coSwitch}</span>
+                <Select
+                  value={currentCompanyId}
+                  onValueChange={(value) => void switchCompany(value)}
+                >
+                  <SelectTrigger className="h-9 w-56">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            {/* Выход — только суперадмину: сотруднику компании выходить некуда,
+                консоль его компании и есть его рабочее место. */}
+            {isSiteSuperAdmin ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={exiting}
+                onClick={() => void exitConsole()}
+              >
+                {exiting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <LogOut className="mr-2 h-4 w-4" />
+                )}
+                {t.coExitCompany}
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </header>

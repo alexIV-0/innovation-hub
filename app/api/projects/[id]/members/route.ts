@@ -5,9 +5,11 @@ import { requireUserApi } from "@/lib/admin-auth"
 import { auditFrom } from "@/lib/audit"
 import { hashPassword } from "@/lib/auth"
 import {
+  mailBrandForOwner,
   sendProjectAccessGrantedEmail,
   sendProjectInviteWithPasswordEmail,
 } from "@/lib/mail/send"
+import type { MailBrand } from "@/lib/mail/templates"
 import {
   canGrantRole,
   canManageMember,
@@ -109,6 +111,12 @@ async function inviteOne(input: {
   /** Доступ у зовущего от админского тега, а не от владения или участия. */
   actorViaCapability: boolean
   inviterName: string
+  /**
+   * Чьим именем подписать письмо. Компания ВЛАДЕЛЬЦА проекта, а не приглашающего
+   * и не приглашаемого: человек приходит в чужое рабочее место, и узнать он
+   * должен то, куда его позвали.
+   */
+  brand: MailBrand
   email: string
   role: ProjectMemberRole
   fullName?: string
@@ -213,6 +221,7 @@ async function inviteOne(input: {
       role: input.role,
       inviterName: input.inviterName,
       temporaryPassword,
+      brand: input.brand,
     })
     mailOk = mail.ok
     mailError = mail.ok ? null : mail.error
@@ -224,6 +233,7 @@ async function inviteOne(input: {
       projectId: input.projectId,
       role: input.role,
       inviterName: input.inviterName,
+      brand: input.brand,
     })
     mailOk = mail.ok
     mailError = mail.ok ? null : mail.error
@@ -334,6 +344,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   const emails = uniqueEmails(parsed.data)
   const inviter = await findUserById(auth.userId)
   const inviterName = inviter?.fullName ?? auth.email
+  const brand = await mailBrandForOwner(access.project.userId)
 
   const results: Array<InviteOk | InviteFail> = []
   for (const email of emails) {
@@ -346,6 +357,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         actorRole: access.role,
         actorViaCapability: access.viaCapability === true,
         inviterName,
+        brand,
         email,
         role: parsed.data.role,
         fullName: parsed.data.fullName,

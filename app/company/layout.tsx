@@ -82,6 +82,7 @@ export default async function CompanyLayout({
           capabilities={context.capabilities}
           companies={companies}
           currentCompanyId={context.companyId}
+          isSiteSuperAdmin={context.isSiteSuperAdmin}
         >
           {children}
         </CompanyShell>

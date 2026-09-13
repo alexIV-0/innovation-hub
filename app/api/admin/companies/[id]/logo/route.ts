@@ -89,20 +89,9 @@ export async function POST(
     key,
     method: "PUT" as const,
     contentType,
-    /**
-     * Всегда путь прокси, без ветки на CDN.
-     *
-     * `publicObjectUrlForKey()` отдаёт адрес из `NEXT_PUBLIC_S3_PUBLIC_BASE_URL`,
-     * и «переменная задана» не означает «по этому адресу что-то отдаётся»:
-     * проверить это некому, а ошибка проявится не при настройке, а у первого
-     * человека, который увидит битую картинку вместо логотипа.
-     *
-     * Прокси работает по построению — он ходит в тот же бакет, куда мы только
-     * что записали, — и так же хранится ВЕСЬ остальной контент установки. Когда
-     * CDN будет проверен, переключать надо разом и здесь, и в
-     * `admin/upload/presign`, а не по одному месту.
-     */
-    publicUrl: appMediaProxyPathForKey(key),
+    // CDN — только подтверждённый; иначе путь прокси. Разбор — в
+    // publicObjectUrlForKey (lib/s3-config.ts).
+    publicUrl: publicObjectUrlForKey(key) ?? appMediaProxyPathForKey(key),
   })
 }
 

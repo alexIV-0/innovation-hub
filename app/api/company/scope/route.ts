@@ -56,3 +56,27 @@ export async function PUT(request: NextRequest) {
   })
   return response
 }
+
+/**
+ * Выход из просмотра — кнопка «Выйти из компании» в консоли.
+ *
+ * Именно сброс, а не уход ссылкой: пока кука стоит, любой заход в `/company`
+ * снова открывает ту же компанию, и «выход», который ничего не сбрасывает,
+ * обещал бы больше, чем делал.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireCompanyApiAnyAdmin(request)
+  if (auth instanceof NextResponse) return auth
+
+  const user = await findUserById(auth.userId)
+  if (!user || !isSuperAdmin(user.role)) {
+    return NextResponse.json(
+      { message: "Only a site superadmin can switch companies." },
+      { status: 403 },
+    )
+  }
+
+  const response = NextResponse.json({ ok: true })
+  response.cookies.delete(COMPANY_SCOPE_COOKIE)
+  return response
+}

@@ -1,7 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Building2, Loader2, Plus, Search, Trash2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Building2, Loader2, LogIn, Plus, Search, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { tf, useI18n } from "@/components/account/i18n"
 import { Section } from "@/components/admin/billing/fields"
@@ -75,12 +76,19 @@ function deleteErrorText(
   }
 }
 
-export function AdminCompanies() {
+export function AdminCompanies({
+  canEnterConsole,
+}: {
+  /** Только суперадмину: гейт /api/company/scope чужих не пускает. */
+  canEnterConsole: boolean
+}) {
   const { t } = useI18n()
+  const router = useRouter()
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [enteringId, setEnteringId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -123,6 +131,30 @@ export function AdminCompanies() {
     toast.success(t.companyDeleted)
     if (selectedId === company.id) setSelectedId(null)
     await load()
+  }
+
+  /**
+   * Вход в консоль компании глазами её владельца: кука переключателя + переход
+   * в `/company`. Тот же механизм, что и селектор в шапке консоли.
+   */
+  const enter = async (company: CompanyRow) => {
+    setEnteringId(company.id)
+    try {
+      const res = await fetch("/api/company/scope", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId: company.id }),
+      })
+      if (!res.ok) {
+        toast.error(t.companyEnterFailed)
+        return
+      }
+      router.push("/company")
+    } catch {
+      toast.error(t.companyEnterFailed)
+    } finally {
+      setEnteringId(null)
+    }
   }
 
   const selected = companies.find((c) => c.id === selectedId) ?? null
@@ -174,6 +206,24 @@ export function AdminCompanies() {
                   checked={company.isActive}
                   onCheckedChange={(checked) => void setActive(company, checked)}
                 />
+                {/* «Войти» — посмотреть компанию изнутри, глазами её владельца.
+                    Не суперадмину не рисуем: роут scope ему откажет, и кнопка,
+                    обещающая отказ, хуже её отсутствия. */}
+                {canEnterConsole ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={enteringId !== null}
+                    onClick={() => void enter(company)}
+                  >
+                    {enteringId === company.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <LogIn className="mr-2 h-4 w-4" />
+                    )}
+                    {t.companyEnter}
+                  </Button>
+                ) : null}
                 <Button
                   variant="outline"
                   size="sm"

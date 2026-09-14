@@ -1,3 +1,4 @@
+import { ASSETS_FOLDER_NAME } from "@/lib/storage/keys"
 import { ProjectStorageError } from "./errors"
 import { readExposedOption } from "./extract"
 import { normalizeNumeric } from "./numeric-format"
@@ -91,6 +92,34 @@ function coerce(
       // соберёт гейт, и человек увидит причину на карточке проекта.
       if (typeof value !== "string") fail(change.path, "expects an account label.")
       return value
+
+    case "pathNavigator": {
+      // Единственное значение среди контролов, которое является ПУТЁМ, а не
+      // данными, — поэтому проверяем его здесь, а не полагаемся на браузер:
+      // строку клиент присылает сам, и без проверки через неё адресуется любой
+      // файл проекта, включая сайдкары в `options/`.
+      if (typeof value !== "string") fail(change.path, "expects a file path.")
+      const filePath = value.trim()
+      // Пусто — «файл не выбран»: таким свойство и приходит из графа
+      // (`"value": ""` в ui.json), и право вернуться в это состояние остаётся.
+      if (filePath === "") return ""
+      const segments = filePath.split("/")
+      const name = segments[1]
+      if (
+        segments.length !== 2 ||
+        segments[0] !== ASSETS_FOLDER_NAME ||
+        !name ||
+        name === "." ||
+        name === ".." ||
+        name.includes("\\")
+      ) {
+        fail(
+          change.path,
+          `accepts only files uploaded to "${ASSETS_FOLDER_NAME}/".`,
+        )
+      }
+      return filePath
+    }
 
     case "ddm": {
       if (typeof value !== "string") fail(change.path, "expects a string.")

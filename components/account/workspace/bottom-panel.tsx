@@ -61,6 +61,7 @@ export function SettingsTab() {
     setArchived,
     deleteProject,
     exposedOptions,
+    fileTypes,
     saveExposedOptions,
   } = useWorkspace()
   if (!selected) return null
@@ -99,7 +100,9 @@ export function SettingsTab() {
       {/* Параметры обработки: их открыл клиенту автор графа в программе.
           Ниже — действия над самим проектом, они к обработке не относятся. */}
       <ExposedOptionsList
+        projectId={selected.id}
         options={exposedOptions}
+        fileTypes={fileTypes}
         onSave={canEditSettings ? saveExposedOptions : null}
         className="mt-4 border-t border-foreground/[0.07] pt-4"
       />

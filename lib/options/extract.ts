@@ -154,6 +154,10 @@ function readValue(
       // Метка учётки. Пусто — «не выбрана»; такой параметр покажем, но задача
       // по нему не соберётся: гейт увидит, что учётки нет.
       return typeof cp.value === "string" ? cp.value : ""
+    case "pathNavigator":
+      // Путь относительно папки проекта. Пусто — файл ещё не выбран; в графе
+      // такое свойство и создаётся пустым (`"value": ""` в ui.json).
+      return typeof cp.value === "string" ? cp.value : ""
     default:
       // textedit — просто текст.
       return typeof cp.value === "string" ? cp.value : ""

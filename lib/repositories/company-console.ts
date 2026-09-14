@@ -1,4 +1,6 @@
 import { query } from "@/lib/db"
+import { isRemoteComputerOnline } from "@/lib/repositories/remote-computers"
+import { hashMachineToken } from "@/lib/storage/write-path"
 import type { CompanyRole } from "@/lib/domain-types"
 
 /**
@@ -192,4 +194,173 @@ export async function listCompanyPayees(
     [walletUserId],
   )
   return result.rows
+}
+
+export type CompanyMachine = {
+  id: string
+  name: string
+  description: string
+  status: string
+  online: boolean
+  lastHeartbeatAt: Date | null
+  currentProjectName: string | null
+  createdAt: Date
+}
+
+/**
+ * Машины компании — docs/COMPANY_PIPELINE_PLAN.md §2.
+ *
+ * `company_id` в `WHERE`, как и у всего в этом файле: список машин — ровно то
+ * место, где чужая строка означала бы чужой токен на экране клиента.
+ */
+export async function listCompanyMachines(
+  companyId: string,
+): Promise<CompanyMachine[]> {
+  const result = await query<
+    Omit<CompanyMachine, "online"> & { lastHeartbeatAt: Date | null }
+  >(
+    `SELECT rc.id,
+            rc.name,
+            rc.description,
+            rc.status,
+            rc.last_heartbeat_at AS "lastHeartbeatAt",
+            rc.created_at AS "createdAt",
+            p.name AS "currentProjectName"
+       FROM remote_computers rc
+       LEFT JOIN projects p ON p.id = rc.current_project_id
+      WHERE rc.company_id = $1
+        AND rc.revoked_at IS NULL
+      ORDER BY rc.created_at DESC`,
+    [companyId],
+  )
+  return result.rows.map((row) => ({
+    ...row,
+    online: isRemoteComputerOnline(row.lastHeartbeatAt, null),
+  }))
+}
+
+/**
+ * Отзыв машины компании.
+ *
+ * `company_id` стоит в `WHERE` вместе с `id`, а не проверяется отдельным
+ * чтением: так чужой идентификатор просто не находит строки, и между проверкой
+ * и записью нет промежутка, в котором машину успели бы перевесить.
+ */
+export async function revokeCompanyMachine(
+  companyId: string,
+  id: string,
+): Promise<boolean> {
+  const result = await query(
+    `UPDATE remote_computers
+        SET revoked_at = NOW()
+      WHERE id = $1 AND company_id = $2 AND revoked_at IS NULL`,
+    [id, companyId],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+/** Смена токена машины компании — ответ на «ключ утёк». Рамка та же. */
+export async function rotateCompanyMachineToken(
+  companyId: string,
+  id: string,
+  rawToken: string,
+): Promise<boolean> {
+  const result = await query(
+    `UPDATE remote_computers
+        SET token_hash = $3
+      WHERE id = $1 AND company_id = $2 AND revoked_at IS NULL`,
+    [id, companyId, hashMachineToken(rawToken)],
+  )
+  return (result.rowCount ?? 0) > 0
+}
+
+/**
+ * Внешний участник проекта компании: человек, у которого есть доступ к её
+ * работе, но сам он не её сотрудник.
+ *
+ * Строка на ПАРУ «человек + проект», а не на человека: один и тот же фрилансер
+ * может сидеть в трёх проектах с разными ролями, и «отозвать» должно снимать
+ * доступ к конкретному, а не ко всем сразу. Свернуть строки в человека — работа
+ * интерфейса, не запроса.
+ */
+export type CompanyOutsider = {
+  userId: string
+  email: string
+  fullName: string
+  projectId: string
+  projectName: string
+  /** viewer | editor | full — роль в проекте, не в компании. */
+  role: string
+  /** Кто позвал. Пусто, если приглашавшего уже удалили. */
+  invitedByName: string | null
+  invitedAt: Date
+}
+
+/**
+ * Кто извне сидит в проектах компании.
+ *
+ * Принадлежность проекта считается по ВЛАДЕЛЬЦУ: компания у работы одна — та,
+ * чей это проект и чей кошелёк за него платит.
+ *
+ * `IS DISTINCT FROM` вместо `<>`: у человека из общего раздела `company_id`
+ * пустой, а `NULL <> 'ca'` даёт NULL, то есть строка тихо выпала бы из списка —
+ * и именно тот, кого важнее всего увидеть, остался бы невидимым.
+ *
+ * Корзина исключена: доступ к удалённому проекту отзывать не от чего, а в
+ * списке он выглядел бы как живая утечка.
+ */
+export async function listCompanyOutsiders(
+  companyId: string,
+): Promise<CompanyOutsider[]> {
+  const result = await query<CompanyOutsider>(
+    `SELECT u.id AS "userId",
+            u.email,
+            COALESCE(u.full_name, '') AS "fullName",
+            p.id AS "projectId",
+            p.name AS "projectName",
+            pm.role,
+            NULLIF(COALESCE(inv.full_name, inv.email, ''), '') AS "invitedByName",
+            pm.created_at AS "invitedAt"
+       FROM project_members pm
+       JOIN projects p ON p.id = pm.project_id
+       JOIN users owner ON owner.id = p.user_id
+       JOIN users u ON u.id = pm.user_id
+       LEFT JOIN users inv ON inv.id = pm.invited_by
+      WHERE owner.company_id = $1
+        AND u.company_id IS DISTINCT FROM $1
+        AND u.id <> p.user_id
+        AND p.deleted_at IS NULL
+      ORDER BY pm.created_at DESC`,
+    [companyId],
+  )
+  return result.rows
+}
+
+/**
+ * Отозвать доступ внешнего участника к проекту компании.
+ *
+ * Рамка компании стоит В САМОМ `DELETE`, как у машин: чужая пара
+ * «проект + человек» просто не находит строки, и между проверкой и удалением
+ * нет промежутка. Условие `company_id IS DISTINCT FROM` повторено намеренно —
+ * этой ручкой нельзя выкинуть из проекта СВОЕГО сотрудника: для этого есть
+ * диалог «Поделиться» у владельца, а здесь инструмент про посторонних.
+ */
+export async function revokeCompanyOutsider(
+  companyId: string,
+  projectId: string,
+  userId: string,
+): Promise<boolean> {
+  const result = await query(
+    `DELETE FROM project_members pm
+      USING projects p, users owner, users u
+      WHERE pm.project_id = $2
+        AND pm.user_id = $3
+        AND p.id = pm.project_id
+        AND owner.id = p.user_id
+        AND owner.company_id = $1
+        AND u.id = pm.user_id
+        AND u.company_id IS DISTINCT FROM $1`,
+    [companyId, projectId, userId],
+  )
+  return (result.rowCount ?? 0) > 0
 }

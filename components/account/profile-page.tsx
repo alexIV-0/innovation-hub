@@ -190,7 +190,10 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
           </div>
 
           {/* Personal info */}
+          {/* Пароля здесь нет, но в адресную строку уехали бы имя и почта —
+              то же самое, только тише. */}
           <form
+            method="post"
             onSubmit={profileForm.handleSubmit(onSaveProfile)}
             className="mt-6 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-5 md:p-7"
           >
@@ -286,7 +289,11 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
           </form>
 
           {/* Password */}
+          {/* method="post" — на случай отправки до гидратации; разбор в
+              components/auth/login-form.tsx. Здесь полей с паролем три, включая
+              текущий. */}
           <form
+            method="post"
             onSubmit={passwordForm.handleSubmit(onChangePassword)}
             className="mt-6 rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-5 md:p-7"
           >
@@ -350,6 +357,7 @@ export function ProfilePageClient({ user }: { user: ProfileUser }) {
 
           {/* Danger */}
           <form
+            method="post"
             onSubmit={deleteForm.handleSubmit(onDelete)}
             className="mt-6 rounded-2xl border border-destructive/35 bg-destructive/5 p-5 md:p-7"
           >

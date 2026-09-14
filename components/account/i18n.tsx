@@ -81,6 +81,13 @@ export const dict = {
     optionsSelect: "Выбрать…",
     optionsEmptyValue: "не задано",
     optionsNothingFound: "Ничего не найдено",
+    optionsFileUpload: "Загрузить файл",
+    optionsFileReplace: "Заменить",
+    optionsFileEmpty: "Файл не выбран",
+    optionsFileUploading: "Загрузка…",
+    optionsFileFailed: "Не удалось загрузить файл",
+    optionsFileUnsupported:
+      "Такой тип файла обработка не поддерживает. Обратитесь к администратору, если он нужен.",
     chatPlaceholder: "Напишите сообщение…",
     chatEmpty:
       "Пока нет сообщений. Расскажите о проекте — команда ответит здесь.",
@@ -727,6 +734,7 @@ export const dict = {
 
     // ─── Консоль компании (/company) ───
     coConsole: "Компания",
+    coConsolePanel: "Консоль компании",
     coSwitch: "Компания:",
     coExitCompany: "Выйти из компании",
     coExitFailed: "Не удалось выйти из компании",
@@ -770,6 +778,19 @@ export const dict = {
     coCapPeople: "Люди",
     coCapRoles: "Права",
     coCapKeys: "Ключи сервисов",
+    coCapMachines: "Машины",
+    coCapInvite: "Приглашать извне",
+    coOutsidersTitle: "Внешние участники",
+    coOutsidersSub:
+      "Люди не из компании, у которых есть доступ к её проектам. Их обработка идёт с кошелька компании.",
+    coOutsidersBadge: "не в компании",
+    coOutsidersInvitedBy: "позвал: {name}",
+    coOutsidersRevoke: "Отозвать доступ",
+    coOutsidersRevokeConfirm:
+      "Закрыть «{name}» доступ к проекту «{project}»? Аккаунт останется, доступ к проекту пропадёт сразу.",
+    coOutsidersRevoked: "Доступ отозван",
+    coShareOutsider:
+      "Позвать в проект компании человека со стороны может только админ компании с правом «Приглашать извне».",
     coRolesOwnerAll: "Владельцу открыто всё — галочки ему не выдаются",
 
     // Кошелёк
@@ -804,6 +825,45 @@ export const dict = {
     coKeysService: "Сервис",
     coKeysHint:
       "Порядок поиска учётки: своя у сотрудника → компании → платформенная.",
+
+    coMachines: "Машины",
+    coMachinesDesc: "Свои компьютеры компании: на них уходит её обработка.",
+    coMachinesTitle: "Машины компании",
+    coMachinesSub:
+      "Задачи людей компании уходят на её машины. Чужих проектов такая машина не видит — ни других компаний, ни общего раздела.",
+    coMachinesEmpty: "Своих машин пока нет — обработка идёт на наших",
+    coMachinesEmptyHeld:
+      "Своих машин нет, а обработка разрешена только на них — задачи ждут в очереди",
+    coMachinesPolicyTitle: "Где обрабатывать",
+    coMachinesPolicyHint:
+      "Пока у компании есть хоть одна машина, задачи идут только на неё. Этот переключатель отвечает на другой вопрос: что делать, если своих машин не осталось совсем.",
+    coMachinesPolicyLabel: "Обрабатывать только на своих машинах",
+    coMachinesPolicyOn:
+      "Включено: если своих машин нет, задачи ждут в очереди. На наши не уйдут.",
+    coMachinesPolicyOff:
+      "Выключено: если своих машин нет, обработку берём на себя.",
+    coMachinesPolicySaved: "Правило сохранено",
+    coMachinesAdd: "Добавить машину",
+    coMachinesName: "Название",
+    coMachinesNamePlaceholder: "Например, Рендер-1 в офисе",
+    coMachinesNote: "Заметка",
+    coMachinesCreate: "Выдать токен",
+    coMachinesOnline: "На связи",
+    coMachinesOffline: "Не на связи",
+    coMachinesBusy: "Занята",
+    coMachinesRevoke: "Отозвать",
+    coMachinesRevokeConfirm:
+      "Отозвать машину «{name}»? Её токен перестанет работать сразу.",
+    coMachinesRevoked: "Машина отозвана",
+    coMachinesRotate: "Сменить токен",
+    coMachinesRotateConfirm:
+      "Выдать «{name}» новый токен? Прежний перестанет работать сразу.",
+    coMachinesTokenTitle: "Токен машины",
+    coMachinesTokenHint:
+      "Покажем один раз — сохраните его сейчас. В базе лежит только отпечаток, восстановить нельзя.",
+    coMachinesTokenCopy: "Скопировать",
+    coMachinesTokenCopied: "Токен скопирован",
+    coMachinesTokenDone: "Я сохранил",
 
     // Статистика
     coStatsTitle: "Статистика компании",
@@ -1186,6 +1246,26 @@ export const dict = {
       "Кто из админов чем занимается: роли и теги разделов.",
     adminPipelineDesc:
       "Очередь задач, машины в работе и общие словари обработки.",
+    areasTitle: "Пульт конвейеров",
+    areasSub:
+      "Все области одной таблицей: где идёт работа, где стоит очередь и чьи машины её разбирают.",
+    areasArea: "Область",
+    areasWatching: "Слежение",
+    areasQueued: "В очереди",
+    areasRunning: "В работе",
+    areasFailed: "Ошибок за сутки",
+    areasMachines: "Машины",
+    areasGeneral: "Общий раздел",
+    areasPeople: "людей под слежением: {watched} из {total}",
+    areasByPerson: "по людям",
+    areasOurMachines: "наши: {online} из {total} на связи",
+    areasOwnMachines: "свои: {online} из {total} на связи",
+    areasNoOwnMachines: "своих нет — идёт на наших",
+    areasHeld: "обработка выключена, задачи ждут",
+    areasResumed: "Обработка компании включена",
+    areasPaused: "Обработка компании выключена",
+    areasLoadFailed: "Не удалось загрузить пульт",
+    areasToggleFailed: "Не удалось переключить",
     adminPipelineEyebrow: "Обработка",
     adminPosting: "Автопостинг",
     adminPostingDesc:
@@ -1828,6 +1908,13 @@ export const dict = {
     optionsSelect: "Select…",
     optionsEmptyValue: "not set",
     optionsNothingFound: "Nothing found",
+    optionsFileUpload: "Upload file",
+    optionsFileReplace: "Replace",
+    optionsFileEmpty: "No file selected",
+    optionsFileUploading: "Uploading…",
+    optionsFileFailed: "Could not upload the file",
+    optionsFileUnsupported:
+      "Processing does not support this file type. Ask an administrator if you need it.",
     chatPlaceholder: "Write a message…",
     chatEmpty:
       "No messages yet. Tell us about the project — the team will reply here.",
@@ -2467,6 +2554,7 @@ export const dict = {
 
     // ─── Company console (/company) ───
     coConsole: "Company",
+    coConsolePanel: "Company console",
     coSwitch: "Company:",
     coExitCompany: "Leave the company",
     coExitFailed: "Could not leave the company",
@@ -2510,6 +2598,19 @@ export const dict = {
     coCapPeople: "People",
     coCapRoles: "Rights",
     coCapKeys: "Service keys",
+    coCapMachines: "Machines",
+    coCapInvite: "Invite outsiders",
+    coOutsidersTitle: "External participants",
+    coOutsidersSub:
+      "People outside the company who have access to its projects. Their processing is paid from the company wallet.",
+    coOutsidersBadge: "not in the company",
+    coOutsidersInvitedBy: "invited by {name}",
+    coOutsidersRevoke: "Revoke access",
+    coOutsidersRevokeConfirm:
+      "Close \"{name}\" access to the project \"{project}\"? The account stays, project access goes immediately.",
+    coOutsidersRevoked: "Access revoked",
+    coShareOutsider:
+      "Only a company admin with the \"Invite outsiders\" right can bring someone from outside into a company project.",
     coRolesOwnerAll: "The owner has everything — no checkboxes are granted",
 
     // Wallet
@@ -2544,6 +2645,45 @@ export const dict = {
     coKeysService: "Service",
     coKeysHint:
       "Account lookup order: the person's own → the company's → the platform's.",
+
+    coMachines: "Machines",
+    coMachinesDesc: "The company's own computers: its processing runs on them.",
+    coMachinesTitle: "Company machines",
+    coMachinesSub:
+      "Work by the company's people runs on its machines. Such a machine sees no other projects — neither other companies' nor the shared section's.",
+    coMachinesEmpty: "No machines yet — processing runs on ours",
+    coMachinesEmptyHeld:
+      "No machines of your own, and processing is allowed only on them — tasks wait in the queue",
+    coMachinesPolicyTitle: "Where to process",
+    coMachinesPolicyHint:
+      "While the company has at least one machine, its work goes only there. This switch answers a different question: what to do when no machines of your own are left at all.",
+    coMachinesPolicyLabel: "Process only on our own machines",
+    coMachinesPolicyOn:
+      "On: with no machines of your own, tasks wait in the queue. They will not move to ours.",
+    coMachinesPolicyOff:
+      "Off: with no machines of your own, we take the processing on.",
+    coMachinesPolicySaved: "Rule saved",
+    coMachinesAdd: "Add a machine",
+    coMachinesName: "Name",
+    coMachinesNamePlaceholder: "E.g. Render-1 in the office",
+    coMachinesNote: "Note",
+    coMachinesCreate: "Issue a token",
+    coMachinesOnline: "Online",
+    coMachinesOffline: "Offline",
+    coMachinesBusy: "Busy",
+    coMachinesRevoke: "Revoke",
+    coMachinesRevokeConfirm:
+      "Revoke the machine \"{name}\"? Its token stops working immediately.",
+    coMachinesRevoked: "Machine revoked",
+    coMachinesRotate: "Replace token",
+    coMachinesRotateConfirm:
+      "Issue a new token for \"{name}\"? The old one stops working immediately.",
+    coMachinesTokenTitle: "Machine token",
+    coMachinesTokenHint:
+      "Shown once — save it now. Only a fingerprint is stored, it cannot be recovered.",
+    coMachinesTokenCopy: "Copy",
+    coMachinesTokenCopied: "Token copied",
+    coMachinesTokenDone: "Saved it",
 
     // Statistics
     coStatsTitle: "Company statistics",
@@ -2922,6 +3062,26 @@ export const dict = {
     adminRolesDesc: "What each admin works on: roles and section tags.",
     adminPipelineDesc:
       "Task queue, machines at work and the shared processing dictionaries.",
+    areasTitle: "Pipeline control room",
+    areasSub:
+      "Every area in one table: where work is running, where the queue is held and whose machines are clearing it.",
+    areasArea: "Area",
+    areasWatching: "Watching",
+    areasQueued: "Queued",
+    areasRunning: "Running",
+    areasFailed: "Errors today",
+    areasMachines: "Machines",
+    areasGeneral: "Shared section",
+    areasPeople: "people watched: {watched} of {total}",
+    areasByPerson: "per person",
+    areasOurMachines: "ours: {online} of {total} online",
+    areasOwnMachines: "own: {online} of {total} online",
+    areasNoOwnMachines: "none of their own — runs on ours",
+    areasHeld: "processing off, tasks waiting",
+    areasResumed: "Company processing enabled",
+    areasPaused: "Company processing disabled",
+    areasLoadFailed: "Could not load the control room",
+    areasToggleFailed: "Could not switch it",
     adminPipelineEyebrow: "Processing",
     adminPosting: "Autoposting",
     adminPostingDesc:

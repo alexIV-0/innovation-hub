@@ -84,6 +84,20 @@ export type WorkspaceUser = {
    * второй источник правды — он однажды разойдётся с первым.
    */
   hasCompanyConsole?: boolean
+  /**
+   * Суперадмин зашёл в ЧУЖУЮ компанию через переключатель.
+   *
+   * Тогда рабочее место в меню не показывается: дашборд, папки, архив и ключи
+   * — это ЕГО собственные вещи, к компании, которую он сейчас настраивает, они
+   * отношения не имеют, и висят рядом с её консолью как чужие. Сотруднику
+   * компании, наоборот, показываются: у него своя компания и свои проекты в ней
+   * — одно рабочее место, а не два.
+   *
+   * Признак приходит с сервера готовым (сравнение компании из области с
+   * компанией самого человека в app/company/layout.tsx), а не считается здесь:
+   * то же сравнение уже решает, красить ли оболочку в цвета клиента.
+   */
+  companyGuest?: boolean
 }
 
 type ShellProps = WorkspaceUser & {
@@ -317,7 +331,15 @@ function SidebarContent({
           </div>
         </div>
 
-        <nav className="flex shrink-0 flex-col gap-1 px-3 py-2">
+        {/* Рабочее место прячется у гостя целиком — см. WorkspaceUser.companyGuest.
+            Не гасится и не сворачивается: это не «пока недоступно», это чужие
+            папки на экране настройки клиента. */}
+        <nav
+          className={cn(
+            "flex shrink-0 flex-col gap-1 px-3 py-2",
+            user.companyGuest && "hidden",
+          )}
+        >
           {!collapsed && (
             <div className="px-2.5 pb-1.5 pt-3.5 text-[11px] font-semibold tracking-[1.4px] text-muted-foreground/60">
               {t.workspaceSection}
@@ -378,16 +400,35 @@ function SidebarContent({
           {/* Консоль компании — над админкой и отдельно от неё: это разные оси
               прав (COMPANY_ACCOUNTS_PLAN.md §4). Сотрудник компании обычно
               обычный пользователь на сайте, и админского блока ниже у него нет
-              вовсе; суперадмин увидит оба, и спутать их нечем — подписи разные. */}
+              вовсе; суперадмин увидит оба.
+
+              Отбивка и подпись такие же, как у админского блока ниже, и по той
+              же причине: это распоряжение, а не работа, и от рабочего места оно
+              должно быть отделено видимой чертой. Раньше подпись была только у
+              админки, и у сотрудника компании его консоль висела просто
+              последним пунктом рабочего места — то есть выглядела его частью. */}
           {user.hasCompanyConsole && (
-            <div onClick={onNavigate}>
-              <NavItem
-                href="/company"
-                active={pathname === "/company" || pathname.startsWith("/company/")}
-                collapsed={collapsed}
-                icon={<Building2 className="h-5 w-5" />}
-                label={t.coConsole}
+            <div className="flex flex-col gap-0.5">
+              <div
+                className={cn(
+                  "mb-1 h-px bg-foreground/10",
+                  collapsed ? "mx-1" : "mx-2.5",
+                )}
               />
+              {!collapsed ? (
+                <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
+                  {t.coConsolePanel}
+                </p>
+              ) : null}
+              <div onClick={onNavigate}>
+                <NavItem
+                  href="/company"
+                  active={pathname === "/company" || pathname.startsWith("/company/")}
+                  collapsed={collapsed}
+                  icon={<Building2 className="h-5 w-5" />}
+                  label={t.coConsole}
+                />
+              </div>
             </div>
           )}
           {isElevated(user.role) && (
@@ -524,6 +565,7 @@ function WorkspaceShellInner({
   capabilities,
   balanceCents,
   hasCompanyConsole,
+  companyGuest,
   children,
 }: ShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -534,6 +576,7 @@ function WorkspaceShellInner({
     capabilities,
     balanceCents,
     hasCompanyConsole,
+    companyGuest,
   }
   const { t } = useI18n()
   const branding = useBranding()

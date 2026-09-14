@@ -79,6 +79,26 @@ export async function setCompanyBranding(input: {
   return result.rows[0] ?? null
 }
 
+/**
+ * Настройки компании (`features`) — правка ПОВЕРХ текущих, ключ за ключом.
+ *
+ * `||` вместо присваивания намеренно: мешок общий, и запись целиком стёрла бы
+ * чужие ключи, которых вызывающий не знает. Форма шлёт то, что человек трогал.
+ */
+export async function patchCompanyFeatures(input: {
+  companyId: string
+  patch: Record<string, unknown>
+}): Promise<CompanyRecord | null> {
+  const result = await query<CompanyRecord>(
+    `UPDATE companies
+        SET features = features || $2::jsonb, updated_at = NOW()
+      WHERE id = $1
+      RETURNING ${COMPANY_FIELDS}`,
+    [input.companyId, JSON.stringify(input.patch)],
+  )
+  return result.rows[0] ?? null
+}
+
 export async function setCompanyDomain(input: {
   companyId: string
   domain: string | null

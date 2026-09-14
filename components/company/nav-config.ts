@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Monitor,
   KeyRound,
   ScrollText,
   ShieldCheck,
@@ -68,6 +69,14 @@ export const COMPANY_TOOLS: CompanyTool[] = [
     href: "/company/statistics",
     icon: BarChart3,
     capability: "statistics.view",
+  },
+  {
+    key: "machines",
+    labelKey: "coMachines",
+    descriptionKey: "coMachinesDesc",
+    href: "/company/machines",
+    icon: Monitor,
+    capability: "machines.manage",
   },
   {
     key: "keys",

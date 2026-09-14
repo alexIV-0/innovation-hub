@@ -58,8 +58,17 @@ export default async function CompanyLayout({
    */
   const viewed = await findCompanyById(context.companyId)
   const accent = viewed ? readBranding(viewed.branding).accent : DEFAULT_ACCENT
+
+  /**
+   * Он в ЧУЖОЙ компании, а не в своей.
+   *
+   * Одно сравнение отвечает сразу на два вопроса: красить ли оболочку в цвета
+   * клиента и показывать ли собственное рабочее место в меню. Оба ответа — про
+   * одно и то же: он здесь гость, и всё вокруг принадлежит не ему.
+   */
+  const isGuest = context.companyId !== user.companyId
   const scopedAccent =
-    context.companyId === user.companyId || accent === DEFAULT_ACCENT
+    !isGuest || accent === DEFAULT_ACCENT
       ? null
       : accentCss(accent, ".company-brand")
 
@@ -75,6 +84,7 @@ export default async function CompanyLayout({
         capabilities={user.capabilities}
         balanceCents={user.balanceCents ?? 0}
         hasCompanyConsole
+        companyGuest={isGuest}
       >
         <CompanyShell
           companyTitle={context.companyTitle}

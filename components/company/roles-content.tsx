@@ -26,6 +26,8 @@ const LABEL_KEY: Record<CompanyCapability, keyof Dictionary> = {
   "people.manage": "coCapPeople",
   "roles.manage": "coCapRoles",
   "keys.manage": "coCapKeys",
+  "machines.manage": "coCapMachines",
+  "people.invite": "coCapInvite",
 }
 
 /**

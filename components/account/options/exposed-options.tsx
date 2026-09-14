@@ -29,7 +29,11 @@ import { socialControlFor } from "./social-controls"
  */
 
 type Props = {
+  /** Нужен контролу выбора файла: он грузит файл в этот проект. */
+  projectId: string
   options: ExposedOption[]
+  /** Словарь расширений конвейера: проверка файла до заливки. */
+  fileTypes: Record<string, string[]>
   /**
    * Отправка правок. Возвращает свежий список (сервер мог зажать число в
    * границы) либо кидает ошибку с текстом для тоста. `null` — правки отсюда
@@ -57,7 +61,13 @@ function isDirty(option: ExposedOption, draft: ExposedOptionValue | undefined) {
   return JSON.stringify(draft) !== JSON.stringify(option.value)
 }
 
-export function ExposedOptionsList({ options, onSave, className }: Props) {
+export function ExposedOptionsList({
+  projectId,
+  options,
+  fileTypes,
+  onSave,
+  className,
+}: Props) {
   const { t } = useI18n()
   const [draft, setDraft] = useState<Record<string, ExposedOptionValue>>(() =>
     buildDraft(options),
@@ -104,6 +114,35 @@ export function ExposedOptionsList({ options, onSave, className }: Props) {
           value: draft[optionKey(option)]!,
         })),
       )
+      setDraft(buildDraft(next))
+      toast.success(t.optionsSaved)
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t.optionsSaveFailed,
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /**
+   * Записать одно значение немедленно, минуя кнопку «Сохранить».
+   *
+   * Нужно выбору файла: он уже положил файл в проект, и оставить путь только в
+   * черновике значило бы разойтись с хранилищем — файл лежит, а граф про него
+   * не знает. У остальных контролов правка обратима до сохранения, и общий
+   * порядок им подходит.
+   */
+  const commitOne = async (
+    option: ExposedOption,
+    value: ExposedOptionValue,
+  ): Promise<void> => {
+    if (!onSave) return
+    setSaving(true)
+    try {
+      const next = await onSave([{ path: option.path, value }])
       setDraft(buildDraft(next))
       toast.success(t.optionsSaved)
     } catch (error) {
@@ -165,6 +204,9 @@ export function ExposedOptionsList({ options, onSave, className }: Props) {
                 value={draft[key] ?? option.value}
                 disabled={saving || !onSave}
                 onChange={change}
+                projectId={projectId}
+                fileTypes={fileTypes}
+                commit={(next) => commitOne(option, next)}
               />
             )
 

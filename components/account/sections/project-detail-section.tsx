@@ -676,7 +676,11 @@ export function ProjectDetailSection({
         </section>
 
         {drive ? (
-          <ProjectAutomationPanel projectId={project.id} options={drive.options} />
+          <ProjectAutomationPanel
+            projectId={project.id}
+            options={drive.options}
+            fileTypes={drive.fileTypes ?? {}}
+          />
         ) : null}
       </div>
     </div>

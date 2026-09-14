@@ -195,6 +195,13 @@ type WorkspaceValue = {
   // параметры обработки, открытые клиенту (exposedToSite в options.json)
   exposedOptions: ExposedOption[]
   /**
+   * Типы файлов, которые знает обработка: снимок из графа поверх общего
+   * словаря. Нужен контролу выбора файла — он проверяет расширение до заливки,
+   * чтобы человек узнал о неподдерживаемом типе сразу, а не по молчащей
+   * обработке.
+   */
+  fileTypes: Record<string, string[]>
+  /**
    * Сохранение правок. null — источник не даёт адреса (админский вид):
    * панель тогда только показывает значения.
    */
@@ -551,6 +558,7 @@ export function WorkspaceProvider({
    */
   const [inStatus, setInStatus] = useState<Record<string, InItemStatus>>({})
   const [exposedOptions, setExposedOptions] = useState<ExposedOption[]>([])
+  const [fileTypes, setFileTypes] = useState<Record<string, string[]>>({})
   const [driveAvailable, setDriveAvailable] = useState(true)
   const [loadingFiles, setLoadingFiles] = useState(false)
   const [path, setPath] = useState<DriveFile[]>([])
@@ -753,12 +761,18 @@ export function WorkspaceProvider({
           setRootFiles([])
           setInStatus({})
           setExposedOptions([])
+          setFileTypes({})
           setPath([])
           toast.error(tRef.current.driveUnavailable)
           return
         }
         setDriveAvailable(true)
         setExposedOptions(Array.isArray(data.options) ? data.options : [])
+        setFileTypes(
+          data.fileTypes && typeof data.fileTypes === "object"
+            ? (data.fileTypes as Record<string, string[]>)
+            : {},
+        )
         const files: DriveFile[] = data.files ?? []
         setRootFiles(files)
         setFilesProjectId(projectId)
@@ -2063,6 +2077,7 @@ export function WorkspaceProvider({
     outFolder,
     inStatusOf,
     exposedOptions,
+    fileTypes,
     saveExposedOptions: source.exposedOptionsUrl ? saveExposedOptions : null,
     path,
     currentItems,

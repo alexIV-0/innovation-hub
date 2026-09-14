@@ -25,6 +25,8 @@ import {
   upsertProjectMember,
 } from "@/lib/repositories/project-members"
 import { rememberShareContact } from "@/lib/repositories/share-contacts"
+import { hasCapability } from "@/lib/admin-capabilities"
+import { checkCompanyInvite } from "@/lib/company-invite-gate"
 import {
   createUser,
   findUserByEmail,
@@ -342,6 +344,29 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   const emails = uniqueEmails(parsed.data)
+
+  // Граница доверия вынесена в модуль и проверяется на данных отдельно,
+  // см. lib/company-invite-gate.ts.
+  const gate = await checkCompanyInvite({
+    projectOwnerId: access.project.userId,
+    actorUserId: auth.userId,
+    actorIsSiteManager:
+      access.viaCapability === true ||
+      hasCapability(auth.role, auth.capabilities, "projects.manage"),
+    emails,
+  })
+  if (!gate.ok) {
+    return NextResponse.json(
+      {
+        message:
+          "Only a company admin with the invite right can share this project outside the company.",
+        code: gate.reason,
+        emails: gate.emails,
+      },
+      { status: 403 },
+    )
+  }
+
   const inviter = await findUserById(auth.userId)
   const inviterName = inviter?.fullName ?? auth.email
   const brand = await mailBrandForOwner(access.project.userId)

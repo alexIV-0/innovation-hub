@@ -260,16 +260,23 @@ export function ShareDialog() {
    *
    * Фильтр — по всей набранной строке, а не по последнему слову: имя пишется с
    * пробелом, и «Иван Пет» должно находить «Иван Петров».
+   *
+   * ПУСТОЕ ПОЛЕ — ПУСТОЙ СПИСОК, а не «показать всех».
+   *
+   * Раньше диалог открывался с готовым списком тех, кого этот человек уже
+   * приглашал. В компании это почти весь её состав: кто с кем работал, кто чей
+   * подрядчик — выложено на экран тому, кто просто нажал «Поделиться». Список
+   * своей переписки человек и так помнит; тому, кто его открыл, он не нужен, а
+   * случайному зрителю за плечом — тем более. Подсказка обязана быть ответом на
+   * вопрос, а не описью.
    */
   const suggestions = useMemo(() => {
     const q = draft.trim().toLowerCase()
+    if (!q) return []
     return contacts
       .filter((c) => !taken.has(c.email))
       .filter(
-        (c) =>
-          !q ||
-          c.email.includes(q) ||
-          c.fullName.toLowerCase().includes(q),
+        (c) => c.email.includes(q) || c.fullName.toLowerCase().includes(q),
       )
       .slice(0, 8)
   }, [contacts, draft, taken])
@@ -481,6 +488,13 @@ export function ShareDialog() {
         body: JSON.stringify({ emails: unique, role: inviteRole }),
       })
       const data = await res.json().catch(() => ({}))
+      // Отказ по рамке компании приходит ОДИН на весь запрос, без `results`:
+      // сервер не зовёт никого, если в списке есть посторонний. Иначе часть
+      // адресов уехала бы, часть нет, и человек не понял бы, что произошло.
+      if (res.status === 403 && data.code === "company-outsider") {
+        toast.error(t.coShareOutsider)
+        return
+      }
       const results = Array.isArray(data.results) ? data.results : []
       const ok = results.filter((r: { ok?: boolean }) => r.ok)
       const fail = results.filter((r: { ok?: boolean }) => !r.ok)

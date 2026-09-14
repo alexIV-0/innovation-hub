@@ -247,6 +247,36 @@ export const ACTION_META: Record<
     icon: Palette,
     tone: "neutral",
   },
+  "company.machine_created": {
+    labelKey: "auditCompanyMachineCreated",
+    icon: Monitor,
+    tone: "access",
+  },
+  "company.machine_revoked": {
+    labelKey: "auditCompanyMachineRevoked",
+    icon: Monitor,
+    tone: "neutral",
+  },
+  "company.machine_token_rotated": {
+    labelKey: "auditCompanyMachineRotated",
+    icon: KeyRound,
+    tone: "access",
+  },
+  "company.machines_policy_changed": {
+    labelKey: "auditCompanyMachinesPolicy",
+    icon: Monitor,
+    tone: "neutral",
+  },
+  "company.automation_enabled": {
+    labelKey: "auditCompanyAutomationEnabled",
+    icon: Workflow,
+    tone: "neutral",
+  },
+  "company.automation_disabled": {
+    labelKey: "auditCompanyAutomationDisabled",
+    icon: Workflow,
+    tone: "neutral",
+  },
 }
 
 export const TONE_CLASS = {

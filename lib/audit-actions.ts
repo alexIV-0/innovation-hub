@@ -85,6 +85,20 @@ export const AUDIT_ACTIONS = [
   // Оформление: акцент, логотип, домен. Пишется, потому что смена домена
   // меняет то, что видит человек на странице входа, ещё не войдя.
   "company.branding_changed",
+  // Машины компании (COMPANY_PIPELINE_PLAN.md §2). Выдача и смена токена —
+  // «access»: это ключ, открывающий проекты компании железу в чужом офисе.
+  "company.machine_created",
+  "company.machine_revoked",
+  "company.machine_token_rotated",
+  // Флаг «только свои машины» (§4). Пишется отдельно от машин: он меняет не
+  // список железа, а то, куда уходит работа, когда железа не осталось — и это
+  // первое, что спросят, когда очередь встанет.
+  "company.machines_policy_changed",
+  // Слежение конвейера за компанией (§5). Отдельно от `company.disabled`: та
+  // закрывает компанию целиком, эта только останавливает обработку — и второе
+  // делают куда чаще первого.
+  "company.automation_enabled",
+  "company.automation_disabled",
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

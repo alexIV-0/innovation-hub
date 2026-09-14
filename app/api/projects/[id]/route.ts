@@ -160,6 +160,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     role: auth.role,
     machineTokenId: null,
     computerId: null,
+    machineCompanyId: null,
     scopedProjectId: null,
     capabilities: auth.capabilities,
   }

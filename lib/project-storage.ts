@@ -14,6 +14,7 @@ import {
   OPTIONS_FILE_NAME,
   OPTIONS_FOLDER_NAME,
 } from "@/lib/storage/keys"
+import { readFileTypeDictionary } from "@/lib/repositories/automation-settings"
 import { applyExposedOptionChanges, type ExposedOptionChange } from "@/lib/options/apply"
 import { ProjectStorageError } from "@/lib/options/errors"
 import { extractExposedOptions } from "@/lib/options/extract"
@@ -112,6 +113,16 @@ export type ProjectStorageState = {
    * моей», иначе Ctrl+S затрёт правку молча (docs/PROJECT_OPTIONS_PANEL.md §4).
    */
   optionsEtag: string | null
+  /**
+   * Словарь типов файлов конвейера — все расширения из его настроек
+   * (`automation_settings`, домен `fileType`). Им контрол выбора файла
+   * проверяет расширение ДО заливки.
+   *
+   * Едет вместе с настройками проекта, а не отдельным запросом, потому что оба
+   * эндпоинта со словарями клиенту недоступны: админский требует права
+   * `pipeline.operate`, машинный — токена `mch_…`.
+   */
+  fileTypes: Record<string, string[]>
   available: boolean
 }
 
@@ -484,6 +495,7 @@ export async function loadProjectStorageState(
       options: [],
       optionsFileExists: false,
       optionsEtag: null,
+      fileTypes: {},
       available: false,
     }
   }
@@ -497,9 +509,10 @@ export async function loadProjectStorageState(
     ? parseFolderState(parseJson(stateRaw))
     : null
   const optionsFileExists = optionsObject != null
-  const options = optionsObject
-    ? extractExposedOptions(parseJson(optionsObject.body))
-    : []
+  // Разбираем один раз: из этого же JSON достаётся и список параметров, и
+  // снимок словаря типов.
+  const optionsJson = optionsObject ? parseJson(optionsObject.body) : null
+  const options = optionsJson ? extractExposedOptions(optionsJson) : []
 
   return {
     files,
@@ -507,7 +520,25 @@ export async function loadProjectStorageState(
     options,
     optionsFileExists,
     optionsEtag: optionsObject?.etag ?? null,
+    fileTypes: await loadFileTypes(),
     available: true,
+  }
+}
+
+/**
+ * Словарь типов файлов конвейера — общий, из его настроек.
+ *
+ * Его отсутствие НЕ должно ронять загрузку проекта: `readFileTypeDictionary`
+ * кидает на незалитой миграции, а файловое дерево к словарю отношения не имеет.
+ * Пустой словарь на клиенте означает «проверить нечем», и выбор файла
+ * продолжает работать.
+ */
+async function loadFileTypes(): Promise<Record<string, string[]>> {
+  try {
+    return await readFileTypeDictionary()
+  } catch (error) {
+    console.error("[project-storage] file type dictionary unavailable", error)
+    return {}
   }
 }
 

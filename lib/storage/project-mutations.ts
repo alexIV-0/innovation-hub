@@ -4,6 +4,7 @@ import { findClientById } from "@/lib/repositories/clients"
 import {
   createProject,
   deleteProject,
+  findCompanyProject,
   findOwnedProject,
   findProjectById,
   updateProject,
@@ -20,7 +21,7 @@ import {
   softDeleteProject,
 } from "@/lib/storage/project-trash"
 import { NextResponse } from "next/server"
-import { canReachAnyProject } from "@/lib/storage/auth"
+import { ownerInScope, reachScope } from "@/lib/storage/auth"
 import { recordAuditEvent } from "@/lib/repositories/admin-audit"
 
 export type MutationError = { error: string; status: number }
@@ -40,7 +41,7 @@ async function resolveClientId(
   if (clientId == null) return { data: null }
   const client = await findClientById(clientId)
   if (!client) return { error: "Client not found.", status: 400 }
-  if (!canReachAnyProject(auth) && client.userId !== auth.userId) {
+  if (!(await ownerInScope(auth, client.userId))) {
     return { error: "Client not found.", status: 400 }
   }
   return { data: client.id }
@@ -207,12 +208,19 @@ export async function restoreOwnedProject(
     }
   }
 
+  // Корзина — единственное место, где рамка смотрит с `includeDeleted`:
+  // восстановить можно только то, что уже было своим.
+  const restoreScope = reachScope(auth)
   const existing =
-    canReachAnyProject(auth)
+    restoreScope.kind === "all"
       ? await findProjectById(input.projectId, { includeDeleted: true })
-      : await findOwnedProject(input.projectId, auth.userId, {
-          includeDeleted: true,
-        })
+      : restoreScope.kind === "company"
+        ? await findCompanyProject(input.projectId, restoreScope.companyId, {
+            includeDeleted: true,
+          })
+        : await findOwnedProject(input.projectId, restoreScope.userId, {
+            includeDeleted: true,
+          })
 
   if (!existing?.deletedAt) {
     return { error: "Project not found.", status: 404 }

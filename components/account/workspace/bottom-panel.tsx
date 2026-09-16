@@ -61,6 +61,7 @@ export function SettingsTab() {
     setArchived,
     deleteProject,
     exposedOptions,
+    skippedOptions,
     fileTypes,
     saveExposedOptions,
   } = useWorkspace()
@@ -102,6 +103,7 @@ export function SettingsTab() {
       <ExposedOptionsList
         projectId={selected.id}
         options={exposedOptions}
+        skipped={skippedOptions}
         fileTypes={fileTypes}
         onSave={canEditSettings ? saveExposedOptions : null}
         className="mt-4 border-t border-foreground/[0.07] pt-4"

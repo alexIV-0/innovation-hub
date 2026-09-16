@@ -119,6 +119,13 @@ export const ACTION_META: Record<
     icon: Trash2,
     tone: "danger",
   },
+  // Тяжелее удаления: у того есть корзина и срок, у этого — ничего. Файлы
+  // стёрты и в базе, и в хранилище, вернуть их неоткуда.
+  "project.purged": {
+    labelKey: "auditProjectPurged",
+    icon: Trash2,
+    tone: "danger",
+  },
   // Тяжёлая строка: сменился владелец, а вместе с ним — кошелёк, с которого
   // идут списания за обработку.
   "project.transferred": {

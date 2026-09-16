@@ -25,6 +25,7 @@ import { ProjectGroups } from "./project-groups"
 import {
   TRASH_RETENTION_DAYS,
   fmtDate,
+  fmtDateTime,
   itemsAtPath,
   trashDaysLeft,
 } from "./format"
@@ -32,6 +33,7 @@ import { sectionEmptyText, sectionHeading } from "./sections"
 import { ResizeGrip } from "@/components/account/resize-grip"
 import type { DriveFile, Project } from "./types"
 import { useDragSize } from "@/components/account/use-drag-size"
+import { TrialCta } from "./trial-cta"
 import { useWorkspace } from "./workspace-context"
 import { ViewSwitch } from "./workspace-topbar"
 
@@ -422,7 +424,7 @@ function TrashTile({ project }: { project: Project }) {
           {project.name}
         </p>
         <p className="mt-2.5 text-[13px] text-ws-4">
-          {tf(t.trashDeletedOn, { date: fmtDate(deletedAt, lang) })}
+          {tf(t.trashDeletedOn, { date: fmtDateTime(deletedAt, lang) })}
           {" · "}
           {daysLeft === 0
             ? t.trashLastDay
@@ -603,6 +605,10 @@ export function AllProjectsPage() {
                 {creating ? t.creatingProject : t.newProject}
               </button>
             ) : null}
+            {/* Пробный период рядом с «Новым проектом»: на виду, но вторым по
+                весу — обводкой, а не заливкой, чтобы не спорить с основным
+                действием. Сама кнопка исчезает, когда период уже не доступен. */}
+            {isProjects ? <TrialCta size="page" /> : null}
           </div>
         </div>
       </div>

@@ -44,6 +44,8 @@ import {
 } from "@/lib/options/numeric-format"
 import type { ExposedOption, ExposedOptionValue } from "@/lib/options/types"
 import { cn } from "@/lib/utils"
+import { OverlayControl } from "./overlay-control"
+import { VideoAdjustControl } from "./video-adjust-control"
 
 /**
  * Семь контролов вкладки настроек — по одному на `controlType`, которому автор
@@ -695,6 +697,39 @@ function PathNavigatorControl({
   )
 }
 
+/**
+ * Наложение объекта на кадр. Обёртка над модалкой: сюда приходит строка с JSON,
+ * обратно уходит она же — разбор и слияние живут в lib/options/overlay.ts.
+ *
+ * Референс в рамке — файл из ноды-источника: путь даёт обход ребра графа
+ * (lib/options/overlay-reference.ts), ссылку — слой хранилища. Пусто, когда
+ * источник не файл или не найден; рамка тогда остаётся пустой.
+ */
+function OverlaySettingsControl({ option, value, disabled, onChange }: ControlProps) {
+  return (
+    <OverlayControl
+      value={typeof value === "string" ? value : ""}
+      disabled={disabled}
+      onChange={onChange}
+      referenceUrl={option.referenceUrl}
+    />
+  )
+}
+
+/**
+ * Смена формата кадра. Обёртка над модалкой: строка с JSON туда и обратно,
+ * разбор и слияние — lib/options/video-adjust.ts.
+ */
+function VideoAdjustSettingsControl({ value, disabled, onChange }: ControlProps) {
+  return (
+    <VideoAdjustControl
+      value={typeof value === "string" ? value : ""}
+      disabled={disabled}
+      onChange={onChange}
+    />
+  )
+}
+
 export const OPTION_CONTROLS: Record<
   ExposedOption["control"],
   (props: ControlProps) => React.ReactNode
@@ -708,6 +743,8 @@ export const OPTION_CONTROLS: Record<
   textedit: TextEditControl,
   vendorAccount: VendorAccountControl,
   pathNavigator: PathNavigatorControl,
+  overlaySettings: OverlaySettingsControl,
+  videoAdjustment: VideoAdjustSettingsControl,
 }
 
 /** Значение строкой — для заблокированных полей и подписей. */

@@ -75,10 +75,10 @@ function GroupHeader({
       />
       <span
         className={cn(
-          "whitespace-nowrap font-semibold",
-          page
-            ? "text-[15px] tracking-[1.4px] text-ws-accent"
-            : "text-[13px] tracking-wide text-ws-2",
+          // Те же буквы, что и у заголовка раздела «Проекты», на шаг мельче:
+          // группа — это ступень под ним, а не отдельный вид надписи.
+          "whitespace-nowrap font-semibold uppercase text-ws-accent",
+          page ? "text-[15px] tracking-[1.4px]" : "text-[12px] tracking-[1.4px]",
         )}
       >
         {label}

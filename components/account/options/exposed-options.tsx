@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { CircleHelp, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { useI18n } from "@/components/account/i18n"
+import { tf, useI18n } from "@/components/account/i18n"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { ExposedOptionChange } from "@/lib/options/apply"
+import type { SkippedOption } from "@/lib/options/extract"
 import type { ExposedOption, ExposedOptionValue } from "@/lib/options/types"
 import { cn } from "@/lib/utils"
 import { formatOptionValue, OPTION_CONTROLS } from "./option-controls"
@@ -40,6 +41,16 @@ type Props = {
    * не предусмотрены вовсе: показываем только значения.
    */
   onSave: ((changes: ExposedOptionChange[]) => Promise<ExposedOption[]>) | null
+  /**
+   * Свойства, которые автор графа клиенту открыл, а сайт нарисовать не смог.
+   *
+   * Показываются строкой под списком, а не прячутся: типов свойств в программе
+   * больше, чем контролов здесь, и так будет всегда (тяжёлые контролы с превью
+   * не переезжают, docs/PROJECT_OPTIONS_PANEL.md §1). Молчание же означает, что
+   * автор ставит галочку, на сайте пусто, и причину можно узнать только из кода
+   * — разбор в docs/OVERLAY_CONTROL_PLAN.md §7.
+   */
+  skipped?: SkippedOption[]
   className?: string
 }
 
@@ -66,6 +77,7 @@ export function ExposedOptionsList({
   options,
   fileTypes,
   onSave,
+  skipped,
   className,
 }: Props) {
   const { t } = useI18n()
@@ -102,7 +114,9 @@ export function ExposedOptionsList({
     return map
   }, [options, draft])
 
-  if (options.length === 0) return null
+  // Пусто и сказать нечего — раздела нет. Но если ВСЕ открытые свойства сайту
+  // незнакомы, список пуст, а сообщить есть о чём: молчать здесь хуже всего.
+  if (options.length === 0 && (skipped?.length ?? 0) === 0) return null
 
   const save = async () => {
     if (!onSave || dirty.length === 0) return
@@ -244,6 +258,20 @@ export function ExposedOptionsList({
             )
           })}
         </ul>
+
+        {skipped && skipped.length > 0 ? (
+          <p className="text-[12px] text-ws-4">
+            {/* Называем свойства ПОДПИСЬЮ автора, а не типом контрола: «Overlay
+                Settings» человек узнаёт в ноде, `overlaySettings` — нет. Тип
+                остаётся запасным вариантом, когда подписи нет: он всё равно
+                отвечает на вопрос «почему галочка ничего не дала». */}
+            {tf(t.optionsSkipped, {
+              names: [
+                ...new Set(skipped.map((s) => s.label ?? s.controlType)),
+              ].join(", "),
+            })}
+          </p>
+        ) : null}
 
         {onSave ? (
           <div className="flex justify-end">

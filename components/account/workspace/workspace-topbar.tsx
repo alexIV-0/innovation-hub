@@ -1,8 +1,13 @@
 "use client"
 
 import {
+  AlignJustify,
+  ArrowDownAZ,
   ArrowLeft,
+  CalendarDays,
   Columns3,
+  FolderTree,
+  HardDrive,
   LayoutGrid,
   List,
   Rows2,
@@ -11,6 +16,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import type { TrashSort } from "./trash-model"
 import type { Density, ViewMode } from "./types"
 import { useWorkspace } from "./workspace-context"
 import { ProcessingIndicator } from "@/components/account/processing-indicator"
@@ -93,6 +99,78 @@ export function ViewSwitch({ className }: { className?: string }) {
           onClick={() => setView(o.id)}
         />
       ))}
+    </div>
+  )
+}
+
+/**
+ * «Без папок» — поправка к виду, а не отдельный вид.
+ *
+ * Стоит рядом с переключателем списка и плитки, но в своей рамке: он с ними не
+ * спорит, а сочетается — плоским бывает и список, и плитка. Колонки при нём
+ * гаснут сами (см. FileBrowser): ходить по уровням, когда уровней нет, нечем.
+ */
+export function FlatSwitch() {
+  const { t, flat, setFlat } = useWorkspace()
+  return (
+    <div className="flex shrink-0 gap-0.5 rounded-[9px] border border-foreground/10 bg-ws-control p-[3px]">
+      <SegButton
+        active={flat}
+        icon={AlignJustify}
+        label={t.viewFlat}
+        iconOnly
+        onClick={() => setFlat(!flat)}
+      />
+    </div>
+  )
+}
+
+/**
+ * Порядок строк корзины и разбивка по проектам.
+ *
+ * «По проектам» показывается только в корне: когда смотрят корзину одного
+ * проекта, группировать не по чему — группа будет ровно одна, и кнопка бы
+ * обещала действие, которого не произойдёт.
+ */
+export function TrashSortSwitch() {
+  const {
+    t,
+    trashSort,
+    setTrashSort,
+    trashProjectId,
+    groupProjects,
+    setGroupProjects,
+  } = useWorkspace()
+  const options: { id: TrashSort; icon: LucideIcon; label: string }[] = [
+    { id: "date", icon: CalendarDays, label: t.sortByDate },
+    { id: "name", icon: ArrowDownAZ, label: t.sortByName },
+    { id: "size", icon: HardDrive, label: t.sortBySize },
+  ]
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 gap-0.5 rounded-[9px] border border-foreground/10 bg-ws-control p-[3px]">
+        {options.map((o) => (
+          <SegButton
+            key={o.id}
+            active={trashSort === o.id}
+            icon={o.icon}
+            label={o.label}
+            iconOnly
+            onClick={() => setTrashSort(o.id)}
+          />
+        ))}
+      </div>
+      {trashProjectId ? null : (
+        <div className="flex shrink-0 gap-0.5 rounded-[9px] border border-foreground/10 bg-ws-control p-[3px]">
+          <SegButton
+            active={groupProjects}
+            icon={FolderTree}
+            label={t.groupByProject}
+            iconOnly
+            onClick={() => setGroupProjects(!groupProjects)}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -308,6 +308,43 @@ async function copyTemplateSidecars(input: {
   }
 }
 
+/**
+ * Очистить содержимое проекта перед заменой.
+ *
+ * Удаляем только корневые строки: `writeFileDelete` уводит в корзину и всё
+ * вложенное. Папку `options` обходим НАМЕРЕННО — сайт и конвейер читают
+ * сайдкары по фиксированному ключу, и `assertSidecarPlaceIsStable` такое
+ * удаление отвергает с 403. Настройки и описание не удаляются, а
+ * перезаписываются на месте: этим займётся `copyTemplateSidecars`, перезапись
+ * содержимого сайдкара разрешена.
+ *
+ * Файлы уходят в корзину, а не стираются: у них 30 дней retention, и человек,
+ * выбравший «заменить» по ошибке, ещё может достать своё.
+ */
+async function clearProjectContents(input: {
+  storageOwnerId: string
+  projectId: string
+  actorUserId: string
+}): Promise<void> {
+  const rows = await query<{ id: string; name: string; isFolder: boolean }>(
+    `SELECT id, name, is_folder AS "isFolder"
+       FROM project_files
+      WHERE project_id = $1 AND folder_path = '' AND deleted_at IS NULL`,
+    [input.projectId],
+  )
+
+  for (const row of rows.rows) {
+    if (row.isFolder && row.name.toLowerCase() === OPTIONS_FOLDER_NAME) continue
+    await writeFileDelete({
+      storageOwnerId: input.storageOwnerId,
+      projectId: input.projectId,
+      fileId: row.id,
+      deletedBy: input.actorUserId,
+      actor: { userId: input.actorUserId, isUploader: true },
+    })
+  }
+}
+
 async function listTemplateRoots(
   projectId: string,
 ): Promise<{ id: string; name: string }[]> {
@@ -346,9 +383,15 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
      * `projectIds` нельзя — пропавший шаблон копии не даёт, и счёт разъедется.
      */
     doneTemplateIds?: string[]
+    /** `templateId` → имя, выбранное человеком при совпадении имён. */
+    names?: Record<string, string>
+    /** `templateId` → проект прошлой выдачи, который человек решил заменить. */
+    replaceTargets?: Record<string, string>
   }
   const grantId = payload.grantId
   const templateIds = payload.templateIds ?? []
+  const names = payload.names ?? {}
+  const replaceTargets = payload.replaceTargets ?? {}
 
   if (!grantId || templateIds.length === 0) {
     await finishJob(job.id, {
@@ -375,14 +418,30 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
       continue
     }
 
-    // Проект создаётся на паузе: копирование пишет обычные put-события в
-    // журнал, и под слежением сканер начал бы делать задачи прямо в процессе.
-    const project = await createProject({
-      ownerId: job.userId,
-      name: template.name,
-      description: template.description,
-      groupName: "personal",
-    })
+    /**
+     * Куда копировать. Человек мог выбрать замену проекта прошлой выдачи — тогда
+     * берём ЕГО, а не заводим новый: у проекта есть id, на который ссылаются
+     * задачи, статистика и движения денег. Удалить его и создать заново значило
+     * бы оставить ленту транзакций без проекта (`ON DELETE SET NULL`), а это
+     * ровно то, чего избегали в П9.1, отказавшись удалять строку гранта.
+     */
+    const replaceTargetId = replaceTargets[templateId]
+    const replaced = replaceTargetId
+      ? await findProjectById(replaceTargetId)
+      : null
+
+    // Проект на паузе: копирование пишет обычные put-события в журнал, и под
+    // слежением сканер начал бы делать задачи прямо в процессе.
+    const project =
+      replaced ??
+      (await createProject({
+        ownerId: job.userId,
+        // Имя из диалога, если человек его задал: набор приезжает рядом со
+        // старым, и различать их придётся именно по имени.
+        name: names[templateId] ?? template.name,
+        description: template.description,
+        groupName: "personal",
+      }))
     await setProjectPaused({
       projectId: project.id,
       ownerId: job.userId,
@@ -390,6 +449,17 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
       paused: true,
       updatedBy: "trial",
     })
+
+    // Замена: старое содержимое уезжает в корзину до копирования, иначе файлы
+    // двух наборов смешались бы, а одноимённые разошлись бы как «(2)».
+    if (replaced) {
+      await clearProjectContents({
+        storageOwnerId: replaced.storageOwnerId,
+        projectId: replaced.id,
+        actorUserId: job.userId,
+      })
+    }
+
     createdIds.push(project.id)
 
     const roots = await listTemplateRoots(templateId)
@@ -403,7 +473,7 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
         if (isSkippedTemplateItem(item)) continue
         await copyPlanItem({
           destProjectId: project.id,
-          destStorageOwnerId: job.userId,
+          destStorageOwnerId: project.storageOwnerId,
           destFolderPath: "",
           item,
           folderPathMap,
@@ -419,7 +489,7 @@ async function runTrialProvisionJob(job: StorageJobRecord): Promise<void> {
     await copyTemplateSidecars({
       template: { id: templateId, storageOwnerId: template.storageOwnerId },
       destProjectId: project.id,
-      destStorageOwnerId: job.userId,
+      destStorageOwnerId: project.storageOwnerId,
       actorUserId: job.userId,
     })
 

@@ -15,6 +15,7 @@ import {
   fileIcon,
   fileIconClass,
   fileMeta,
+  flattenTree,
   itemsAtPath,
   pathToFolderPath,
   resolvePath,
@@ -263,12 +264,15 @@ function InMark({ file, className }: { file: DriveFile; className?: string }) {
 function FileRow({
   file,
   size,
+  subtitle,
   onOpen,
   onPreview,
   onContext,
 }: {
   file: DriveFile
   size: Size
+  /** Откуда файл: путь до него в режиме «без папок», проект в корне корзины. */
+  subtitle?: string | null
   onOpen: (e: React.MouseEvent) => void
   onPreview: () => void
   onContext: (e: React.MouseEvent) => void
@@ -315,6 +319,20 @@ function FileRow({
         >
           {file.name}
         </span>
+        {/* Путь отдельной строкой, а не приклеенным к размеру и дате: в режиме
+            без папок это главное, что отличает один файл от другого, и теряться
+            в хвосте служебной строки ему нельзя. */}
+        {subtitle ? (
+          <span
+            title={subtitle}
+            className={cn(
+              "mt-0.5 block truncate text-ws-5",
+              roomy ? "text-[12.5px]" : "text-[11px]",
+            )}
+          >
+            {subtitle}
+          </span>
+        ) : null}
         <span
           className={cn(
             "mt-0.5 block text-ws-4",
@@ -340,12 +358,14 @@ function FileRow({
 function FileCard({
   file,
   size,
+  subtitle,
   onOpen,
   onPreview,
   onContext,
 }: {
   file: DriveFile
   size: Size
+  subtitle?: string | null
   onOpen: (e: React.MouseEvent) => void
   onPreview: () => void
   onContext: (e: React.MouseEvent) => void
@@ -393,6 +413,17 @@ function FileCard({
         >
           {file.name}
         </span>
+        {subtitle ? (
+          <span
+            title={subtitle}
+            className={cn(
+              "mt-0.5 block truncate text-ws-5",
+              roomy ? "text-[12.5px]" : "text-[11px]",
+            )}
+          >
+            {subtitle}
+          </span>
+        ) : null}
         <span
           className={cn(
             "mt-0.5 block truncate text-ws-4",
@@ -556,6 +587,8 @@ export function FileBrowser({
   basePath,
   view,
   size = "roomy",
+  flat,
+  subtitleOf,
   onNavigate,
   className,
 }: {
@@ -567,6 +600,14 @@ export function FileBrowser({
   basePath?: string
   view: ViewMode
   size?: Size
+  /**
+   * Показать всё поддерево одним списком, без папок. По умолчанию — как
+   * переключено в панели: режим общий для рабочей области, а не для области.
+   * Корзина задаёт его явно: её корень плоский всегда.
+   */
+  flat?: boolean
+  /** Своя подпись под именем вместо пути — корзина ставит туда проект. */
+  subtitleOf?: (file: DriveFile) => string | null
   onNavigate: (nodes: DriveFile[]) => void
   className?: string
 }) {
@@ -582,7 +623,24 @@ export function FileBrowser({
     uploadProgress,
   } = ws
 
-  const items = itemsAtPath(root, path)
+  const flatMode = flat ?? ws.flat
+  /**
+   * В плоском режиме список — это всё поддерево разом, и путь внутри него уже
+   * не при чём: заходить некуда, папок в списке нет. Поэтому и колоночный вид
+   * ниже отключается — колонки и есть хождение по уровням.
+   */
+  const entries = flatMode ? flattenTree(itemsAtPath(root, path)) : null
+  const items = entries ? entries.map((e) => e.file) : itemsAtPath(root, path)
+  const relPaths = entries
+    ? new Map(entries.map((e) => [e.file.id, e.relPath]))
+    : null
+  const subtitleFor = (f: DriveFile): string | null => {
+    if (subtitleOf) return subtitleOf(f)
+    if (!relPaths) return null
+    // Пустой путь — файл лежит прямо в той папке, откуда режим включили. Строку
+    // всё равно рисуем: без неё соседние файлы выглядят по-разному без причины.
+    return relPaths.get(f.id) || t.projectRoot
+  }
   const areaRef = useRevealScroll(items)
   const target = targetFor(basePath, path)
   const emptyMessage = !driveAvailable ? t.driveUnavailable : t.emptyFolder
@@ -620,7 +678,7 @@ export function FileBrowser({
       ? "outline outline-1 -outline-offset-1 outline-ws-accent/40 bg-ws-accent/[0.05]"
       : ""
 
-  if (view === "columns") {
+  if (view === "columns" && !flatMode) {
     return (
       <div
         ref={areaRef}
@@ -687,6 +745,7 @@ export function FileBrowser({
                 key={f.id}
                 file={f}
                 size={size}
+                subtitle={subtitleFor(f)}
                 onOpen={(e) => openItem(f, e)}
                 onPreview={() => ws.openPreview(f)}
                 onContext={(e) => openMenu("file", e, { file: f, target })}
@@ -702,6 +761,7 @@ export function FileBrowser({
                 key={f.id}
                 file={f}
                 size={size}
+                subtitle={subtitleFor(f)}
                 onOpen={(e) => openItem(f, e)}
                 onPreview={() => ws.openPreview(f)}
                 onContext={(e) => openMenu("file", e, { file: f, target })}

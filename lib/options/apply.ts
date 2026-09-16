@@ -2,6 +2,11 @@ import { ASSETS_FOLDER_NAME } from "@/lib/storage/keys"
 import { ProjectStorageError } from "./errors"
 import { readExposedOption } from "./extract"
 import { normalizeNumeric } from "./numeric-format"
+import { mergeOverlayValue, parseOverlayValue } from "./overlay"
+import {
+  mergeVideoAdjustValue,
+  parseVideoAdjustValue,
+} from "./video-adjust"
 import type { ExposedOption, ExposedOptionValue } from "./types"
 
 /**
@@ -84,6 +89,46 @@ function coerce(
     case "textedit":
       if (typeof value !== "string") fail(change.path, "expects a string.")
       return value
+
+    case "videoAdjustment": {
+      if (typeof value !== "string") {
+        fail(change.path, "expects video adjust settings as a JSON string.")
+      }
+      if (!value.trim()) fail(change.path, "expects a non-empty value.")
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(value)
+      } catch {
+        fail(change.path, "expects valid JSON.")
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        fail(change.path, "expects a JSON object.")
+      }
+      // Как и у наложения: сливаем в текущее значение из файла, а не пишем
+      // присланное. Разбор — lib/options/video-adjust.ts.
+      return mergeVideoAdjustValue(option.value, parseVideoAdjustValue(value))
+    }
+
+    case "overlaySettings": {
+      // Клиент присылает строку с JSON — ту же по форме, что лежит в файле.
+      if (typeof value !== "string") {
+        fail(change.path, "expects overlay settings as a JSON string.")
+      }
+      if (!value.trim()) fail(change.path, "expects a non-empty value.")
+      let incoming: unknown
+      try {
+        incoming = JSON.parse(value)
+      } catch {
+        fail(change.path, "expects valid JSON.")
+      }
+      if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) {
+        fail(change.path, "expects a JSON object with three format blocks.")
+      }
+      // Сливаем в ТЕКУЩЕЕ значение из файла, а не пишем присланное: сайт правит
+      // три блока геометрии, а `encode`, `fgFilePath` и всё остальное внутри
+      // значения принадлежит программе. Разбор — lib/options/overlay.ts.
+      return mergeOverlayValue(option.value, parseOverlayValue(value))
+    }
 
     case "vendorAccount":
       // Метка, а не секрет. Существование учётки здесь НЕ проверяем: она могла

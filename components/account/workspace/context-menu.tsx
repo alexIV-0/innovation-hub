@@ -27,6 +27,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { isSyntheticFolder } from "./trash-model"
 import { useWorkspace } from "./workspace-context"
 
 type MenuEntry =
@@ -79,7 +80,38 @@ export function WorkspaceContextMenu() {
 
   let entries: MenuEntry[] = []
 
-  if (menu.kind === "file" && menu.file) {
+  /**
+   * Правая область корзины: файлы в ней удалённые, и обычное меню им не годится.
+   * Переименовать, перенести или залить рядом нечего — вещь лежит вне проекта,
+   * и единственные два осмысленных действия это вернуть её или стереть совсем.
+   */
+  const inTrashPane = ws.projectTab === "trash" && !ws.selected
+
+  if (menu.kind === "file" && menu.file && inTrashPane) {
+    const file = menu.file
+    // Пустышка-папка дорисована ради структуры, своей строки в каталоге у неё
+    // нет: возвращать и стирать в ней нечего, поэтому меню пустое. Файл из
+    // удалённого проекта показан по той же причине, по которой человек ждёт его
+    // увидеть, — он его удалил, — но судьба у него общая с проектом: поодиночке
+    // такой файл не вернуть и не стереть, это делается карточкой проекта.
+    entries =
+      isSyntheticFolder(file) || ws.trashItemOf(file.id)?.projectDeleted
+        ? []
+      : [
+          {
+            icon: RotateCcw,
+            label: t.mRestore,
+            onClick: () => ws.restoreTrashFile(file),
+          },
+          { sep: true },
+          {
+            icon: Trash2,
+            label: t.mPurge,
+            danger: true,
+            onClick: () => ws.purgeTrashFile(file),
+          },
+        ]
+  } else if (menu.kind === "file" && menu.file) {
     const file = menu.file
     // Меню применяется ко всему выделению, если правый клик пришёлся по нему.
     const targets = ws.isSelected(file.id) ? ws.selection : [file]
@@ -249,6 +281,23 @@ export function WorkspaceContextMenu() {
               label: t.mRestore,
               onClick: () => ws.restoreProject(project),
             } as MenuEntry,
+          ]
+        : []),
+      /**
+       * «Удалить навсегда» — по признаку корзины и наличия адреса, а не по
+       * правам: роль удалённого проекта зажата до читателя, и `can.deleteProject`
+       * здесь всегда false. Права зоны при этом уже проверены — адрес есть
+       * только у источника, которому такое вообще позволено.
+       */
+      ...(project.deletedAt && source.projectPurgeUrl
+        ? [
+            {
+              icon: Trash2,
+              label: t.mPurge,
+              danger: true,
+              onClick: () => ws.purgeProjectForever(project),
+            } as MenuEntry,
+            { sep: true } as MenuEntry,
           ]
         : []),
       ...(can.renameProject

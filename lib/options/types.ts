@@ -72,6 +72,14 @@ export const EXPOSED_CONTROL_TYPES = [
    * программе и возвращаются нетронутыми.
    */
   "videoAdjustment",
+  /**
+   * Титры (`TitleEdit` в программе) — docs/TITLE_CONTROL_PLAN.md.
+   *
+   * Самый тяжёлый: около тридцати пяти полей на формат, сто с лишним на три.
+   * Сайт правит девять — шрифт, размер, цвет, положение, обводку и две
+   * заготовки; анимация, типографика и `encode` остаются программе.
+   */
+  "titleSettings",
 ] as const
 
 export type ExposedOptionControl = (typeof EXPOSED_CONTROL_TYPES)[number]

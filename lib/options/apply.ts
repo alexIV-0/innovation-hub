@@ -7,6 +7,7 @@ import {
   mergeVideoAdjustValue,
   parseVideoAdjustValue,
 } from "./video-adjust"
+import { mergeTitleValue, parseTitleValue } from "./title"
 import type { ExposedOption, ExposedOptionValue } from "./types"
 
 /**
@@ -89,6 +90,25 @@ function coerce(
     case "textedit":
       if (typeof value !== "string") fail(change.path, "expects a string.")
       return value
+
+    case "titleSettings": {
+      if (typeof value !== "string") {
+        fail(change.path, "expects title settings as a JSON string.")
+      }
+      if (!value.trim()) fail(change.path, "expects a non-empty value.")
+      let asTitle: unknown
+      try {
+        asTitle = JSON.parse(value)
+      } catch {
+        fail(change.path, "expects valid JSON.")
+      }
+      if (!asTitle || typeof asTitle !== "object" || Array.isArray(asTitle)) {
+        fail(change.path, "expects a JSON object with format blocks.")
+      }
+      // Правка ложится во все три формата, чужие поля берутся из файла —
+      // разбор в lib/options/title.ts.
+      return mergeTitleValue(option.value, parseTitleValue(value))
+    }
 
     case "videoAdjustment": {
       if (typeof value !== "string") {

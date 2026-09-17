@@ -145,6 +145,7 @@ function readValue(
       const hi = normalizeNumeric(num(raw[1], cfg.max), cfg)
       return [Math.min(lo, hi), Math.max(lo, hi)]
     }
+    case "titleSettings":
     case "videoAdjustment":
     case "overlaySettings":
       // Строка с JSON — отдаём как есть: разбирает её модалка тем же кодом,

@@ -8,6 +8,7 @@ import {
   parseVideoAdjustValue,
 } from "./video-adjust"
 import { mergeTitleValue, parseTitleValue } from "./title"
+import { mergeConvertValue, parseConvertValue } from "./convert"
 import type { ExposedOption, ExposedOptionValue } from "./types"
 
 /**
@@ -90,6 +91,25 @@ function coerce(
     case "textedit":
       if (typeof value !== "string") fail(change.path, "expects a string.")
       return value
+
+    case "convertSettings": {
+      if (typeof value !== "string") {
+        fail(change.path, "expects convert settings as a JSON string.")
+      }
+      if (!value.trim()) fail(change.path, "expects a non-empty value.")
+      let asConvert: unknown
+      try {
+        asConvert = JSON.parse(value)
+      } catch {
+        fail(change.path, "expects valid JSON.")
+      }
+      if (!asConvert || typeof asConvert !== "object" || Array.isArray(asConvert)) {
+        fail(change.path, "expects a JSON object.")
+      }
+      // Цепочки фильтров и кодеки берутся из файла — разбор в
+      // lib/options/convert.ts.
+      return mergeConvertValue(option.value, parseConvertValue(value))
+    }
 
     case "titleSettings": {
       if (typeof value !== "string") {

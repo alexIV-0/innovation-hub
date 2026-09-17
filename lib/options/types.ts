@@ -80,6 +80,14 @@ export const EXPOSED_CONTROL_TYPES = [
    * заготовки; анимация, типографика и `encode` остаются программе.
    */
   "titleSettings",
+  /**
+   * Конвертация файла (`ConvertEdit` в программе) — docs/CONVERT_CONTROL_PLAN.md.
+   *
+   * В программе это редактор ЦЕПОЧКИ: два десятка видеофильтров и тринадцать
+   * аудио. Клиенту отданы четыре выбора — формат, качество, размер кадра и
+   * звук; фильтры и кодеки остаются автору графа.
+   */
+  "convertSettings",
 ] as const
 
 export type ExposedOptionControl = (typeof EXPOSED_CONTROL_TYPES)[number]

@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils"
 import { OverlayControl } from "./overlay-control"
 import { VideoAdjustControl } from "./video-adjust-control"
 import { TitleControl } from "./title-control"
+import { ConvertControl } from "./convert-control"
 
 /**
  * Семь контролов вкладки настроек — по одному на `controlType`, которому автор
@@ -745,6 +746,20 @@ function TitleSettingsControl({ value, disabled, onChange }: ControlProps) {
   )
 }
 
+/**
+ * Конвертация файла. Обёртка над модалкой: строка с JSON туда и обратно, разбор
+ * и слияние — lib/options/convert.ts.
+ */
+function ConvertSettingsControl({ value, disabled, onChange }: ControlProps) {
+  return (
+    <ConvertControl
+      value={typeof value === "string" ? value : ""}
+      disabled={disabled}
+      onChange={onChange}
+    />
+  )
+}
+
 export const OPTION_CONTROLS: Record<
   ExposedOption["control"],
   (props: ControlProps) => React.ReactNode
@@ -761,6 +776,7 @@ export const OPTION_CONTROLS: Record<
   overlaySettings: OverlaySettingsControl,
   videoAdjustment: VideoAdjustSettingsControl,
   titleSettings: TitleSettingsControl,
+  convertSettings: ConvertSettingsControl,
 }
 
 /** Значение строкой — для заблокированных полей и подписей. */

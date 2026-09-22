@@ -60,6 +60,22 @@ function fromAddress(): string {
   )
 }
 
+/**
+ * Адрес для писем, на которые отвечать некуда и не нужно.
+ *
+ * Отдельно от `fromAddress()` по смыслу, а не ради красоты: приглашение и
+ * доступ к проекту приходят от человека, и ответ на такое письмо — нормальная
+ * реакция, поэтому они уходят с ящика, который кто-то читает. Сброс пароля
+ * отвечать не предполагает вовсе, и ответ на него уехал бы в общий ящик с
+ * куском переписки о доступе к аккаунту.
+ *
+ * Падает обратно на `RESEND_FROM`: установка, где второй ящик не заведён,
+ * продолжает слать всё с одного адреса, а не спотыкается на пустой переменной.
+ */
+function noreplyAddress(): string {
+  return process.env.RESEND_FROM_NOREPLY?.trim() || fromAddress()
+}
+
 export type MailResult =
   | { ok: true; id?: string }
   | { ok: false; error: string }
@@ -69,6 +85,8 @@ async function sendMail(input: {
   subject: string
   html: string
   text: string
+  /** Чем подписан конверт. Пусто — обычный ящик отправки. */
+  from?: string
 }): Promise<MailResult> {
   const resend = getResend()
   if (!resend) {
@@ -77,7 +95,7 @@ async function sendMail(input: {
   }
   try {
     const result = await resend.emails.send({
-      from: fromAddress(),
+      from: input.from ?? fromAddress(),
       to: input.to,
       subject: input.subject,
       html: input.html,
@@ -202,7 +220,7 @@ export async function sendPasswordResetEmail(input: {
     expiresInMinutes: input.expiresInMinutes,
     brand,
   })
-  return sendMail({ to: input.to, subject, html, text })
+  return sendMail({ to: input.to, subject, html, text, from: noreplyAddress() })
 }
 
 /**

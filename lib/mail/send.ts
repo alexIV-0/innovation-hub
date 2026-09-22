@@ -6,6 +6,7 @@ import { findUserById } from "@/lib/repositories/users"
 import {
   INSTALLATION_BRAND,
   companyWelcomeWithPasswordHtml,
+  passwordResetHtml,
   projectAccessGrantedHtml,
   projectInviteWithPasswordHtml,
   shareRoleCopy,
@@ -163,6 +164,42 @@ export async function sendProjectInviteWithPasswordEmail(input: {
     email: input.to,
     temporaryPassword: input.temporaryPassword,
     loginUrl,
+    brand,
+  })
+  return sendMail({ to: input.to, subject, html, text })
+}
+
+/**
+ * Ссылка на сброс пароля.
+ *
+ * Подписано установкой, а не компанией человека: письмо отправляется ДО входа,
+ * по одному лишь адресу, и определять компанию здесь значило бы подтверждать
+ * незалогиненному отправителю, что такой аккаунт есть и где он состоит.
+ */
+export async function sendPasswordResetEmail(input: {
+  to: string
+  userName: string
+  token: string
+  expiresInMinutes: number
+}): Promise<MailResult> {
+  const site = siteBase()
+  const resetUrl = `${site}/reset-password?token=${encodeURIComponent(input.token)}`
+  const brand = INSTALLATION_BRAND
+  const subject = `Reset your ${brand.name} password`
+  const text = [
+    `Hi ${input.userName},`,
+    ``,
+    `We received a request to reset your password.`,
+    ``,
+    `Choose a new password: ${resetUrl}`,
+    ``,
+    `This link works once and expires in ${input.expiresInMinutes} minutes.`,
+    `If you didn't request a reset, you can ignore this email.`,
+  ].join("\n")
+  const html = passwordResetHtml({
+    userName: input.userName,
+    resetUrl,
+    expiresInMinutes: input.expiresInMinutes,
     brand,
   })
   return sendMail({ to: input.to, subject, html, text })

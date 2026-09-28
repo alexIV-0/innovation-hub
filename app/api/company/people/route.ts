@@ -13,7 +13,11 @@ import {
   countCompanyOwners,
 } from "@/lib/repositories/company-capabilities"
 import { deactivateSubprofile } from "@/lib/repositories/companies"
-import { findLoginByEmail, findUserById } from "@/lib/repositories/users"
+import {
+  findLoginByEmail,
+  findUserById,
+  rememberLastProfile,
+} from "@/lib/repositories/users"
 import {
   listPeople,
   readMemberRole,
@@ -222,6 +226,15 @@ export async function POST(request: NextRequest) {
     if (added.outcome === "already") {
       results.push({ email, outcome: "already" })
       continue
+    }
+
+    // Аккаунт завела компания — и первый вход откроет её, а не пустое «Личное»
+    // (docs/MULTI_COMPANY_PROFILES_PLAN.md §17.6). У того, кто уже был у нас,
+    // не трогаем: он работает где-то ещё, компания появится в переключателе.
+    if (temporaryPassword) {
+      await rememberLastProfile(loginUserId, added.profileId).catch((error) => {
+        console.error("[company/people] remember first profile failed", error)
+      })
     }
 
     const mail = temporaryPassword

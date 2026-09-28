@@ -14,8 +14,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AccentPair } from "@/lib/branding"
+import { cn } from "@/lib/utils"
 
-/** Пункт переключателя — ответ `/api/auth/profiles`. */
+/** Рабочее место — ответ `/api/auth/profiles`. */
 type ProfileOption = {
   id: string
   kind: "personal" | "company"
@@ -27,46 +28,43 @@ type ProfileOption = {
 }
 
 /**
- * Переключатель рабочих мест — docs/MULTI_COMPANY_PROFILES_PLAN.md §6.
- *
- * Стоит на месте названия в шапке бокового меню: название и так показывает,
- * где человек сейчас — компанию или установку, — и переключатель отвечает на
- * тот же вопрос. Профиль один — это просто название, без стрелки: выбор из
- * одного пункта был бы обещанием выбора, которого нет.
+ * Один запрос на страницу: переключатель в шапке и блок на дашборде спрашивают
+ * одно и то же. Переключение перезагружает кабинет целиком, так что устаревать
+ * запомненному ответу некогда.
+ */
+let profilesRequest: Promise<ProfileOption[] | null> | null = null
+
+function loadProfiles(): Promise<ProfileOption[] | null> {
+  profilesRequest ??= fetch("/api/auth/profiles", { cache: "no-store" })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((body: { profiles?: ProfileOption[] } | null) => body?.profiles ?? null)
+    .catch(() => null)
+  return profilesRequest
+}
+
+/**
+ * Рабочие места человека и переключение между ними —
+ * docs/MULTI_COMPANY_PROFILES_PLAN.md §6.
  *
  * Выбор — полная перезагрузка кабинета, а не клиентский переход: в кабинете
  * много кэша по пользователю (списки проектов, счётчики, баланс), и частично
  * перерисованный кабинет с данными прошлого профиля хуже секунды ожидания.
- *
- * Кнопки «выйти из компании» нет: «Личное» — такой же пункт, как компании.
+ * Сервер заодно запоминает выбор — следующий вход откроет это же место (§17.6).
  */
-export function ProfileSwitcher({ label }: { label: string }) {
+function useWorkspaces() {
   const { t } = useI18n()
   const [profiles, setProfiles] = useState<ProfileOption[] | null>(null)
   const [switching, setSwitching] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    fetch("/api/auth/profiles", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: { profiles?: ProfileOption[] } | null) => {
-        if (!cancelled && body?.profiles) setProfiles(body.profiles)
-      })
-      .catch(() => {
-        // Не узнали профили — остаётся название, как у человека с одним.
-      })
+    void loadProfiles().then((list) => {
+      if (!cancelled) setProfiles(list)
+    })
     return () => {
       cancelled = true
     }
   }, [])
-
-  if (!profiles || profiles.length < 2) {
-    return (
-      <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-foreground">
-        {label}
-      </span>
-    )
-  }
 
   const switchTo = async (profile: ProfileOption) => {
     if (profile.current || switching) return
@@ -89,6 +87,56 @@ export function ProfileSwitcher({ label }: { label: string }) {
     }
   }
 
+  const label = (profile: ProfileOption) =>
+    profile.kind === "personal" ? t.profilePersonal : (profile.title ?? "")
+
+  return { profiles, switching, switchTo, label }
+}
+
+/** Значок рабочего места: монограмма компании в её цвете или человечек у «Личного». */
+function WorkspaceMark({ profile, className }: { profile: ProfileOption; className?: string }) {
+  if (profile.kind === "company" && profile.accent && profile.monogram) {
+    return (
+      <CompanyMark monogram={profile.monogram} accent={profile.accent} className={className} />
+    )
+  }
+  return (
+    <span
+      className={cn(
+        "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-foreground/15 text-muted-foreground",
+        className,
+      )}
+    >
+      <User className="h-3.5 w-3.5" />
+    </span>
+  )
+}
+
+/**
+ * Переключатель рабочих мест в шапке бокового меню.
+ *
+ * Стоит на месте названия: название и так показывает, где человек сейчас, —
+ * компанию или установку, — и переключатель отвечает на тот же вопрос. Профиль
+ * один — это просто название: выбор из одного пункта был бы обещанием выбора,
+ * которого нет. Профилей несколько — под названием подпись «… · сменить»:
+ * одной стрелки оказалось мало, чтобы в нём узнали кнопку.
+ *
+ * Кнопки «выйти из компании» нет: «Личное» — такой же пункт, как компании.
+ */
+export function ProfileSwitcher({ label }: { label: string }) {
+  const { t } = useI18n()
+  const { profiles, switching, switchTo, label: labelOf } = useWorkspaces()
+
+  if (!profiles || profiles.length < 2) {
+    return (
+      <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-foreground">
+        {label}
+      </span>
+    )
+  }
+
+  const current = profiles.find((profile) => profile.current)
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -96,12 +144,19 @@ export function ProfileSwitcher({ label }: { label: string }) {
           type="button"
           title={t.profileSwitcher}
           aria-label={t.profileSwitcher}
-          className="-mx-1 flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-foreground/5"
+          className="-mx-1 flex min-w-0 flex-1 flex-col items-start rounded-md px-1 py-0.5 text-left hover:bg-foreground/5"
         >
-          <span className="truncate text-[16px] font-semibold text-foreground">
-            {label}
+          <span className="flex w-full min-w-0 items-center gap-1">
+            <span className="truncate text-[16px] font-semibold leading-tight text-foreground">
+              {label}
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
           </span>
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="truncate text-[11px] leading-tight text-muted-foreground">
+            {current?.kind === "company" ? t.profileCompanyLabel : t.profilePersonal}
+            {" · "}
+            <span className="text-primary/90">{t.profileSwitchShort}</span>
+          </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
@@ -119,16 +174,8 @@ export function ProfileSwitcher({ label }: { label: string }) {
             }}
             className="gap-2.5"
           >
-            {profile.kind === "company" && profile.accent && profile.monogram ? (
-              <CompanyMark monogram={profile.monogram} accent={profile.accent} />
-            ) : (
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-foreground/15 text-muted-foreground">
-                <User className="h-3.5 w-3.5" />
-              </span>
-            )}
-            <span className="min-w-0 flex-1 truncate">
-              {profile.kind === "personal" ? t.profilePersonal : profile.title}
-            </span>
+            <WorkspaceMark profile={profile} />
+            <span className="min-w-0 flex-1 truncate">{labelOf(profile)}</span>
             {switching === profile.id ? (
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
             ) : profile.current ? (
@@ -138,5 +185,61 @@ export function ProfileSwitcher({ label }: { label: string }) {
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * «Рабочие места» на дашборде — тот же выбор, что в шапке, но на виду.
+ *
+ * Дашборд — первое, что человек видит после входа, и дорогу в компанию надо
+ * показывать прямо здесь: переключатель в шапке, как выяснилось, сам не
+ * находится. Одно рабочее место — блока нет.
+ */
+export function WorkspacesCard() {
+  const { t } = useI18n()
+  const { profiles, switching, switchTo, label } = useWorkspaces()
+
+  if (!profiles || profiles.length < 2) return null
+
+  return (
+    <section className="rounded-[18px] border border-foreground/10 bg-card/60 p-5 md:p-6">
+      <h2 className="text-[16px] font-semibold text-foreground">{t.workspacesTitle}</h2>
+      <p className="mt-1 max-w-[640px] text-[13px] text-muted-foreground">
+        {t.workspacesSub}
+      </p>
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {profiles.map((profile) => (
+          <button
+            key={profile.id}
+            type="button"
+            disabled={profile.current || switching !== null}
+            onClick={() => void switchTo(profile)}
+            className={cn(
+              "flex min-w-0 items-center gap-3 rounded-[12px] border px-4 py-3 text-left transition-colors",
+              profile.current
+                ? "cursor-default border-primary/40 bg-primary/10"
+                : "border-foreground/10 hover:border-foreground/25 hover:bg-foreground/[0.04] disabled:opacity-60",
+            )}
+          >
+            <WorkspaceMark profile={profile} className="h-8 w-8 text-[12px]" />
+            <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-foreground">
+              {label(profile)}
+            </span>
+            {switching === profile.id ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+            ) : (
+              <span
+                className={cn(
+                  "shrink-0 text-[12px]",
+                  profile.current ? "text-primary" : "text-muted-foreground",
+                )}
+              >
+                {profile.current ? t.workspaceHere : t.workspaceOpen}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }

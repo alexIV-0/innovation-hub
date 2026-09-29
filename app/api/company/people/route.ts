@@ -9,7 +9,7 @@ import {
   sendCompanyWelcomeEmail,
 } from "@/lib/mail/send"
 import {
-  clearCompanyCapabilities,
+  clearConsoleCapabilities,
   countCompanyOwners,
 } from "@/lib/repositories/company-capabilities"
 import { deactivateSubprofile } from "@/lib/repositories/companies"
@@ -111,9 +111,10 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ message: "Person not found." }, { status: 404 })
   }
 
-  // Теги есть только у админов: у участника они ничего не открывают, но всплыли
-  // бы обратно при повторном повышении, молча вернув выданное когда-то.
-  if (companyRole === "member") await clearCompanyCapabilities(userId)
+  // Консольные теги есть только у админов: у участника они ничего не открывают,
+  // но всплыли бы обратно при повторном повышении, молча вернув выданное
+  // когда-то. Рабочие теги остаются — участнику они и нужны.
+  if (companyRole === "member") await clearConsoleCapabilities(userId)
 
   await auditFrom(request, { userId: auth.userId, email: auth.email })({
     action: "company.role_changed",

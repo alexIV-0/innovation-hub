@@ -1,7 +1,9 @@
 "use client"
 
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Check, ChevronDown, Loader2, User } from "lucide-react"
+import { Check, ChevronDown, Loader2, Shield, User } from "lucide-react"
 import { toast } from "sonner"
 
 import { CompanyMark } from "@/components/account/company-mark"
@@ -11,6 +13,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AccentPair } from "@/lib/branding"
@@ -122,12 +125,30 @@ function WorkspaceMark({ profile, className }: { profile: ProfileOption; classNa
  * одной стрелки оказалось мало, чтобы в нём узнали кнопку.
  *
  * Кнопки «выйти из компании» нет: «Личное» — такой же пункт, как компании.
+ *
+ * Админка — последний пункт того же списка, под чертой. Она не рабочее место
+ * (профиль не меняется, перезагрузки нет), но с точки зрения меню это тот же
+ * вопрос «что сейчас в левой колонке»: пользовательские разделы или админские.
+ * Держать оба набора одной лентой значило растягивать панель на два экрана.
  */
-export function ProfileSwitcher({ label }: { label: string }) {
+export function ProfileSwitcher({
+  label,
+  admin,
+}: {
+  label: string
+  /**
+   * Вход в админку: только у тех, кому есть что в ней открыть. `active` — мы в
+   * ней. `switchesProfile` — ссылка идёт через смену профиля на «Личное», и
+   * переход обязан быть полной загрузкой, а не клиентским.
+   */
+  admin?: { href: string; active: boolean; switchesProfile: boolean } | null
+}) {
   const { t } = useI18n()
+  const router = useRouter()
   const { profiles, switching, switchTo, label: labelOf } = useWorkspaces()
+  const inAdmin = Boolean(admin?.active)
 
-  if (!profiles || profiles.length < 2) {
+  if (!admin && (!profiles || profiles.length < 2)) {
     return (
       <span className="flex-1 whitespace-nowrap text-[16px] font-semibold text-foreground">
         {label}
@@ -135,7 +156,7 @@ export function ProfileSwitcher({ label }: { label: string }) {
     )
   }
 
-  const current = profiles.find((profile) => profile.current)
+  const current = profiles?.find((profile) => profile.current)
 
   return (
     <DropdownMenu>
@@ -148,25 +169,37 @@ export function ProfileSwitcher({ label }: { label: string }) {
         >
           <span className="flex w-full min-w-0 items-center gap-1">
             <span className="truncate text-[16px] font-semibold leading-tight text-foreground">
-              {label}
+              {inAdmin ? t.adminPanel : label}
             </span>
             <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
           </span>
           <span className="truncate text-[11px] leading-tight text-muted-foreground">
-            {current?.kind === "company" ? t.profileCompanyLabel : t.profilePersonal}
+            {inAdmin
+              ? t.profileAdminLabel
+              : current?.kind === "company"
+                ? t.profileCompanyLabel
+                : t.profilePersonal}
             {" · "}
             <span className="text-primary/90">{t.profileSwitchShort}</span>
           </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-          {t.profileSwitcher}
-        </DropdownMenuLabel>
-        {profiles.map((profile) => (
+        {profiles && profiles.length > 0 ? (
+          <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+            {t.profileSwitcher}
+          </DropdownMenuLabel>
+        ) : null}
+        {(profiles ?? []).map((profile) => (
           <DropdownMenuItem
             key={profile.id}
             onSelect={(event) => {
+              // Своё же рабочее место из админки — просто возврат в кабинет:
+              // профиль не меняется, перезагружать нечего.
+              if (profile.current) {
+                if (inAdmin) router.push("/account")
+                return
+              }
               // Меню остаётся открытым, пока идёт переключение: иначе
               // пропадает крутилка, и секунда до перезагрузки выглядит зависанием.
               event.preventDefault()
@@ -179,12 +212,47 @@ export function ProfileSwitcher({ label }: { label: string }) {
             {switching === profile.id ? (
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
             ) : profile.current ? (
-              <Check className="h-4 w-4 shrink-0 text-primary" />
+              // Из админки текущий профиль отмечен приглушённо: колонка сейчас
+              // показывает не его, но вернёмся мы именно в него.
+              <Check
+                className={cn(
+                  "h-4 w-4 shrink-0",
+                  inAdmin ? "text-muted-foreground/60" : "text-primary",
+                )}
+              />
             ) : null}
           </DropdownMenuItem>
         ))}
+        {admin ? (
+          <>
+            {profiles && profiles.length > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem asChild className="gap-2.5">
+              {admin.switchesProfile ? (
+                <a href={admin.href}>
+                  <AdminItemBody label={t.adminPanel} active={false} />
+                </a>
+              ) : (
+                <Link href={admin.href}>
+                  <AdminItemBody label={t.adminPanel} active={inAdmin} />
+                </Link>
+              )}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+function AdminItemBody({ label, active }: { label: string; active: boolean }) {
+  return (
+    <>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-foreground/15 text-muted-foreground">
+        <Shield className="h-3.5 w-3.5" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {active ? <Check className="h-4 w-4 shrink-0 text-primary" /> : null}
+    </>
   )
 }
 

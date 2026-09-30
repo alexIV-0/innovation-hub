@@ -81,7 +81,12 @@ const workBase = {
    * проект; `null` — в черновике указано только имя (можно `$pipelineName`),
    * проект заведётся при активации.
    */
-  project: z.object({ id: z.string().min(1).nullable(), name: z.string().trim().min(1).max(200) }),
+  project: z.object({
+    id: z.string().min(1).nullable(),
+    name: z.string().trim().min(1).max(200),
+    /** Шаблон, по которому папка выбрана, — см. `FormProject`. */
+    mask: z.string().trim().min(1).max(200).optional(),
+  }),
   paths: z.object({
     /** Пусто — входы по ссылке; задано — финалы предыдущих копируются сюда. */
     in: segmentsSchema,
@@ -205,7 +210,7 @@ export function shortId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`
 }
 
-export const DEFAULT_PROJECT: { id: string | null; name: string } = { id: null, name: "$pipelineName" }
+export const DEFAULT_PROJECT: FormProject = { id: null, name: "$pipelineName" }
 export const DEFAULT_WORK_PATH = ["$runTime-$runName", "$stageNum $stageName", "versions"]
 export const DEFAULT_FINAL_PATH = ["$runTime-$runName", "$stageNum $stageName", "final"]
 export const DEFAULT_AUTO_IN = ["IN"]
@@ -360,7 +365,12 @@ export function upgradeGraph(raw: unknown): PipelineGraph {
   return { schemaVersion: GRAPH_SCHEMA_VERSION, nodes, edges }
 }
 
-type FormProject = { id: string | null; name: string }
+/**
+ * Папка этапа. `mask` — шаблон, по которому папка выбрана (`$pipelineName`): имя
+ * пайплайна сменилось — маска даёт другое имя, и новая версия переводит этап на
+ * папку с новым именем сама (activation.ts, `retargetProjects`).
+ */
+export type FormProject = { id: string | null; name: string; mask?: string }
 
 // ─── Приведение ───────────────────────────────────────────────────────────
 

@@ -411,7 +411,7 @@ export function ProjectPicker({
   value,
   onChange,
 }: {
-  value: { id: string | null; name: string }
+  value: { id: string | null; name: string; mask?: string }
   onChange: (next: { id: string | null; name: string }) => void
 }) {
   const { t } = useI18n()
@@ -423,7 +423,9 @@ export function ProjectPicker({
   const typed = (text ?? "").trim()
   const exact = projects.find((p) => p.name.toLowerCase() === typed.toLowerCase())
   const options: Option[] = [
-    ...(isDraft ? [{ value: "$pipelineName", hint: t.productionMaskPipeline }] : []),
+    // И у активного: после переименования пайплайна этап можно перевести на
+    // папку с новым именем — она создастся с новой версией (§3.5).
+    { value: "$pipelineName", hint: t.productionMaskPipeline },
     ...projects.map((p) => ({ value: p.name, id: p.id })),
     ...(typed && !exact && typed !== "$pipelineName" ? [{ value: typed, create: true }] : []),
   ]
@@ -481,7 +483,13 @@ export function ProjectPicker({
           placeholder={value.name}
           className="min-w-0 flex-1 bg-transparent text-[12.5px] text-ws-1 outline-none placeholder:text-ws-4 disabled:opacity-60"
         />
-        {pending ? <span className="shrink-0 text-[10.5px] text-warning">{t.productionEdFolderOnActivate}</span> : null}
+        {/* Папка по маске: переименуют пайплайн — этап переедет в папку с новым именем. */}
+        {!pending && value.mask ? (
+          <span title={t.productionEdFolderFollowsMask} className="shrink-0 font-mono text-[10.5px] text-ws-4">
+            {value.mask}
+          </span>
+        ) : null}
+        {pending ? <span className="shrink-0 text-[10.5px] text-warning">{isDraft ? t.productionEdFolderOnActivate : t.productionEdFolderOnVersion}</span> : null}
       </div>
       {suggest.open ? <SuggestList options={suggest.shown} active={suggest.active} onPick={pick} /> : null}
     </div>

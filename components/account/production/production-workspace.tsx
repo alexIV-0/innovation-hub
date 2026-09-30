@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CircleStop,
   Clapperboard,
   ExternalLink,
   File as FileIcon,
@@ -17,8 +18,10 @@ import {
   Lock,
   MessageSquare,
   MoreHorizontal,
+  Pencil,
   RotateCcw,
   Search,
+  Trash2,
   Upload,
   Workflow,
 } from "lucide-react"
@@ -31,6 +34,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { MyRun, SchemeNodeView, StepFile, StepView } from "@/lib/production/workspace-types"
@@ -217,6 +221,12 @@ export function ProductionWorkspace() {
           onSelect={select}
           archived={archived}
           onArchived={setArchived}
+          onRunsChanged={(goneRunId) => {
+            // Выбранный этап был в ушедшем ролике — снимаем выбор, откроется первый.
+            const gone = runs?.find((r) => r.id === goneRunId)
+            if (gone?.steps.some((s) => s.id === selected)) router.replace(pathname)
+            void loadRuns()
+          }}
         />
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -299,16 +309,54 @@ function RunsColumn({
   onSelect,
   archived,
   onArchived,
+  onRunsChanged,
 }: {
   runs: MyRun[] | null
   selected: string | null
   onSelect: (stepId: string) => void
   archived: boolean
   onArchived: (value: boolean) => void
+  /** Ролик переименовали, завершили или удалили — список перечитать. */
+  onRunsChanged: (goneRunId?: string) => void
 }) {
   const { t } = useI18n()
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState<Set<string>>(new Set())
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [draft, setDraft] = useState("")
+
+  const runAction = async (run: MyRun, init: RequestInit, success?: string): Promise<boolean> => {
+    const res = await fetch(`/api/production/runs/${encodeURIComponent(run.id)}`, {
+      ...init,
+      headers: { "Content-Type": "application/json" },
+    })
+    if (!res.ok) {
+      toast.error(res.status === 403 ? t.productionRunForbidden : t.productionRunActionFailed)
+      return false
+    }
+    if (success) toast.success(success)
+    return true
+  }
+
+  const rename = async (run: MyRun) => {
+    const name = draft.trim()
+    setRenaming(null)
+    if (!name || name === run.name) return
+    if (await runAction(run, { method: "PATCH", body: JSON.stringify({ name }) })) onRunsChanged()
+  }
+
+  // Завершённый и удалённый ролик пропадает из «В работе» — выбранный в нём этап
+  // больше не в списке, и родитель снимает выбор.
+  const cancel = async (run: MyRun) => {
+    if (!window.confirm(t.productionRunCancelConfirm.replace("{name}", run.name))) return
+    const body = JSON.stringify({ status: "cancelled" })
+    if (await runAction(run, { method: "PATCH", body }, t.productionRunCancelDone)) onRunsChanged(run.id)
+  }
+
+  const remove = async (run: MyRun) => {
+    if (!window.confirm(t.productionRunDeleteConfirm.replace("{name}", run.name))) return
+    if (await runAction(run, { method: "DELETE" }, t.productionRunDeleteDone)) onRunsChanged(run.id)
+  }
 
   // Ролик с выбранным этапом раскрыт — иначе выбранное не видно.
   useEffect(() => {
@@ -372,45 +420,133 @@ function RunsColumn({
             const expanded = open.has(run.id)
             const unread = run.steps.reduce((sum, s) => sum + s.unread, 0)
             const percent = run.progress.total ? Math.round((run.progress.done / run.progress.total) * 100) : 0
+            const hasSelected = run.steps.some((s) => s.id === selected)
             return (
-              <div key={run.id} className="mb-1">
-                <button
-                  type="button"
-                  onClick={() => toggle(run.id)}
-                  aria-expanded={expanded}
-                  className="flex w-full items-start gap-2 rounded-[10px] px-2 py-2 text-left hover:bg-ws-hover"
-                >
-                  {expanded ? (
-                    <FolderOpen className="mt-0.5 h-[18px] w-[18px] shrink-0 text-ws-3" />
-                  ) : (
-                    <Folder className="mt-0.5 h-[18px] w-[18px] shrink-0 text-ws-3" />
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ws-1">{run.name}</span>
-                      {unread > 0 && !expanded ? (
-                        <span className="shrink-0 rounded-full bg-ws-action px-1.5 py-[1px] text-[11px] font-semibold tabular-nums text-white">
-                          {unread > 99 ? "99+" : unread}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="block truncate text-[11.5px] text-ws-4">{run.pipelineName}</span>
-                    <span
-                      className="mt-1.5 block h-1 overflow-hidden rounded-full bg-foreground/10"
-                      title={`${run.progress.done}/${run.progress.total}`}
+              // Ролик и его этапы — одна карточка: рамка общая, этапы висят на
+              // линии слева, как ветки одной папки.
+              <div
+                key={run.id}
+                className={cn(
+                  "group/run mb-1.5 rounded-[12px] border transition-colors",
+                  expanded || hasSelected
+                    ? "border-foreground/10 bg-foreground/[0.025]"
+                    : "border-transparent hover:bg-ws-hover",
+                )}
+              >
+                <div className="relative">
+                  {renaming === run.id ? (
+                    <form
+                      className="flex items-start gap-2 px-2 py-2"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void rename(run)
+                      }}
                     >
-                      <span className="block h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
-                    </span>
-                  </span>
-                </button>
-                {expanded
-                  ? run.steps.map((step) => (
+                      <Folder className="mt-1 h-[18px] w-[18px] shrink-0 text-ws-3" />
+                      <input
+                        autoFocus
+                        value={draft}
+                        maxLength={120}
+                        onChange={(event) => setDraft(event.target.value)}
+                        onBlur={() => void rename(run)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setRenaming(null)
+                        }}
+                        className="h-7 min-w-0 flex-1 rounded-md border border-foreground/15 bg-ws-control px-2 text-[13.5px] text-ws-1 outline-none focus:border-ws-select"
+                      />
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggle(run.id)}
+                      aria-expanded={expanded}
+                      className="flex w-full items-start gap-2 rounded-[12px] px-2 py-2 pr-9 text-left"
+                    >
+                      {expanded ? (
+                        <FolderOpen className="mt-0.5 h-[18px] w-[18px] shrink-0 text-ws-3" />
+                      ) : (
+                        <Folder className="mt-0.5 h-[18px] w-[18px] shrink-0 text-ws-3" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ws-1">{run.name}</span>
+                          {run.status === "cancelled" ? (
+                            <span className="shrink-0 rounded-full border border-foreground/15 px-1.5 py-[1px] text-[10.5px] text-ws-4">
+                              {t.productionRunCancelled}
+                            </span>
+                          ) : null}
+                          {unread > 0 && !expanded ? (
+                            <span className="shrink-0 rounded-full bg-ws-action px-1.5 py-[1px] text-[11px] font-semibold tabular-nums text-white">
+                              {unread > 99 ? "99+" : unread}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="block truncate text-[11.5px] text-ws-4">{run.pipelineName}</span>
+                        <span
+                          className="mt-1.5 block h-1 overflow-hidden rounded-full bg-foreground/10"
+                          title={`${run.progress.done}/${run.progress.total}`}
+                        >
+                          <span className="block h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
+                        </span>
+                      </span>
+                    </button>
+                  )}
+
+                  {run.canManage && renaming !== run.id ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={t.productionRunActions}
+                          className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md text-ws-4 opacity-0 transition-opacity hover:bg-ws-hover hover:text-ws-1 focus-visible:opacity-100 group-hover/run:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[180px]">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setDraft(run.name)
+                            setRenaming(run.id)
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          {t.productionRunRename}
+                        </DropdownMenuItem>
+                        {run.status === "active" ? (
+                          <DropdownMenuItem onSelect={() => void cancel(run)}>
+                            <CircleStop className="h-4 w-4" />
+                            {t.productionRunCancel}
+                          </DropdownMenuItem>
+                        ) : null}
+                        {run.canDelete ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => void remove(run)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              {t.productionRunDelete}
+                            </DropdownMenuItem>
+                          </>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
+
+                {expanded ? (
+                  <div className="relative mb-1.5 ml-[17px] mr-1.5 border-l border-foreground/[0.12] pl-2">
+                    {run.steps.map((step) => (
                       <button
                         key={step.id}
                         type="button"
                         onClick={() => onSelect(step.id)}
                         className={cn(
-                          "ml-5 flex w-[calc(100%-1.25rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px]",
+                          // Короткая черта от линии к пункту: этап — ветка этого ролика.
+                          "relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px]",
+                          "before:absolute before:-left-2 before:top-1/2 before:h-px before:w-1.5 before:bg-foreground/[0.12]",
                           step.id === selected ? "bg-ws-select/35 text-ws-1" : "hover:bg-ws-hover",
                           step.status === "waiting" && step.id !== selected ? "text-ws-5" : "text-ws-2",
                         )}
@@ -429,8 +565,9 @@ function RunsColumn({
                           </span>
                         ) : null}
                       </button>
-                    ))
-                  : null}
+                    ))}
+                  </div>
+                ) : null}
               </div>
             )
           })

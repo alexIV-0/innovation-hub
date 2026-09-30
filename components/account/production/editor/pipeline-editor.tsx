@@ -17,7 +17,7 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react"
-import { AlertTriangle, Archive, ArchiveRestore, ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react"
+import { AlertTriangle, Archive, ArchiveRestore, ArrowLeft, CirclePause, CirclePlay, Loader2, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { useRouter } from "next/navigation"
@@ -68,6 +68,8 @@ type PipelineDto = {
   status: "draft" | "active" | "archived"
   currentVersion: number | null
   activeRuns: number
+  /** Запуски на паузе: новых роликов нет, идущие доживают. */
+  pausedAt: string | null
 }
 
 type Loaded = { pipeline: PipelineDto; issues: GraphIssue[]; structureChanged: boolean }
@@ -334,6 +336,19 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
     await load()
   }
 
+  /** Пауза запусков: новых роликов нет, идущие доживают. Одна кнопка на оба направления. */
+  const setPaused = async (paused: boolean) => {
+    if (paused && !window.confirm(t.productionEdPauseConfirm.replace("{name}", name))) return
+    if (dirty) await save()
+    const res = await fetch(`/api/production/pipelines/${pipelineId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revision: revision.current, paused }),
+    })
+    if (!res.ok) toast.error(res.status === 409 ? t.productionEdConflict : t.productionEdSaveFailed)
+    await load()
+  }
+
   const remove = async () => {
     if (!window.confirm(t.productionEdDeleteConfirm)) return
     const res = await fetch(`/api/production/pipelines/${pipelineId}`, { method: "DELETE" })
@@ -415,6 +430,9 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
             className="min-w-0 max-w-[320px] flex-1 bg-transparent text-[17px] font-semibold text-ws-1 outline-none"
           />
           <StatusBadge status={p.status} version={p.currentVersion} />
+          {p.status === "active" && p.pausedAt ? (
+            <span className="text-[12px] text-warning">{t.productionEdStatusPaused}</span>
+          ) : null}
           <span className="text-[12px] text-ws-4">
             {saving ? t.productionEdSaving : dirty ? t.productionEdUnsaved : t.productionEdSaved}
           </span>
@@ -441,6 +459,18 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+            {p.status === "active" ? (
+              <button
+                type="button"
+                onClick={() => void setPaused(!p.pausedAt)}
+                title={p.pausedAt ? t.productionEdResume : t.productionEdPause}
+                aria-label={p.pausedAt ? t.productionEdResume : t.productionEdPause}
+                className="flex h-8 items-center gap-1.5 rounded-[9px] border border-foreground/10 bg-ws-control px-3 text-[13px] text-ws-2 hover:bg-ws-hover hover:text-ws-1"
+              >
+                {p.pausedAt ? <CirclePlay className="h-4 w-4" /> : <CirclePause className="h-4 w-4" />}
+                {p.pausedAt ? t.productionEdResume : t.productionEdPause}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void setArchived(!readOnly)}

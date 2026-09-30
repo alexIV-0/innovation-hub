@@ -69,6 +69,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     graph,
     settings: parsed.data.settings,
     archived: parsed.data.archived,
+    paused: parsed.data.paused,
   })
 
   if (!result.ok && result.reason === "not-found") {

@@ -31,6 +31,10 @@ export type MyRun = {
   createdAt: string
   /** Прогресс по всем этапам ролика, а не только моим — зелёная полоса (§9.1). */
   progress: { done: number; total: number }
+  /** Переименовать и завершить: автор пайплайна, запустивший и проверяющие (§4.7). */
+  canManage: boolean
+  /** Удалить: только автор пайплайна и запустивший. */
+  canDelete: boolean
   steps: { id: string; name: string; kind: WorkKind; status: StepStatus; dueAt: string | null; unread: number }[]
 }
 
@@ -43,6 +47,12 @@ const NODE_KIND = `(SELECT CASE WHEN n->>'kind' = 'stage'
                             ELSE n->>'kind' END
                       FROM jsonb_array_elements(v.graph->'nodes') n
                      WHERE n->>'id' = rs.node_id)`
+
+/** Права на ролик `r` пайплайна `p` для `$1` — те же, что проверяет lib/production/runs.ts. */
+const RUN_CAN_DELETE = `(p.owner_user_id = $1 OR r.created_by = $1)`
+const RUN_CAN_MANAGE = `(${RUN_CAN_DELETE} OR EXISTS (
+  SELECT 1 FROM production_pipeline_people pp
+   WHERE pp.pipeline_id = p.id AND pp.user_id = $1 AND pp.role = 'reviewer'))`
 
 export async function listMyRuns(userId: string, archived: boolean): Promise<MyRun[]> {
   const { rows } = await query<{
@@ -59,12 +69,15 @@ export async function listMyRuns(userId: string, archived: boolean): Promise<MyR
     stepDue: string | null
     doneSteps: number
     totalSteps: number
+    canManage: boolean
+    canDelete: boolean
   }>(
     `SELECT r.id AS "runId", r.name AS "runName", p.name AS "pipelineName",
             r.status AS "runStatus", r.due_at AS "runDue", r.created_at AS "createdAt",
             rs.id AS "stepId", ${NODE_NAME} AS "stepName", ${NODE_KIND} AS "stepKind",
             rs.status AS "stepStatus", rs.due_at AS "stepDue",
-            c.done AS "doneSteps", c.total AS "totalSteps"
+            c.done AS "doneSteps", c.total AS "totalSteps",
+            ${RUN_CAN_MANAGE} AS "canManage", ${RUN_CAN_DELETE} AS "canDelete"
        FROM production_runs r
        JOIN production_pipelines p ON p.id = r.pipeline_id
        JOIN production_pipeline_versions v
@@ -103,6 +116,8 @@ export async function listMyRuns(userId: string, archived: boolean): Promise<MyR
         dueAt: row.runDue,
         createdAt: row.createdAt,
         progress: { done: row.doneSteps, total: row.totalSteps },
+        canManage: row.canManage,
+        canDelete: row.canDelete,
         steps: [],
       }
       runs.set(row.runId, run)

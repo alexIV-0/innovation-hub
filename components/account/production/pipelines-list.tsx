@@ -195,7 +195,7 @@ export function PipelinesList() {
               type="button"
               disabled={creating}
               onClick={() => void create()}
-              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-ws-action px-3 text-[13px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-50"
+              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-ws-action px-3 text-[13px] font-medium text-primary-foreground hover:bg-ws-action-hover disabled:opacity-50"
             >
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               {t.productionEdNewPipeline}

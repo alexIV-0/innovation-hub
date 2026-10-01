@@ -31,8 +31,12 @@ import {
 import {
   canConnect,
   createWorkNode,
+  uniqueStageName,
+  isWorkNode,
+  type PipelineNode,
   isWorkKind,
   shortId,
+  type FormRow,
   type GraphIssue,
   type PipelineGraph,
   type WorkKind,
@@ -75,7 +79,7 @@ type PipelineDto = {
 type Loaded = { pipeline: PipelineDto; issues: GraphIssue[]; structureChanged: boolean }
 
 /** Только в ответе на GET: папки владельца и словарь типов файлов. */
-type Extras = { projects: { id: string; name: string }[]; fileTypes: string[] }
+type Extras = { projects: { id: string; name: string }[]; fileTypes: string[]; toolKeys: string[] }
 
 const NODE_TYPES = {
   start: StartNodeView,
@@ -116,12 +120,14 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
   const [graph, setGraph] = useState<PipelineGraph | null>(null)
   const [name, setName] = useState("")
   const [people, setPeople] = useState<PersonOption[]>([])
-  const [extras, setExtras] = useState<Extras>({ projects: [], fileTypes: [] })
+  const [extras, setExtras] = useState<Extras>({ projects: [], fileTypes: [], toolKeys: [] })
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [committing, setCommitting] = useState(false)
   const [conflict, setConflict] = useState(false)
   const revision = useRef(0)
+  /** Имена из форм программы в проектах автоматики — с сервера. */
+  const [autoLabels, setAutoLabels] = useState<{ nodeId: string; label: string }[]>([])
 
   const load = useCallback(async () => {
     const [res, peopleRes] = await Promise.all([
@@ -135,7 +141,7 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
     const body = (await res.json()) as Loaded & Extras
     revision.current = body.pipeline.revision
     setLoaded(body)
-    setExtras({ projects: body.projects ?? [], fileTypes: body.fileTypes ?? [] })
+    setExtras({ projects: body.projects ?? [], fileTypes: body.fileTypes ?? [], toolKeys: body.toolKeys ?? [] })
     setGraph(body.pipeline.graph)
     setName(body.pipeline.name)
     setDirty(false)
@@ -188,6 +194,37 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
     setDirty(true)
   }, [])
 
+  // Проекты автоматики сменились — перечитать их имена. С задержкой больше
+  // автосохранения: сервер читает проекты из сохранённого графа.
+  const autoProjects = (graph?.nodes ?? [])
+    .map((n) => (n.kind === "auto" ? `${n.id}:${n.data.project.id ?? ""}` : ""))
+    .filter(Boolean)
+    .join(",")
+  useEffect(() => {
+    if (!autoProjects) {
+      setAutoLabels([])
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void fetch(`/api/production/pipelines/${pipelineId}/program-forms?labels=1`, { cache: "no-store" })
+        .then(async (res) => (res.ok ? ((await res.json()) as { labels: { nodeId: string; label: string }[] }).labels : []))
+        .then(setAutoLabels)
+        .catch(() => {})
+    }, SAVE_DELAY_MS + 500)
+    return () => window.clearTimeout(timer)
+  }, [autoProjects, pipelineId])
+
+  const rowNames = useMemo(() => {
+    const names = new Map((graph?.nodes ?? []).map((n) => [n.id, n.data.name]))
+    const flat = (rows: FormRow[]): string[] => rows.flatMap((r) => [r.label.trim(), ...flat(r.children)])
+    const fromForms = (graph?.nodes ?? []).flatMap((n) =>
+      n.kind === "form" ? flat(n.data.rows).filter(Boolean).map((label) => ({ label, nodeId: n.id })) : [],
+    )
+    return [...fromForms, ...autoLabels]
+      .filter((x) => names.has(x.nodeId))
+      .map((x) => ({ ...x, nodeName: names.get(x.nodeId)! }))
+  }, [autoLabels, graph?.nodes])
+
   // ─── Правки нод ────────────────────────────────────────────────────────
 
   const api: EditorApi = useMemo(() => {
@@ -195,13 +232,26 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
       (loaded?.issues ?? []).filter((i) => i.level === "error" && i.nodeId).map((i) => i.nodeId!),
     )
     return {
+      pipelineId,
       readOnly: Boolean(readOnly),
       isDraft: loaded?.pipeline.status === "draft",
       people,
       projects: extras.projects,
       fileTypes: extras.fileTypes,
+      toolKeys: extras.toolKeys,
+      rowNames,
       updateNode: (id, fn) =>
         change((g) => ({ ...g, nodes: g.nodes.map((n) => (n.id === id ? fn(n) : n)) })),
+      nameStage: (id, name) =>
+        change((g) => {
+          const unique = uniqueStageName(g.nodes, name, id)
+          return {
+            ...g,
+            nodes: g.nodes.map((n) =>
+              n.id === id && isWorkNode(n) ? ({ ...n, data: { ...n.data, name: unique } } as PipelineNode) : n,
+            ),
+          }
+        }),
       removeNode: (id) =>
         change((g) => ({
           ...g,
@@ -210,7 +260,7 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
         })),
       nodeHasError: (id) => errorNodes.has(id),
     }
-  }, [change, extras, loaded?.issues, loaded?.pipeline.status, people, readOnly])
+  }, [change, extras, loaded?.issues, loaded?.pipeline.status, people, pipelineId, readOnly, rowNames])
 
   // ─── Граф → xyflow ─────────────────────────────────────────────────────
 
@@ -314,7 +364,7 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
         : { x: 0, y: 0 }
       position = { x: center.x - DEFAULT_WIDTH[kind] / 2, y: center.y - 160 }
     }
-    change((g) => ({ ...g, nodes: [...g.nodes, createWorkNode(kind, label, position)] }))
+    change((g) => ({ ...g, nodes: [...g.nodes, createWorkNode(kind, uniqueStageName(g.nodes, label), position)] }))
   }
 
   // ─── Архив и удаление ──────────────────────────────────────────────────
@@ -507,7 +557,7 @@ function EditorInner({ pipelineId }: { pipelineId: string }) {
                 type="button"
                 disabled={committing || errors.length > 0}
                 onClick={() => void commit("versions")}
-                className="h-8 rounded-[9px] bg-ws-action px-3 text-[13px] font-medium text-white hover:bg-ws-action-hover disabled:opacity-45"
+                className="h-8 rounded-[9px] bg-ws-action px-3 text-[13px] font-medium text-primary-foreground hover:bg-ws-action-hover disabled:opacity-45"
               >
                 {t.productionEdSaveVersion}
               </button>

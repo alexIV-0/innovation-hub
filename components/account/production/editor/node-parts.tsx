@@ -181,7 +181,15 @@ function activeWord(text: string): string {
   return parts[parts.length - 1] ?? ""
 }
 
-type Option = { value: string; hint?: string; history?: boolean; create?: boolean; id?: string }
+type Option = {
+  value: string
+  hint?: string
+  /** Подсказка — ноды, где имя встречается: другим цветом. */
+  nodesHint?: boolean
+  history?: boolean
+  create?: boolean
+  id?: string
+}
 
 /**
  * Список подсказок под полем: открывается при фокусе, фильтруется на каждый
@@ -240,7 +248,9 @@ function SuggestList({
             {option.create ? <FolderPlus className="h-3.5 w-3.5 shrink-0" /> : option.id ? <Folder className="h-3.5 w-3.5 shrink-0" /> : null}
             {option.create ? t.productionEdCreateFolder.replace("{name}", option.value) : option.value}
           </span>
-          {option.hint ? <span className="truncate text-ws-4">{option.hint}</span> : null}
+          {option.hint ? (
+            <span className={cn("truncate", option.nodesHint ? "text-violet/60" : "text-ws-4")}>{option.hint}</span>
+          ) : null}
           {option.history && onForget ? (
             <button
               type="button"
@@ -535,6 +545,78 @@ export function DaysInput({
           {value === 0 ? t.productionEdKeepForever : t.productionEdDays}
         </span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Название строки формы с подсказками: имена, которые уже есть в пайплайне —
+ * в других формах и в автоматике (что ждёт обработка). Справа — ноды, где имя
+ * встречается. Подставлять не обязательно: можно вписать своё.
+ */
+export function RowLabelInput({
+  value,
+  nodeId,
+  onChange,
+  placeholder,
+  invalid,
+}: {
+  value: string
+  nodeId: string
+  onChange: (next: string) => void
+  placeholder: string
+  invalid: boolean
+}) {
+  const { readOnly, rowNames } = useEditor()
+  const byLabel = new Map<string, string[]>()
+  for (const item of rowNames) {
+    if (item.nodeId === nodeId) continue
+    const nodes = byLabel.get(item.label) ?? []
+    if (!nodes.includes(item.nodeName)) nodes.push(item.nodeName)
+    byLabel.set(item.label, nodes)
+  }
+  const typed = value.trim().toLowerCase()
+  const options: Option[] = [...byLabel]
+    .filter(([label]) => label !== value.trim() && (!typed || label.toLowerCase().includes(typed)))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, nodes]) => ({ value: label, hint: nodes.join(" · "), nodesHint: true }))
+  const suggest = useSuggest(options, value)
+
+  const pick = (option: Option) => {
+    onChange(option.value)
+    suggest.setOpen(false)
+  }
+
+  return (
+    <div className="nodrag relative min-w-0 flex-1">
+      <input
+        value={value}
+        disabled={readOnly}
+        onFocus={() => suggest.setOpen(true)}
+        onBlur={() => suggest.setOpen(false)}
+        onChange={(event) => {
+          onChange(event.target.value)
+          suggest.setOpen(true)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault()
+            suggest.setOpen(true)
+            suggest.move(event.key === "ArrowDown" ? 1 : -1)
+          } else if ((event.key === "Tab" || event.key === "Enter") && suggest.open && suggest.current) {
+            event.preventDefault()
+            pick(suggest.current)
+          } else if (event.key === "Escape") {
+            suggest.setOpen(false)
+          }
+        }}
+        placeholder={placeholder}
+        className={cn(
+          "h-7 w-full rounded-md border bg-ws-control px-2 text-[12px] text-ws-1 outline-none placeholder:text-ws-5",
+          invalid ? "border-destructive/50" : "border-foreground/10",
+        )}
+      />
+      {suggest.open ? <SuggestList options={suggest.shown} active={suggest.active} onPick={pick} /> : null}
     </div>
   )
 }

@@ -783,8 +783,15 @@ function Composer({
   }, [members, circle])
 
   const word = text.match(/@([^\s@]*)$/)?.[1]
+  // Подсвеченный вариант для стрелок; Esc прячет список до следующей правки.
+  const [activeOption, setActiveOption] = useState(0)
+  const [optionsHidden, setOptionsHidden] = useState(false)
+  useEffect(() => {
+    setActiveOption(0)
+    setOptionsHidden(false)
+  }, [word])
   const options =
-    word !== undefined
+    word !== undefined && !optionsHidden
       ? mentionable.filter((p) => p.name.toLowerCase().includes(word.toLowerCase())).slice(0, 6)
       : []
 
@@ -921,15 +928,29 @@ function Composer({
           rows={1}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault()
-              if (options.length > 0) {
-                const pick = options[0]
+            if (options.length > 0) {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault()
+                const step = e.key === "ArrowDown" ? 1 : -1
+                setActiveOption((i) => (i + step + options.length) % options.length)
+                return
+              }
+              if (e.key === "Escape") {
+                e.preventDefault()
+                setOptionsHidden(true)
+                return
+              }
+              if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                e.preventDefault()
+                const pick = options[Math.min(activeOption, options.length - 1)]
                 setText(text.replace(/@([^\s@]*)$/, `@${pick.name} `))
                 setMentions((list) => [...list.filter((m) => m.id !== pick.id), pick])
-              } else {
-                void send()
+                return
               }
+            }
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault()
+              void send()
             }
           }}
           placeholder={t.productionChatInput}
@@ -949,16 +970,20 @@ function Composer({
 
         {options.length > 0 ? (
           <div className="absolute bottom-full left-10 z-20 mb-1 w-64 rounded-md border border-foreground/10 bg-popover p-1 shadow-ws-menu">
-            {options.map((p) => (
+            {options.map((p, i) => (
               <button
                 key={p.id}
                 type="button"
+                onMouseEnter={() => setActiveOption(i)}
                 onMouseDown={(e) => {
                   e.preventDefault()
                   setText(text.replace(/@([^\s@]*)$/, `@${p.name} `))
                   setMentions((list) => [...list.filter((m) => m.id !== p.id), p])
                 }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12.5px] text-ws-1 hover:bg-ws-hover"
+                className={cn(
+                  "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12.5px] text-ws-1",
+                  i === activeOption && "bg-ws-hover",
+                )}
               >
                 {p.name}
                 {!members.some((m) => m.userId === p.id) ? (

@@ -97,7 +97,9 @@ export async function listMyRuns(userId: string, archived: boolean): Promise<MyR
             c.done AS "doneSteps", c.total AS "totalSteps",
             ${RUN_CAN_MANAGE} AS "canManage", ${RUN_CAN_DELETE} AS "canDelete",
             p.id AS "pipelineId", ${PIPELINE_CAN_EDIT} AS "canEditPipeline",
-            (${NODE_KIND} NOT IN ('auto', 'action') AND EXISTS (
+            -- Любой вид этапа, если человек в нём участник: машинные этапы без
+            -- людей участников не имеют и так не покажутся.
+            (EXISTS (
               SELECT 1 FROM production_chat_members cm
                WHERE cm.run_step_id = rs.id AND cm.user_id = $1 AND cm.left_at IS NULL
             )) AS mine
@@ -490,7 +492,7 @@ export async function getRunOverview(runId: string, userId: string): Promise<Run
   const myStepIds: Record<string, string> = {}
   for (const st of steps.rows) {
     const node = work.find((n) => n.id === st.nodeId)
-    if (st.mine && node && node.kind !== "auto" && node.kind !== "action") myStepIds[st.nodeId] = st.id
+    if (st.mine && node) myStepIds[st.nodeId] = st.id
   }
 
   return {

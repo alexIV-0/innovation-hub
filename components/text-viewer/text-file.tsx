@@ -84,10 +84,13 @@ function useFileText(
 /** Общая рамка: подпись сверху, прокручиваемое содержимое под ней. */
 function TextFrame({
   note,
+  bare,
   className,
   children,
 }: {
   note?: string
+  /** Содержимое прокручивает себя само (своими колонками). */
+  bare?: boolean
   className?: string
   children: React.ReactNode
 }) {
@@ -103,7 +106,7 @@ function TextFrame({
           {note}
         </p>
       ) : null}
-      <div className="scrollbar-elegant min-h-0 flex-1 overflow-auto">{children}</div>
+      <div className={cn("min-h-0 flex-1", bare ? "overflow-hidden" : "scrollbar-elegant overflow-auto")}>{children}</div>
     </div>
   )
 }
@@ -205,7 +208,7 @@ function TextBody({
 
   if (kind === "markup") {
     return (
-      <TextFrame className={className}>
+      <TextFrame className={className} bare>
         <MarkupView source={text} className="px-4 py-3" />
       </TextFrame>
     )

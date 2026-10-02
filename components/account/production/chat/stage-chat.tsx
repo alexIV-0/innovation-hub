@@ -12,7 +12,7 @@ import {
   Paperclip,
   SendHorizontal,
   SmilePlus,
-  TextQuote,
+  Quote,
   Trash2,
   UserPlus,
   Users,
@@ -625,7 +625,7 @@ function MessageItem({
               aria-label={t.productionChatQuote}
               className="flex h-6 w-6 items-center justify-center rounded text-ws-4 hover:bg-ws-hover hover:text-ws-1"
             >
-              <TextQuote className="h-3.5 w-3.5" />
+              <Quote className="h-3.5 w-3.5" />
             </button>
           ) : null}
           <button type="button" onClick={() => onReply(null)} title={t.productionChatReply} aria-label={t.productionChatReply} className="flex h-6 w-6 items-center justify-center rounded text-ws-4 hover:bg-ws-hover hover:text-ws-1">

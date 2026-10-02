@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core"
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
@@ -65,6 +65,7 @@ import { subfolderName } from "@/lib/tools/element/names"
 import { displaySlotName, formPlaces, type FormPlace } from "@/lib/production/form"
 import { extensionFits, mimeFits } from "@/lib/tools/element/site-form"
 import { type Group, type Slot } from "@/lib/tools/element/slots"
+import { usePersisted } from "./use-persisted"
 
 /**
  * Рабочее место «Производство» — docs/PRODUCTION_PLAN.md §9, шаг 1.8.
@@ -461,7 +462,14 @@ function RunsColumn({
 }) {
   const { t } = useI18n()
   const [query, setQuery] = useState("")
-  const [open, setOpen] = useState<Set<string>>(new Set())
+  // Раскрытые ролики помнит браузер — массивом, Set в JSON не ложится.
+  const [openList, setOpenList] = usePersisted<string[]>("runs-open", [])
+  const open = useMemo(() => new Set(openList), [openList])
+  const setOpen = useCallback(
+    // Последние 200: id сданных роликов иначе копились бы годами.
+    (fn: (prev: Set<string>) => Set<string>) => setOpenList((prev) => [...fn(new Set(prev))].slice(-200)),
+    [setOpenList],
+  )
   const [renaming, setRenaming] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
 
@@ -902,7 +910,7 @@ function SchemeStrip({
   onNodeClick?: (nodeId: string) => void
 }) {
   const { t } = useI18n()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = usePersisted("scheme-open", true)
   const box = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
 
@@ -1450,7 +1458,7 @@ function FilesPanel({
   onFormAction: FormAction
 }) {
   const { t } = useI18n()
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = usePersisted("files-collapsed", false)
   // Принятый этап открывается на FINAL: варианты уже не нужны, нужен результат.
   const [tab, setTab] = useState<FolderTab>(view.status === "approved" ? "final" : "work")
   useEffect(() => {
@@ -1460,10 +1468,12 @@ function FilesPanel({
   /** Превью — только что сделанная копия входа: открыть сразу в правке. */
   const [editOnOpen, setEditOnOpen] = useState(false)
   const canEditWork = view.status === "ready" && (view.me.isExecutor || view.me.isOwner)
+  // pb-3 обёртки — 12px сверх списка.
+  const fit = useFitBounds(12, { min: 64, max: 520 })
   const height = useDragSize({
     initial: 150,
-    min: 64,
-    max: 520,
+    min: fit.min,
+    max: fit.max,
     axis: "y",
     storageKey: "ffworks-production-files-height",
   })
@@ -1538,7 +1548,9 @@ function FilesPanel({
 
       {collapsed ? null : (
         <>
+          {/* Тянется от одного файла до последнего — пустоты под списком нет. */}
           <div style={{ height: height.size }} className="scrollbar-elegant overflow-y-auto px-3 pb-3 md:px-6">
+            <div ref={fit.ref}>
             {files.length === 0 ? (
               <div className="flex h-full min-h-[40px] items-center justify-center gap-2 text-[12.5px] text-ws-4">
                 {tab === "work" ? <MessageSquare className="h-3.5 w-3.5 shrink-0" /> : null}
@@ -1580,6 +1592,7 @@ function FilesPanel({
                 ))}
               </div>
             )}
+            </div>
           </div>
           <FilePreviewDialog
             file={preview ? { ...preview, name: displaySlotName(preview.name, view.slotLabels).name } : null}
@@ -1704,6 +1717,17 @@ function FormPanel({
   const { t } = useI18n()
   const [busy, setBusy] = useState(false)
   const [preview, setPreview] = useState<StepFile | null>(null)
+  /** Свёрнута — видна только шапка с состоянием формы, как у «Файлов». */
+  const [collapsed, setCollapsed] = usePersisted("form-collapsed", false)
+  // Высоту формы тянут, как у «Файлов»: от одной строки до последней.
+  const fit = useFitBounds(0, { min: 80, max: 1200 })
+  const height = useDragSize({
+    initial: 360,
+    min: fit.min,
+    max: fit.max,
+    axis: "y",
+    storageKey: "ffworks-production-form-height",
+  })
   const form = view.form!
   const canEdit = view.status === "ready" && (view.me.isExecutor || view.me.isOwner)
   const sensors = useSensors(
@@ -1764,9 +1788,10 @@ function FormPanel({
         const folder = group.row.types.includes("folder")
         const key = slotRowKey(dir, group.row.id)
         const last = group.slots[group.slots.length - 1]
-        // У «≥» внизу всегда одно пустое место: заполнил — появляется следующее.
+        // У «≥» внизу одно пустое место: заполнил — появляется следующее.
+        // Только пока форму можно править: у принятого этапа класть некуда.
         const slots: Slot[] =
-          !folder && group.row.op === ">=" && (!last || last.file)
+          canEdit && !folder && group.row.op === ">=" && (!last || last.file)
             ? [
                 ...group.slots,
                 { rowId: group.row.id, label: group.row.label, index: group.slots.length + 1, file: null, folderName: null, groups: [] },
@@ -1840,8 +1865,18 @@ function FormPanel({
   )
 
   return (
-    <section className="shrink-0 border-b border-foreground/[0.07] px-3 py-3 md:px-6">
-      <div className="mb-2 flex items-center gap-2">
+    <section className="relative shrink-0 border-b border-foreground/[0.07] px-3 py-3 md:px-6">
+      <div className={cn("flex items-center gap-2", !collapsed && "mb-2")}>
+        <button
+          type="button"
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? t.productionFormExpand : t.productionFormCollapse}
+          aria-label={collapsed ? t.productionFormExpand : t.productionFormCollapse}
+          aria-expanded={!collapsed}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-ws-4 hover:bg-ws-hover hover:text-ws-1"
+        >
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
         <span className="text-[12px] font-semibold uppercase tracking-[1.2px] text-ws-3">{t.productionForm}</span>
         {form.complete ? (
           <span className="flex items-center gap-1 text-[12px] text-success">
@@ -1854,7 +1889,21 @@ function FormPanel({
           </span>
         ) : null}
       </div>
-      {renderGroups(form.state.groups, "")}
+      {collapsed ? null : (
+        <>
+          <div style={{ height: height.size }} className="scrollbar-elegant overflow-y-auto">
+            <div ref={fit.ref}>{renderGroups(form.state.groups, "")}</div>
+          </div>
+          <ResizeGrip
+            orientation="horizontal"
+            side="bottom"
+            label={t.productionFormResize}
+            dragging={height.dragging}
+            onPointerDown={height.onPointerDown}
+            onKeyDown={height.onKeyDown}
+          />
+        </>
+      )}
       <FilePreviewDialog
         file={preview ? { ...preview, name: displaySlotName(preview.name, view.slotLabels).name } : null}
         onClose={() => setPreview(null)}
@@ -2295,4 +2344,30 @@ function FormSlotRow({
       ) : null}
     </div>
   )
+}
+
+/**
+ * Пределы высоты блока по его содержимому: не ниже одного пункта (файла,
+ * строки формы) и не выше последнего — пустоты под списком не бывает.
+ * `extra` — отступы прокручиваемой обёртки сверх содержимого.
+ */
+function useFitBounds(extra: number, fallback: { min: number; max: number }) {
+  // Узел — состоянием, а не ref: блок сворачивают и разворачивают, и
+  // измерение должно начаться заново с новым узлом.
+  const [el, ref] = useState<HTMLDivElement | null>(null)
+  const [bounds, setBounds] = useState(fallback)
+  useEffect(() => {
+    if (!el) return
+    const measure = () => {
+      const max = el.offsetHeight + extra
+      const row = el.firstElementChild?.firstElementChild as HTMLElement | null | undefined
+      const min = Math.min(max, (row?.offsetHeight ?? max) + extra)
+      setBounds((prev) => (prev.min === min && prev.max === max ? prev : { min, max }))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [el, extra])
+  return { ref, ...bounds }
 }

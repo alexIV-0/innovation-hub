@@ -5,11 +5,10 @@ import {
   Check,
   CheckCheck,
   CornerUpLeft,
-  Download,
   FileIcon,
+  MessageSquare,
   Loader2,
   LogOut,
-  MoreHorizontal,
   Paperclip,
   SendHorizontal,
   SmilePlus,
@@ -21,16 +20,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { useI18n, type Dictionary } from "@/components/account/i18n"
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
-import { downloadHref, useDownloadChoice } from "@/components/text-viewer/download-choice"
-import { TextFile } from "@/components/text-viewer/text-file"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { tf, useI18n, type Dictionary } from "@/components/account/i18n"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import type { ChatAttachment, ChatMember, ChatMessage } from "@/lib/production/chat-types"
 import { displaySlotName } from "@/lib/production/form"
@@ -39,6 +29,9 @@ import { textKind } from "@/lib/text-formats/kind"
 import { cn } from "@/lib/utils"
 import { isImage, isVideo, mediaUrl, uploadChatFile, type UploadedFile } from "./upload"
 import { useChat, type ChatMe } from "./use-chat"
+import { FileMenu, editableFile, type FileMenuForm } from "../file-menu"
+import { FilePreviewDialog } from "../file-preview-dialog"
+import { useReview } from "../review/review-dialog"
 
 /**
  * Чат этапа ролика — docs/PRODUCTION_PLAN.md §7, этап 2.
@@ -54,6 +47,9 @@ export function StageChat({
   canApprove,
   onApproveFile,
   slotLabels = [],
+  canEditWork = false,
+  formFor,
+  onFilesChanged,
 }: {
   stepId: string
   tick: number
@@ -61,13 +57,19 @@ export function StageChat({
   onApproveFile: (file: { id: string; name: string }) => void
   /** Метки строк форм пайплайна: имя вложения в слоте — исходное, приставка бледно. */
   slotLabels?: string[]
+  /** Править рабочую (исполнитель или автор, этап открыт): правка вложения — новым файлом. */
+  canEditWork?: boolean
+  /** Этап-форма: «Поставить в →» для вложения по id файла; null — файла нет в рабочей. */
+  formFor?: (fileId: string) => FileMenuForm | null
+  /** Правка вложения легла новым файлом — перечитать список файлов этапа. */
+  onFilesChanged?: () => void
 }) {
   const { t } = useI18n()
   const chat = useChat(stepId, tick)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   /** Выделенный кусок `replyTo` — в ответе показывается только он. */
   const [replyQuote, setReplyQuote] = useState<string | null>(null)
-  const [preview, setPreview] = useState<ChatAttachment | null>(null)
+  const [preview, setPreview] = useState<{ attachment: ChatAttachment; edit: boolean } | null>(null)
   /** Упомянуть по клику из системного сообщения — поле ввода подхватит. */
   const [mention, setMention] = useState<{ id: string; name: string; at: number } | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -142,8 +144,10 @@ export function StageChat({
                   if (!window.confirm(t.productionChatDeleteConfirm)) return
                   void act(`${base}/messages/${message.id}`, { method: "DELETE" }, t.productionChatFailed)
                 }}
-                onPreview={setPreview}
+                onPreview={(attachment, edit = false) => setPreview({ attachment, edit })}
                 onApprove={(a) => onApproveFile({ id: a.fileId, name: a.name })}
+                canEditWork={canEditWork}
+                formFor={formFor}
                 onMention={(person) => setMention({ ...person, at: Date.now() })}
               />
             ))}
@@ -169,14 +173,36 @@ export function StageChat({
         }}
       />
 
-      <PreviewDialog
-        attachment={preview}
-        canApprove={canApprove}
+      {/* Общее окно просмотра: правка вложения — новым файлом в «Из чата», не поверх. */}
+      <FilePreviewDialog
+        file={
+          preview
+            ? {
+                id: preview.attachment.fileId,
+                name: displaySlotName(preview.attachment.name, slotLabels).name,
+                s3Key: preview.attachment.s3Key,
+                contentType: preview.attachment.contentType,
+              }
+            : null
+        }
+        editOnOpen={preview?.edit ?? false}
         onClose={() => setPreview(null)}
-        onApprove={(a) => {
-          setPreview(null)
-          onApproveFile({ id: a.fileId, name: a.name })
-        }}
+        saveAsNew={canEditWork ? { stepId, onSaved: () => onFilesChanged?.() } : null}
+        actions={
+          preview && canApprove && !formFor?.(preview.attachment.fileId) ? (
+            <button
+              type="button"
+              onClick={() => {
+                const a = preview.attachment
+                setPreview(null)
+                onApproveFile({ id: a.fileId, name: a.name })
+              }}
+              className="h-8 rounded-[9px] bg-success px-3 text-[13px] font-medium text-background hover:bg-success/90"
+            >
+              {t.productionApproveThis}
+            </button>
+          ) : null
+        }
       />
     </section>
   )
@@ -395,6 +421,8 @@ function MessageItem({
   onPreview,
   onApprove,
   onMention,
+  canEditWork,
+  formFor,
 }: {
   message: ChatMessage
   prev?: ChatMessage
@@ -407,11 +435,14 @@ function MessageItem({
   onReply: (quote: string | null) => void
   onReact: (emoji: string) => void
   onDelete: () => void
-  onPreview: (a: ChatAttachment) => void
+  onPreview: (a: ChatAttachment, edit?: boolean) => void
   onApprove: (a: ChatAttachment) => void
   onMention: (person: { id: string; name: string }) => void
+  canEditWork: boolean
+  formFor?: (fileId: string) => FileMenuForm | null
 }) {
   const { t } = useI18n()
+  const review = useReview()
   const [pickerOpen, setPickerOpen] = useState(false)
   const bodyRef = useRef<HTMLParagraphElement>(null)
   const time = new Date(message.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
@@ -483,6 +514,24 @@ function MessageItem({
           <span className="italic text-ws-4">{t.productionChatDeleted}</span>
         ) : (
           <>
+            {message.review ? (
+              // Карточка пометки ревью (§8): клик открывает инструмент на ней.
+              <button
+                type="button"
+                disabled={!review}
+                onClick={() => {
+                  const r = message.review!
+                  review?.({ id: r.fileId, name: displaySlotName(r.name, slotLabels).name, s3Key: r.s3Key, contentType: r.contentType }, r.commentId)
+                }}
+                title={t.productionReviewOpen}
+                className="mb-1 flex w-full items-center gap-2 rounded-lg border border-foreground/10 bg-background/40 px-2 py-1.5 text-left text-[12px] text-ws-3 hover:bg-ws-hover"
+              >
+                <MessageSquare className="h-3.5 w-3.5 shrink-0 text-ws-accent" />
+                <span className="min-w-0 flex-1 truncate">
+                  {tf(t.productionReviewCard, { name: displaySlotName(message.review.name, slotLabels).name })}
+                </span>
+              </button>
+            ) : null}
             {message.body ? <p ref={bodyRef} className="whitespace-pre-wrap break-words">{message.body}</p> : null}
             {message.attachments.length > 0 ? (
               <div className={cn("grid gap-1.5", message.body && "mt-1.5")}>
@@ -493,7 +542,9 @@ function MessageItem({
                     canApprove={canApprove}
                     slotLabels={slotLabels}
                     onPreview={() => onPreview(a)}
+                    onEdit={canEditWork && editableFile(a) ? () => onPreview(a, true) : null}
                     onApprove={() => onApprove(a)}
+                    form={formFor?.(a.fileId) ?? null}
                   />
                 ))}
               </div>
@@ -609,15 +660,20 @@ function AttachmentView({
   canApprove,
   slotLabels,
   onPreview,
+  onEdit,
   onApprove,
+  form,
 }: {
   attachment: ChatAttachment
   canApprove: boolean
   slotLabels: string[]
   onPreview: () => void
+  /** Открыть сразу в правке; сохранение — новым файлом. null — нельзя. */
+  onEdit: (() => void) | null
   onApprove: () => void
+  /** Этап-форма: «Поставить в →» вместо «Принять этот вариант». */
+  form: FileMenuForm | null
 }) {
-  const { t } = useI18n()
   const shown = displaySlotName(attachment.name, slotLabels)
   const label = (
     <>
@@ -629,7 +685,6 @@ function AttachmentView({
   const image = isImage(attachment.contentType, attachment.name)
   const video = isVideo(attachment.contentType, attachment.name)
   const textual = textKind(attachment.name, attachment.contentType) !== null
-  const { download, dialog: downloadDialog } = useDownloadChoice()
 
   return (
     <div className="relative">
@@ -653,105 +708,19 @@ function AttachmentView({
       )}
       <div className="mt-0.5 flex items-center gap-1 text-[11px] text-ws-4">
         <span className="flex min-w-0 flex-1 items-center gap-1.5">{image || video ? label : null}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type="button" title={t.productionFileMenu} aria-label={t.productionFileMenu} className="flex h-5 w-5 items-center justify-center rounded hover:bg-ws-hover hover:text-ws-1">
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[220px]">
-            {image || video || textual ? (
-              <DropdownMenuItem onSelect={onPreview}>{t.productionChatOpen}</DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem
-              onSelect={() =>
-                download({
-                  name: attachment.name,
-                  textUrl: `${url}?raw=1`,
-                  asIs: () => downloadHref(url, attachment.name),
-                })
-              }
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {t.productionChatDownload}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!canApprove} onSelect={onApprove}>
-              <Check className="mr-2 h-4 w-4" />
-              {t.productionApproveThis}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <FileMenu
+          file={attachment}
+          labels={slotLabels}
+          compact
+          onOpen={image || video || textual ? onPreview : null}
+          onEdit={onEdit}
+          form={form}
+          // «Принять этот вариант» — только у инструмента и только тому, кто
+          // принимает: у формы принимается вся форма, а не вложение.
+          approve={canApprove ? { allowed: true, onApprove } : null}
+        />
       </div>
-      {downloadDialog}
     </div>
-  )
-}
-
-/** Отдельное окно просмотра — крупно, с приёмкой. Пометки на кадре — этап 3. */
-function PreviewDialog({
-  attachment,
-  canApprove,
-  onClose,
-  onApprove,
-}: {
-  attachment: ChatAttachment | null
-  canApprove: boolean
-  onClose: () => void
-  onApprove: (a: ChatAttachment) => void
-}) {
-  const { t } = useI18n()
-  const { download, dialog: downloadDialog } = useDownloadChoice()
-  if (!attachment) return null
-  const url = mediaUrl(attachment.s3Key)
-  const textual = textKind(attachment.name, attachment.contentType) !== null
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-5xl">
-        <DialogTitle className="truncate pr-8">{attachment.name}</DialogTitle>
-        <DialogDescription className="sr-only">{t.productionChatOpen}</DialogDescription>
-        {textual ? (
-          // Текст — общим просмотрщиком, только чтение. `?raw=1` — тело тем же
-          // источником, а не редирект на хранилище.
-          <TextFile
-            url={`${url}?raw=1`}
-            name={attachment.name}
-            mimeType={attachment.contentType}
-            className="h-[70vh] rounded-lg border border-foreground/10"
-          />
-        ) : (
-        <div className="flex max-h-[75vh] items-center justify-center overflow-hidden rounded-lg bg-black">
-          {isVideo(attachment.contentType, attachment.name) ? (
-            <video src={url} controls autoPlay className="max-h-[75vh] max-w-full" />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt={attachment.name} className="max-h-[75vh] max-w-full object-contain" />
-          )}
-        </div>
-        )}
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              download({
-                name: attachment.name,
-                textUrl: `${url}?raw=1`,
-                asIs: () => downloadHref(url, attachment.name),
-              })
-            }
-            className="flex h-8 items-center gap-1.5 rounded-[9px] border border-foreground/10 bg-ws-control px-3 text-[13px] text-ws-2 hover:bg-ws-hover"
-          >
-            <Download className="h-4 w-4" />
-            {t.productionChatDownload}
-          </button>
-          {canApprove ? (
-            <button type="button" onClick={() => onApprove(attachment)} className="h-8 rounded-[9px] bg-success px-3 text-[13px] font-medium text-background hover:bg-success/90">
-              {t.productionApproveThis}
-            </button>
-          ) : null}
-        </div>
-        {downloadDialog}
-      </DialogContent>
-    </Dialog>
   )
 }
 

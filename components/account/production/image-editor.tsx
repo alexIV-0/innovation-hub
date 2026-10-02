@@ -60,7 +60,7 @@ const FONTS: { id: FontId; label: string; css: (px: number) => string }[] = [
 ]
 const fontOf = (id: FontId) => FONTS.find((f) => f.id === id) ?? FONTS[0]!
 
-const PALETTE = ["#1c1c1e", "#ffffff", "#8e8e93", "#0a84ff", "#ffd60a", "#ff3b30", "#30d158", "#bf5af2"]
+export const PALETTE = ["#1c1c1e", "#ffffff", "#8e8e93", "#0a84ff", "#ffd60a", "#ff3b30", "#30d158", "#bf5af2"]
 
 const uid = () => Math.random().toString(36).slice(2, 10)
 
@@ -1002,7 +1002,7 @@ export function ImageEditor({
  * Shift: стрелка и линия — по 45°, прямоугольник, эллипс и размытие — квадрат и
  * круг. `origin` — неподвижная точка.
  */
-function constrain(kind: Obj["kind"], origin: P, p: P): P {
+export function constrain(kind: Obj["kind"], origin: P, p: P): P {
   const dx = p.x - origin.x
   const dy = p.y - origin.y
   if (kind === "arrow" || kind === "line") {

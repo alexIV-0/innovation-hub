@@ -14,6 +14,7 @@ import { copySingleFile, loadCopySource } from "@/lib/storage/copy"
 import { readFileTypeDictionary } from "@/lib/repositories/automation-settings"
 import { writeEnsureFolderPath, writeFileDelete, writeNotifyUpload, writeRenameBatch } from "@/lib/storage/write-path"
 import type { ChatAccess } from "./chat"
+import { isReviewPath } from "./review-folder"
 import { hasStepRole } from "./step-people"
 import { renumber, slotFileName } from "@/lib/tools/element/names"
 import { extensionFits } from "@/lib/tools/element/site-form"
@@ -70,7 +71,7 @@ function plainName(name: string): string {
 
 export type PresignResult =
   | { ok: true; url: string; s3Key: string; contentType: string; fileName: string }
-  | { ok: false; reason: "storage" | "no-folder" | "too-big" | "bad-type" }
+  | { ok: false; reason: "storage" | "no-folder" | "too-big" | "bad-type" | "forbidden" }
 
 /**
  * Словарь типов файлов конвейера (`automation_settings`, домен `fileType`) — тот
@@ -88,12 +89,17 @@ export async function fileTypeDictionary(): Promise<Record<string, string[]>> {
 
 export async function presignChatUpload(
   access: ChatAccess,
-  input: { fileName: string; contentType?: string; sizeBytes: number; slot?: SlotTarget },
+  userId: string,
+  input: { fileName: string; contentType?: string; sizeBytes: number; slot?: SlotTarget; editCopy?: boolean },
 ): Promise<PresignResult> {
   if (!isS3Configured()) return { ok: false, reason: "storage" }
   const { step } = access
   if (!step.projectId) return { ok: false, reason: "no-folder" }
   if (input.sizeBytes > getMaxUploadBytes()) return { ok: false, reason: "too-big" }
+  // Правка вложения новым файлом — право как на правку рабочей, не как на чат.
+  if (input.editCopy && (input.slot || !(await formEditPlace(access, userId, false)).ok)) {
+    return { ok: false, reason: "forbidden" }
+  }
   const project = await findProjectById(step.projectId)
   const place = await target(access, input)
   if (!project || !place) return { ok: false, reason: "no-folder" }
@@ -120,12 +126,12 @@ export async function presignChatUpload(
 
 export type CompleteResult =
   | { ok: true; file: { id: string; name: string; s3Key: string; contentType: string; sizeBytes: number } }
-  | { ok: false; reason: "bad-key" | "no-folder" }
+  | { ok: false; reason: "bad-key" | "no-folder" | "forbidden" }
 
 export async function completeChatUpload(
   access: ChatAccess,
   userId: string,
-  input: { s3Key: string; fileName: string; sizeBytes: number; contentType: string; slot?: SlotTarget },
+  input: { s3Key: string; fileName: string; sizeBytes: number; contentType: string; slot?: SlotTarget; editCopy?: boolean },
 ): Promise<CompleteResult> {
   const { step } = access
   if (!step.projectId) return { ok: false, reason: "no-folder" }
@@ -139,7 +145,12 @@ export async function completeChatUpload(
   // Файл из чата у формы сам встаёт в первое свободное подходящее место (§3.0):
   // место считается здесь, при записи в каталог, — одним событием, без
   // промежуточного «лёг в корень, потом переехал».
-  const auto = input.slot ? null : await autoPlace(access, userId, input.fileName)
+  if (input.editCopy && (input.slot || !(await formEditPlace(access, userId, false)).ok)) {
+    return { ok: false, reason: "forbidden" }
+  }
+  // Правка вложения — новым файлом в корне под исходным свободным именем;
+  // в форму сама не встаёт: поставить её — решение исполнителя.
+  const auto = input.slot || input.editCopy ? null : await autoPlace(access, userId, input.fileName)
   const write = (folderPath: string, fileName: string, keepObjectOnConflict = false) =>
     writeNotifyUpload({
       storageOwnerId: project.storageOwnerId,
@@ -152,18 +163,26 @@ export async function completeChatUpload(
       actor: { userId, isUploader: true },
       keepObjectOnConflict,
     })
+  const rootNames = async () =>
+    (await listTree(project.id, place.folder)).filter((f) => f.folderPath === place.folder).map((f) => f.name)
   let file: Awaited<ReturnType<typeof writeNotifyUpload>>
-  if (auto) {
+  if (input.editCopy) {
+    const original = stripSlotPrefix(plainName(input.fileName), graphFormLabels(step.graph.nodes))
+    try {
+      file = await write(place.folder, freeFileName(await rootNames(), original), true)
+    } catch (error) {
+      // Имя успели занять между списком и записью — ещё раз по свежему списку.
+      if (!(error instanceof StorageWriteError && error.status === 409)) throw error
+      file = await write(place.folder, freeFileName(await rootNames(), original))
+    }
+  } else if (auto) {
     try {
       file = await write(auto.folder, auto.fileName, true)
     } catch (error) {
       // Две заливки с одним именем одновременно получили одно свободное место:
       // вторая не теряется, а ложится в корень под свободным исходным именем.
       if (!(error instanceof StorageWriteError && error.status === 409)) throw error
-      const rootNames = (await listTree(project.id, place.folder))
-        .filter((f) => f.folderPath === place.folder)
-        .map((f) => f.name)
-      file = await write(place.folder, freeFileName(rootNames, safeBaseFileName(input.fileName)))
+      file = await write(place.folder, freeFileName(await rootNames(), safeBaseFileName(input.fileName)))
     }
   } else {
     // Имя слота формы — как есть, без замены пробелов.
@@ -244,7 +263,8 @@ async function workFiles(place: FormEditPlace, ids: string[]) {
         AND (folder_path = $3 OR folder_path LIKE $4)`,
     [ids, place.projectId, place.work, `${place.work.replace(/[\\%_]/g, (c) => `\\${c}`)}/%`],
   )
-  return rows
+  // Служебные json пометок (.review) — не файлы этапа: не двигаем и не правим.
+  return rows.filter((r) => !isReviewPath(r.folderPath))
 }
 
 /**
@@ -467,7 +487,8 @@ async function workFileWithKey(place: FormEditPlace, fileId: string) {
         AND (folder_path = $3 OR folder_path LIKE $4)`,
     [fileId, place.projectId, place.work, `${place.work.replace(/[\\%_]/g, (c) => `\\${c}`)}/%`],
   )
-  return rows[0] ?? null
+  const row = rows[0]
+  return row && !isReviewPath(row.folderPath) ? row : null
 }
 
 // ─── «Редактировать копию» входного файла ─────────────────────────────────
@@ -482,7 +503,7 @@ export type CopyInputResult =
  * скопированного входа этапа (`paths.inputs`). Проверка по папке — с
  * подпапками, как и показ входа (listFolderFiles).
  */
-async function inputFile(access: ChatAccess, fileId: string): Promise<{ projectId: string } | null> {
+export async function inputFile(access: ChatAccess, fileId: string): Promise<{ projectId: string } | null> {
   const { step } = access
   const prevIds = step.graph.edges.filter((e) => e.target === step.nodeId).map((e) => e.source)
   const places: { projectId: string; folder: string }[] = []

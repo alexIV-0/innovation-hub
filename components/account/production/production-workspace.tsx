@@ -34,7 +34,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { tf, useI18n } from "@/components/account/i18n"
+import { useI18n } from "@/components/account/i18n"
 import { typesLabel } from "@/components/account/workspace/element/element-slots"
 import { ResizeGrip } from "@/components/account/resize-grip"
 import { useDragSize } from "@/components/account/use-drag-size"
@@ -44,9 +44,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { MyRun, RunOverview, SchemeNodeView, StepFile, StepView } from "@/lib/production/workspace-types"
@@ -56,13 +53,15 @@ import { WorkplaceModeSwitch } from "./mode-switch"
 import { NewRunButton } from "./new-run-dialog"
 import { StageChat } from "./chat/stage-chat"
 import { FilePreviewDialog, saveOver } from "./file-preview-dialog"
+import { ReviewProvider } from "./review/review-dialog"
+import { FileMenu, editableFile, type FileMenuForm } from "./file-menu"
 import { uploadChatFile } from "./chat/upload"
 import { MarkupFileEditor } from "@/components/text-viewer/plain-editor"
 import { confirmDiscardEdits } from "@/components/text-viewer/unsaved"
 import { TEXT_PREVIEW_LIMIT } from "@/components/account/workspace/preview-kind"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { escapeText } from "@/lib/tools/element/markup"
-import { slotNumber, subfolderName } from "@/lib/tools/element/names"
+import { subfolderName } from "@/lib/tools/element/names"
 import { displaySlotName, formPlaces, type FormPlace } from "@/lib/production/form"
 import { extensionFits, mimeFits } from "@/lib/tools/element/site-form"
 import { type Group, type Slot } from "@/lib/tools/element/slots"
@@ -341,7 +340,8 @@ export function ProductionWorkspace() {
               </div>
             )
           ) : view ? (
-            <>
+            // Пометки ревью (§8) открываются из меню файла, просмотра и чата этапа.
+            <ReviewProvider stepId={view.id}>
               {/* Верх закреплён: схема и шапка этапа всегда на месте,
                   прокручиваются только файлы и чат. */}
               <SchemeStrip nodes={view.scheme.nodes} edges={view.scheme.edges} currentNodeId={view.nodeId} />
@@ -390,6 +390,23 @@ export function ProductionWorkspace() {
                     canApprove={canApprove(view) && view.kind === "tool"}
                     onApproveFile={(file) => void approve(file)}
                     slotLabels={view.slotLabels}
+                    canEditWork={view.status === "ready" && (view.me.isExecutor || view.me.isOwner)}
+                    formFor={
+                      view.form
+                        ? (fileId) => {
+                            const file = view.files.work.find((f) => f.id === fileId)
+                            if (!file) return null
+                            return {
+                              canEdit: view.status === "ready" && (view.me.isExecutor || view.me.isOwner),
+                              current: placeOf(view, file),
+                              places: formPlaces(view.form!.state.groups),
+                              fileTypes: view.form!.fileTypes,
+                              onPlace: (slot) => void placeFile(view, file, slot, formAction, t),
+                            }
+                          }
+                        : undefined
+                    }
+                    onFilesChanged={() => void loadStep()}
                   />
                 ) : (
                   <p className="flex items-center justify-center gap-2 px-6 py-8 text-[12.5px] text-ws-4">
@@ -398,7 +415,7 @@ export function ProductionWorkspace() {
                   </p>
                 )}
               </div>
-            </>
+            </ReviewProvider>
           ) : (
             <div className="flex flex-1 items-center justify-center text-ws-4">
               {loadingStep || runs === null ? (
@@ -1535,13 +1552,19 @@ function FilesPanel({
                     file={file}
                     labels={view.slotLabels}
                     approved={file.id === view.approvedFileId}
-                    withMenu={tab === "work"}
-                    canApprove={canApprove(view)}
-                    onApprove={() => onApproveFile(file)}
+                    approve={tab === "work" ? { allowed: canApprove(view), onApprove: () => onApproveFile(file) } : null}
                     onOpen={() => {
                       setEditOnOpen(false)
                       setPreview(file)
                     }}
+                    onEdit={
+                      tab === "work" && canEditWork && editableFile(file)
+                        ? () => {
+                            setEditOnOpen(true)
+                            setPreview(file)
+                          }
+                        : null
+                    }
                     form={
                       tab === "work" && view.form
                         ? {
@@ -1596,35 +1619,26 @@ function FileRow({
   file,
   labels,
   approved,
-  withMenu,
-  canApprove: allowed,
-  onApprove,
+  approve,
   onOpen,
+  onEdit,
   form,
 }: {
   file: StepFile
   /** Названия строк форм: на экране исходное имя, приставка места — бледной меткой. */
   labels: readonly string[]
   approved: boolean
-  withMenu: boolean
-  canApprove: boolean
-  onApprove: () => void
+  /** «Принять этот вариант» — варианты этапа-инструмента; null — пункта нет. */
+  approve: { allowed: boolean; onApprove: () => void } | null
   /** Встроенный просмотр (и правка, где можно). */
   onOpen: () => void
+  /** «Редактировать» — открыть сразу в правке; null — нельзя. */
+  onEdit: (() => void) | null
   /** Этап-форма: вместо «Принять этот вариант» — «Поставить в →» (§3.0). */
-  form: {
-    canEdit: boolean
-    current: FormPlace | null
-    places: FormPlace[]
-    fileTypes: Record<string, string[]>
-    onPlace: (slot: SlotRef | null) => void
-  } | null
+  form: FileMenuForm | null
 }) {
-  const { t } = useI18n()
   const shown = displaySlotName(file.name, labels)
   const original = shown.name
-  // Свободные места сначала, потом занятые — в порядке формы.
-  const places = form ? [...form.places].sort((a, b) => Number(a.fileName !== null) - Number(b.fileName !== null)) : []
   const time = new Date(file.createdAt).toLocaleString(undefined, {
     day: "2-digit",
     month: "2-digit",
@@ -1659,73 +1673,7 @@ function FileRow({
       </button>
       {file.author ? <span className="shrink-0 text-ws-4">{file.author}</span> : null}
       <span className="shrink-0 tabular-nums text-ws-4">{time}</span>
-      {withMenu ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              title={t.productionFileMenu}
-              aria-label={t.productionFileMenu}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ws-4 hover:bg-ws-hover hover:text-ws-1"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[220px]">
-            {form ? (
-              <>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger disabled={!form.canEdit || places.length === 0}>
-                    {t.productionPlaceInto}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="scrollbar-elegant max-h-[320px] min-w-[240px] overflow-y-auto">
-                    {places.map((place) => {
-                      const here =
-                        form.current?.rowId === place.rowId &&
-                        form.current.index === place.index &&
-                        form.current.dir === place.dir
-                      const fits = extensionFits({ fileTypes: form.fileTypes }, place.types, original)
-                      const occupant = place.fileName ? displaySlotName(place.fileName, labels).name : null
-                      return (
-                        <DropdownMenuItem
-                          key={`${place.dir}::${place.rowId}::${place.index}`}
-                          disabled={here || !fits}
-                          onSelect={() => {
-                            if (occupant && !window.confirm(tf(t.productionPlaceReplace, { name: occupant }))) return
-                            form.onPlace({ rowId: place.rowId, index: place.index, dir: place.dir })
-                          }}
-                          className="flex min-w-0 items-center gap-2"
-                        >
-                          <span className="shrink-0 tabular-nums text-ws-4">{slotNumber(place.index)}</span>
-                          <span className="min-w-0 flex-1 truncate">
-                            {place.dir ? <span className="text-ws-4">{place.dir} / </span> : null}
-                            {place.label}
-                          </span>
-                          {occupant ? <span className="max-w-[120px] shrink-0 truncate text-[11.5px] text-ws-5">{occupant}</span> : null}
-                        </DropdownMenuItem>
-                      )
-                    })}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                {form.current ? (
-                  <DropdownMenuItem disabled={!form.canEdit} onSelect={() => form.onPlace(null)}>
-                    <X className="mr-2 h-4 w-4" />
-                    {t.productionPlaceRemove}
-                  </DropdownMenuItem>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <DropdownMenuItem disabled={!allowed} onSelect={onApprove}>
-                  <Check className="mr-2 h-4 w-4" />
-                  {t.productionApproveThis}
-                </DropdownMenuItem>
-                {!allowed ? <p className="px-2 pb-1.5 text-[11px] text-ws-4">{t.productionApproveHint}</p> : null}
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
+      <FileMenu file={file} labels={labels} onOpen={onOpen} onEdit={onEdit} form={form} approve={approve} />
     </div>
   )
 }
@@ -1801,6 +1749,9 @@ function FormPanel({
     )
   }
 
+  // Файлы «Из чата» вне формы — кандидаты в пустое место (выбор кликом по полю).
+  const loose = view.files.work.filter((f) => f.folderPath === form.work && placeOf(view, f) === null)
+
   /** Файл из списка «Из чата» брошен на место — как «Поставить в →». */
   const placeDropped = (fileId: string, slot: SlotRef) => {
     const file = view.files.work.find((f) => f.id === fileId)
@@ -1871,6 +1822,7 @@ function FormPanel({
                             onPreview={setPreview}
                             onChanged={onChanged}
                             onPlace={(fileId) => placeDropped(fileId, ref)}
+                            candidates={file ? [] : loose.filter((f) => extensionFits({ fileTypes: form.fileTypes }, group.row.types, displaySlotName(f.name, view.slotLabels).name))}
                             // Корзина — только у занятого места; лишнее пустое место уходит само.
                             onRemove={file ? () => void remove(key, file) : null}
                           />
@@ -2003,6 +1955,7 @@ function FormSlotRow({
   onChanged,
   onPlace,
   onRemove,
+  candidates,
 }: {
   stepId: string
   slot: { rowId: string; index: number; dir: string }
@@ -2024,10 +1977,14 @@ function FormSlotRow({
   onPlace: (fileId: string) => void
   /** null — убирать нечего: пустое место, которое требует форма. */
   onRemove: (() => void) | null
+  /** Пустое место: файлы «Из чата» вне формы, подходящие строке по типу. */
+  candidates: StepFile[]
 }) {
   const { t } = useI18n()
   const [over, setOver] = useState<null | "ok" | "bad">(null)
   const [percent, setPercent] = useState<number | null>(null)
+  /** Открыт список файлов «Из чата» для пустого места. */
+  const [picking, setPicking] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const reject = (fileName: string) => {
@@ -2177,6 +2134,43 @@ function FormSlotRow({
             onPointerDown={(e) => e.stopPropagation()}
             className="block w-full border-b border-foreground/15 bg-transparent px-1 pb-1 text-[13.5px] text-ws-1 outline-none placeholder:text-ws-5 focus:border-ws-select"
           />
+        ) : canEdit && !name && over === null && percent === null ? (
+          // Пустое место: клик — список подходящих файлов «Из чата», как «Поставить в →».
+          <Popover open={picking} onOpenChange={setPicking}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={busy}
+                title={t.productionFormPickHint}
+                className="block w-full truncate border-b border-foreground/15 px-1 pb-1 text-left text-[13.5px] text-ws-5 transition-colors hover:border-foreground/30 hover:text-ws-3 disabled:opacity-50"
+              >
+                {typesLabel(types, t)}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[320px] p-1">
+              <p className="px-2 pb-1 pt-1.5 text-[11.5px] text-ws-4">{t.productionFormPickTitle}</p>
+              {candidates.length === 0 ? (
+                <p className="px-2 pb-2 text-[12.5px] text-ws-4">{t.productionFormPickEmpty}</p>
+              ) : (
+                <div className="scrollbar-elegant max-h-[280px] overflow-y-auto">
+                  {candidates.map((candidate) => (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        onClick={() => {
+                          setPicking(false)
+                          onPlace(candidate.id)
+                        }}
+                        className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-ws-1 hover:bg-ws-hover"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{displaySlotName(candidate.name, labels).name}</span>
+                        {candidate.author ? <span className="shrink-0 text-[11.5px] text-ws-5">{candidate.author}</span> : null}
+                      </button>
+                  ))}
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
         ) : (
           <span
             className={cn(

@@ -2,6 +2,7 @@ import { query, withTransaction } from "@/lib/db"
 import { insertSystem, unreadByStep } from "./chat"
 import { hasChat, listTree, markSoleExecutor, type StepPaths } from "./flow"
 import { formStatus, graphFormLabels, type FormState } from "./form"
+import { isReviewPath } from "./review-folder"
 import { fileTypeDictionary } from "./uploads"
 import { canEditStepPeople, hasStepRole, listAddedPeople } from "./step-people"
 import {
@@ -302,7 +303,8 @@ export async function listFolderFiles(projectId: string | null, folder: string |
       LIMIT 500`,
     [projectId, folder, `${folder.replace(/[\\%_]/g, (c) => `\\${c}`)}/%`],
   )
-  return rows
+  // Пометки ревью (`.review`) — не файлы этапа.
+  return rows.filter((r) => !isReviewPath(r.folderPath))
 }
 
 /** Файлы по id — результаты обработки автоматики. */

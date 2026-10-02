@@ -1,17 +1,18 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Copy, Download, Pencil } from "lucide-react"
+import { Copy, Download, MessageSquarePlus, Pencil } from "lucide-react"
 import { toast } from "sonner"
 
-import { useI18n } from "@/components/account/i18n"
+import { tf, useI18n } from "@/components/account/i18n"
 import { downloadHref, useDownloadChoice } from "@/components/text-viewer/download-choice"
 import { TextFile } from "@/components/text-viewer/text-file"
 import { confirmDiscardEdits } from "@/components/text-viewer/unsaved"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { textKind } from "@/lib/text-formats/kind"
-import { isImage, isVideo, mediaUrl } from "./chat/upload"
+import { isImage, isVideo, mediaUrl, uploadChatFile, type UploadedFile } from "./chat/upload"
 import { ImageEditor, editableImageMime } from "./image-editor"
+import { reviewable, useReview } from "./review/review-dialog"
 
 export type PreviewFile = { id?: string; name: string; s3Key: string; contentType: string }
 
@@ -53,7 +54,9 @@ export function FilePreviewDialog({
   onClose,
   edit,
   copyEdit,
+  saveAsNew,
   editOnOpen = false,
+  actions,
 }: {
   file: PreviewFile | null
   onClose: () => void
@@ -64,8 +67,15 @@ export function FilePreviewDialog({
    * в рабочую папку этапа, `onCopied` открывает копию.
    */
   copyEdit?: { stepId: string; onCopied: (file: PreviewFile & { id: string; sizeBytes: number }) => void } | null
-  /** Открыть сразу в правке — копия, только что сделанная «Редактировать копию». */
+  /**
+   * Вложение чата: правка сохраняется не поверх, а новым файлом в корне рабочей
+   * папки («Из чата») под исходным свободным именем; в форму сама не встаёт.
+   */
+  saveAsNew?: { stepId: string; onSaved: (file: UploadedFile) => void } | null
+  /** Открыть сразу в правке — копия, только что сделанная «Редактировать копию», или «Редактировать» из меню. */
   editOnOpen?: boolean
+  /** Свои кнопки окна (например, «Принять этот вариант» в чате) — перед «Скачать». */
+  actions?: React.ReactNode
 }) {
   const { t } = useI18n()
   const [editing, setEditing] = useState(false)
@@ -77,6 +87,8 @@ export function FilePreviewDialog({
   /** Ждём, пока текст загрузится, чтобы открыть его сразу в правке. */
   const [pendingEdit, setPendingEdit] = useState(false)
   const [copying, setCopying] = useState(false)
+  /** Инструмент пометок этапа; вне этапа (обзор ролика) его нет. */
+  const review = useReview()
   // По id и ключу, а не по объекту: перерисовка родителя (перечитали файлы
   // после копии) не должна сбрасывать или снова включать правку.
   useEffect(() => setEditing(false), [file?.id, file?.s3Key])
@@ -97,7 +109,7 @@ export function FilePreviewDialog({
           : null
 
   const imageMime = kind === "image" ? editableImageMime(file.name) : null
-  const canEdit = Boolean(edit && file.id && (imageMime || (kind === "text" && textual !== "unsupported" && textReady)))
+  const canEdit = Boolean((edit || saveAsNew) && file.id && (imageMime || (kind === "text" && textual !== "unsupported" && textReady)))
   if (pendingEdit && canEdit) {
     setPendingEdit(false)
     setEditing(true)
@@ -122,6 +134,21 @@ export function FilePreviewDialog({
   }
   const save = async (blob: Blob) => {
     try {
+      if (saveAsNew) {
+        // Имя считает сервер: приставка места снимается, занятое — «(2)».
+        const fresh = await uploadChatFile(
+          saveAsNew.stepId,
+          new File([blob], file.name, { type: blob.type || file.contentType }),
+          () => {},
+          undefined,
+          undefined,
+          true,
+        )
+        toast.success(tf(t.productionEditSavedAsNew, { name: fresh.name }))
+        setEditing(false)
+        saveAsNew.onSaved(fresh)
+        return true
+      }
       await saveOver(edit!.stepId, file.id!, blob)
       toast.success(t.productionEditSaved)
       setVersion((v) => v + 1)
@@ -197,6 +224,21 @@ export function FilePreviewDialog({
               {t.productionEditCopy}
             </button>
           ) : null}
+          {review && file.id && kind === "image" && reviewable(file) ? (
+            <button
+              type="button"
+              onClick={() => {
+                // Окно просмотра уступает место пометкам: два окна разом — лишнее.
+                const target = { id: file.id!, name: file.name, s3Key: file.s3Key, contentType: file.contentType }
+                onClose()
+                review(target)
+              }}
+              className="flex h-8 items-center gap-1.5 rounded-[9px] border border-foreground/10 bg-ws-control px-3 text-[13px] text-ws-2 hover:bg-ws-hover"
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+              {t.productionComment}
+            </button>
+          ) : null}
           {canEdit ? (
             <button
               type="button"
@@ -221,6 +263,7 @@ export function FilePreviewDialog({
             <Download className="h-4 w-4" />
             {t.productionChatDownload}
           </button>
+          {actions}
         </div>
         )}
         {downloadDialog}

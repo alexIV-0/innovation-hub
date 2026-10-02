@@ -13,7 +13,7 @@ import { canSeeStep, loadStep, type StepRow } from "./workspace"
  * Вложения лежат в рабочей папке этапа (§2.3) — это и есть варианты.
  */
 
-export const REACTIONS = ["👍", "❤️", "😂", "🔥", "👀", "✅", "❗"] as const
+export const REACTIONS = ["👍", "❤️", "😂", "🔥", "👀", "✅", "💯", "❗"] as const
 
 export type ChatAttachment = {
   fileId: string
@@ -119,6 +119,8 @@ type MessageRow = {
     attachments?: ChatAttachment[]
     event?: ChatMessage["event"]
     mentions?: string[]
+    /** Процитированный кусок исходного сообщения, если отвечали на выделение. */
+    quote?: string
   }
   replyTo: number | null
   createdAt: string
@@ -189,7 +191,11 @@ export async function listMessages(
       event: row.payload.event ?? null,
       mentions: row.payload.mentions ?? [],
       replyTo: reply
-        ? { id: reply.id, authorName: reply.authorName, body: reply.deletedAt ? "" : reply.body.slice(0, 200) }
+        ? {
+            id: reply.id,
+            authorName: reply.authorName,
+            body: reply.deletedAt ? "" : (row.payload.quote ?? reply.body).slice(0, 200),
+          }
         : null,
       createdAt: row.createdAt,
       editedAt: row.editedAt,
@@ -215,6 +221,8 @@ export async function postMessage(input: {
   body: string
   attachmentIds: string[]
   replyTo?: number
+  /** Выделенный кусок сообщения `replyTo`; только вместе с ним. */
+  quote?: string
   mentions: string[]
 }): Promise<PostResult> {
   const body = input.body.trim()
@@ -237,13 +245,17 @@ export async function postMessage(input: {
     attachments = input.attachmentIds.map((id) => rows.find((r) => r.fileId === id)!)
   }
 
+  let quote: string | undefined
   if (input.replyTo != null) {
-    const { rowCount } = await query(
-      `SELECT 1 FROM production_messages WHERE id = $1 AND run_step_id = $2`,
+    const { rows } = await query<{ body: string }>(
+      `SELECT body FROM production_messages WHERE id = $1 AND run_step_id = $2`,
       [input.replyTo, step.id],
     )
-    if (!rowCount) return { ok: false, reason: "bad-reply" }
-  }
+    if (!rows[0]) return { ok: false, reason: "bad-reply" }
+    // Цитата — только настоящий кусок исходного текста, не произвольная подпись.
+    const q = input.quote?.trim()
+    if (q && q !== rows[0].body.trim() && rows[0].body.includes(q)) quote = q
+  } else if (input.quote) return { ok: false, reason: "bad-reply" }
 
   // Упоминания: участник — уведомление; не-участник из круга автора — приглашение.
   const members = await listMembers(step.id)
@@ -261,7 +273,7 @@ export async function postMessage(input: {
     const { rows } = await client.query<{ id: number }>(
       `INSERT INTO production_messages (run_step_id, author_id, kind, body, payload, reply_to)
        VALUES ($1, $2, 'text', $3, $4::jsonb, $5) RETURNING id::int`,
-      [step.id, input.userId, body, JSON.stringify({ attachments, mentions }), input.replyTo ?? null],
+      [step.id, input.userId, body, JSON.stringify(quote ? { attachments, mentions, quote } : { attachments, mentions }), input.replyTo ?? null],
     )
     // Своё сообщение прочитано автором.
     await client.query(

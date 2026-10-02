@@ -1,12 +1,13 @@
 import { query, withTransaction } from "@/lib/db"
 import { insertSystem, unreadByStep } from "./chat"
 import { hasChat, listTree, markSoleExecutor, type StepPaths } from "./flow"
-import { formStatus, type FormState } from "./form"
+import { formStatus, graphFormLabels, type FormState } from "./form"
 import { fileTypeDictionary } from "./uploads"
 import { canEditStepPeople, hasStepRole, listAddedPeople } from "./step-people"
 import {
   edgeSubfolder,
   isWorkNode,
+  nextWorkStages,
   predecessors,
   topologicalOrder,
   upgradeGraph,
@@ -210,6 +211,8 @@ export type StepView = {
    * пришли ли результаты обработки.
    */
   machine: { watched: boolean; results: boolean } | null
+  /** Названия строк всех форм пайплайна — по ним на экране снимается приставка места. */
+  slotLabels: string[]
   /** Строки формы и сколько в каждой уже лежит. */
   form:
     | ({
@@ -353,11 +356,32 @@ function layout(graph: PipelineGraph): Map<string, { x: number; y: number }> {
   return out
 }
 
-/** Схема ролика: кружок на этап со статусом, связи — из графа версии. */
+/**
+ * Граф без действий: каждое действие стягивается — его ближайшие этапы-не-действия
+ * до (сквозь цепочки действий) связываются с ближайшими после. Иначе схема
+ * без действий рвётся и вырождается в прямую (§3.4б).
+ */
+function contractActions(graph: PipelineGraph): PipelineGraph {
+  const nodes = graph.nodes.filter((n) => isWorkNode(n) && n.kind !== "action")
+  const seen = new Set<string>()
+  const edges: PipelineGraph["edges"] = []
+  for (const n of nodes) {
+    for (const to of nextWorkStages(graph, n.id)) {
+      const key = `${n.id}>${to}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      edges.push({ id: key, source: n.id, target: to })
+    }
+  }
+  return { ...graph, nodes, edges }
+}
+
+/** Схема ролика: кружок на этап со статусом, связи — из графа версии, действия стянуты. */
 function buildScheme(
-  graph: PipelineGraph,
+  full: PipelineGraph,
   bySnode: Map<string, { status: StepStatus; paths?: StepPaths | null }>,
 ): { nodes: SchemeNodeView[]; edges: [string, string][] } {
+  const graph = contractActions(full)
   const positions = layout(graph)
   return {
     nodes: graph.nodes.filter(isWorkNode).map((n) => ({
@@ -367,8 +391,8 @@ function buildScheme(
       status: bySnode.get(n.id)?.status ?? ("waiting" as StepStatus),
       x: positions.get(n.id)?.x ?? 0,
       y: positions.get(n.id)?.y ?? 0,
-      machine: n.kind === "auto" || n.kind === "action",
-      autoApprove: n.kind === "action" || (n.kind === "auto" && n.data.autoApprove),
+      machine: n.kind === "auto",
+      autoApprove: n.kind === "auto" && n.data.autoApprove,
       redo: Boolean(bySnode.get(n.id)?.paths?.redo),
     })),
     edges: graph.edges.map((e) => [e.source, e.target] as [string, string]),
@@ -590,6 +614,7 @@ export async function getStepView(stepId: string, userId: string): Promise<StepV
     autoApprove: node.kind === "action" || (node.kind === "auto" && node.data.autoApprove),
     hasChat: hasChat(node),
     machine,
+    slotLabels: graphFormLabels(step.graph.nodes),
     form,
     executors,
     reviewers: reviewerIds.map((id) => ({ id, name: names.get(id) ?? "?", added: !pipelineReviewers.includes(id) })),

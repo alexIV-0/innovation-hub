@@ -13,6 +13,7 @@ import {
   Paperclip,
   SendHorizontal,
   SmilePlus,
+  TextQuote,
   Trash2,
   UserPlus,
   Users,
@@ -22,6 +23,8 @@ import { toast } from "sonner"
 
 import { useI18n, type Dictionary } from "@/components/account/i18n"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
+import { downloadHref, useDownloadChoice } from "@/components/text-viewer/download-choice"
+import { TextFile } from "@/components/text-viewer/text-file"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +33,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import type { ChatAttachment, ChatMember, ChatMessage } from "@/lib/production/chat-types"
+import { displaySlotName } from "@/lib/production/form"
 import type { PersonOption } from "@/lib/production/people-types"
+import { textKind } from "@/lib/text-formats/kind"
 import { cn } from "@/lib/utils"
 import { isImage, isVideo, mediaUrl, uploadChatFile, type UploadedFile } from "./upload"
 import { useChat, type ChatMe } from "./use-chat"
@@ -48,15 +53,20 @@ export function StageChat({
   tick,
   canApprove,
   onApproveFile,
+  slotLabels = [],
 }: {
   stepId: string
   tick: number
   canApprove: boolean
   onApproveFile: (file: { id: string; name: string }) => void
+  /** Метки строк форм пайплайна: имя вложения в слоте — исходное, приставка бледно. */
+  slotLabels?: string[]
 }) {
   const { t } = useI18n()
   const chat = useChat(stepId, tick)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
+  /** Выделенный кусок `replyTo` — в ответе показывается только он. */
+  const [replyQuote, setReplyQuote] = useState<string | null>(null)
   const [preview, setPreview] = useState<ChatAttachment | null>(null)
   /** Упомянуть по клику из системного сообщения — поле ввода подхватит. */
   const [mention, setMention] = useState<{ id: string; name: string; at: number } | null>(null)
@@ -116,7 +126,11 @@ export function StageChat({
                 members={chat.members}
                 reactions={chat.reactions}
                 canApprove={canApprove}
-                onReply={() => setReplyTo(message)}
+                slotLabels={slotLabels}
+                onReply={(quote) => {
+                  setReplyTo(message)
+                  setReplyQuote(quote)
+                }}
                 onReact={(emoji) =>
                   void act(
                     `${base}/messages/${message.id}/reactions`,
@@ -141,10 +155,15 @@ export function StageChat({
         stepId={stepId}
         members={chat.members}
         replyTo={replyTo}
+        replyQuote={replyQuote}
         mention={mention}
-        onCancelReply={() => setReplyTo(null)}
+        onCancelReply={() => {
+          setReplyTo(null)
+          setReplyQuote(null)
+        }}
         onSent={() => {
           setReplyTo(null)
+          setReplyQuote(null)
           stickToBottom.current = true
           void chat.refresh()
         }}
@@ -369,6 +388,7 @@ function MessageItem({
   members,
   reactions,
   canApprove,
+  slotLabels,
   onReply,
   onReact,
   onDelete,
@@ -382,7 +402,9 @@ function MessageItem({
   members: ChatMember[]
   reactions: string[]
   canApprove: boolean
-  onReply: () => void
+  slotLabels: string[]
+  /** `quote` — выделенный в сообщении текст; `null` — ответ на всё сообщение. */
+  onReply: (quote: string | null) => void
   onReact: (emoji: string) => void
   onDelete: () => void
   onPreview: (a: ChatAttachment) => void
@@ -390,6 +412,8 @@ function MessageItem({
   onMention: (person: { id: string; name: string }) => void
 }) {
   const { t } = useI18n()
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const bodyRef = useRef<HTMLParagraphElement>(null)
   const time = new Date(message.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
 
   // Автоматика до этого этапа упала: заметно, и с кем говорить — кликом.
@@ -459,7 +483,7 @@ function MessageItem({
           <span className="italic text-ws-4">{t.productionChatDeleted}</span>
         ) : (
           <>
-            {message.body ? <p className="whitespace-pre-wrap break-words">{message.body}</p> : null}
+            {message.body ? <p ref={bodyRef} className="whitespace-pre-wrap break-words">{message.body}</p> : null}
             {message.attachments.length > 0 ? (
               <div className={cn("grid gap-1.5", message.body && "mt-1.5")}>
                 {message.attachments.map((a) => (
@@ -467,6 +491,7 @@ function MessageItem({
                     key={a.fileId}
                     attachment={a}
                     canApprove={canApprove}
+                    slotLabels={slotLabels}
                     onPreview={() => onPreview(a)}
                     onApprove={() => onApprove(a)}
                   />
@@ -511,11 +536,14 @@ function MessageItem({
       {!message.deleted ? (
         <div
           className={cn(
-            "absolute -top-3 hidden items-center gap-0.5 rounded-md border border-foreground/10 bg-ws-panel p-0.5 shadow-ws-panel group-hover:flex",
+            // Прозрачностью, а не display: иначе, пока курсор идёт в пикер реакций,
+            // панель пропадает вместе с якорем поповера и всё мерцает.
+            "pointer-events-none absolute -top-3 flex items-center gap-0.5 rounded-md border border-foreground/10 bg-ws-panel p-0.5 opacity-0 shadow-ws-panel transition-opacity group-hover:pointer-events-auto group-hover:opacity-100",
+            pickerOpen && "pointer-events-auto opacity-100",
             mine ? "right-2" : "left-2",
           )}
         >
-          <Popover>
+          <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
             <PopoverTrigger asChild>
               <button type="button" title={t.productionChatReact} aria-label={t.productionChatReact} className="flex h-6 w-6 items-center justify-center rounded text-ws-4 hover:bg-ws-hover hover:text-ws-1">
                 <SmilePlus className="h-3.5 w-3.5" />
@@ -523,13 +551,33 @@ function MessageItem({
             </PopoverTrigger>
             <PopoverContent align="center" className="flex w-auto gap-0.5 p-1">
               {reactions.map((emoji) => (
-                <button key={emoji} type="button" onClick={() => onReact(emoji)} className="rounded px-1.5 py-0.5 text-[16px] hover:bg-ws-hover">
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen(false)
+                    onReact(emoji)
+                  }}
+                  className="rounded px-1.5 py-0.5 text-[16px] hover:bg-ws-hover">
                   {emoji}
                 </button>
               ))}
             </PopoverContent>
           </Popover>
-          <button type="button" onClick={onReply} title={t.productionChatReply} aria-label={t.productionChatReply} className="flex h-6 w-6 items-center justify-center rounded text-ws-4 hover:bg-ws-hover hover:text-ws-1">
+          {message.body ? (
+            <button
+              type="button"
+              // mousedown не снимает выделение — иначе к клику цитировать нечего.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onReply(selectionIn(bodyRef.current))}
+              title={t.productionChatQuoteHint}
+              aria-label={t.productionChatQuote}
+              className="flex h-6 w-6 items-center justify-center rounded text-ws-4 hover:bg-ws-hover hover:text-ws-1"
+            >
+              <TextQuote className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          <button type="button" onClick={() => onReply(null)} title={t.productionChatReply} aria-label={t.productionChatReply} className="flex h-6 w-6 items-center justify-center rounded text-ws-4 hover:bg-ws-hover hover:text-ws-1">
             <CornerUpLeft className="h-3.5 w-3.5" />
           </button>
           {mine ? (
@@ -543,40 +591,68 @@ function MessageItem({
   )
 }
 
-/** Вложение: картинка и видео — превью прямо в ленте, остальное — файл. */
+/** Выделенный текст, если выделение целиком внутри `el`; иначе `null`. */
+function selectionIn(el: HTMLElement | null): string | null {
+  const sel = window.getSelection()
+  if (!el || !sel || sel.isCollapsed || sel.rangeCount === 0) return null
+  const range = sel.getRangeAt(0)
+  if (!el.contains(range.startContainer) || !el.contains(range.endContainer)) return null
+  return sel.toString().trim() || null
+}
+
+/**
+ * Вложение: картинка и видео — превью прямо в ленте, текст открывается в
+ * общем просмотрщике, остальное — файл.
+ */
 function AttachmentView({
   attachment,
   canApprove,
+  slotLabels,
   onPreview,
   onApprove,
 }: {
   attachment: ChatAttachment
   canApprove: boolean
+  slotLabels: string[]
   onPreview: () => void
   onApprove: () => void
 }) {
   const { t } = useI18n()
+  const shown = displaySlotName(attachment.name, slotLabels)
+  const label = (
+    <>
+      <span className="min-w-0 truncate">{shown.name}</span>
+      {shown.tag ? <span className="shrink-0 text-[11px] text-ws-5">{shown.tag}</span> : null}
+    </>
+  )
   const url = mediaUrl(attachment.s3Key)
   const image = isImage(attachment.contentType, attachment.name)
   const video = isVideo(attachment.contentType, attachment.name)
+  const textual = textKind(attachment.name, attachment.contentType) !== null
+  const { download, dialog: downloadDialog } = useDownloadChoice()
 
   return (
     <div className="relative">
       {image ? (
         <button type="button" onClick={onPreview} className="block overflow-hidden rounded-lg">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt={attachment.name} className="max-h-60 max-w-full object-contain" />
+          <img src={url} alt={shown.name} className="max-h-60 max-w-full object-contain" />
         </button>
       ) : video ? (
         <video src={url} controls preload="metadata" className="max-h-64 max-w-full rounded-lg bg-black" />
+      ) : textual ? (
+        <button type="button" onClick={onPreview} className="flex w-full items-center gap-2 rounded-lg border border-foreground/10 px-2.5 py-2 text-left text-[12.5px] hover:bg-ws-hover">
+          <FileIcon className="h-4 w-4 shrink-0 text-ws-4" />
+          {label}
+        </button>
       ) : (
         <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg border border-foreground/10 px-2.5 py-2 text-[12.5px] hover:bg-ws-hover">
           <FileIcon className="h-4 w-4 shrink-0 text-ws-4" />
-          <span className="min-w-0 truncate">{attachment.name}</span>
+          {label}
         </a>
       )}
       <div className="mt-0.5 flex items-center gap-1 text-[11px] text-ws-4">
-        <span className="min-w-0 flex-1 truncate">{image || video ? attachment.name : ""}</span>
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">{image || video ? label : null}</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" title={t.productionFileMenu} aria-label={t.productionFileMenu} className="flex h-5 w-5 items-center justify-center rounded hover:bg-ws-hover hover:text-ws-1">
@@ -584,14 +660,20 @@ function AttachmentView({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-[220px]">
-            {image || video ? (
+            {image || video || textual ? (
               <DropdownMenuItem onSelect={onPreview}>{t.productionChatOpen}</DropdownMenuItem>
             ) : null}
-            <DropdownMenuItem asChild>
-              <a href={url} download={attachment.name}>
-                <Download className="mr-2 h-4 w-4" />
-                {t.productionChatDownload}
-              </a>
+            <DropdownMenuItem
+              onSelect={() =>
+                download({
+                  name: attachment.name,
+                  textUrl: `${url}?raw=1`,
+                  asIs: () => downloadHref(url, attachment.name),
+                })
+              }
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {t.productionChatDownload}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!canApprove} onSelect={onApprove}>
               <Check className="mr-2 h-4 w-4" />
@@ -600,6 +682,7 @@ function AttachmentView({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {downloadDialog}
     </div>
   )
 }
@@ -617,13 +700,25 @@ function PreviewDialog({
   onApprove: (a: ChatAttachment) => void
 }) {
   const { t } = useI18n()
+  const { download, dialog: downloadDialog } = useDownloadChoice()
   if (!attachment) return null
   const url = mediaUrl(attachment.s3Key)
+  const textual = textKind(attachment.name, attachment.contentType) !== null
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-5xl">
         <DialogTitle className="truncate pr-8">{attachment.name}</DialogTitle>
         <DialogDescription className="sr-only">{t.productionChatOpen}</DialogDescription>
+        {textual ? (
+          // Текст — общим просмотрщиком, только чтение. `?raw=1` — тело тем же
+          // источником, а не редирект на хранилище.
+          <TextFile
+            url={`${url}?raw=1`}
+            name={attachment.name}
+            mimeType={attachment.contentType}
+            className="h-[70vh] rounded-lg border border-foreground/10"
+          />
+        ) : (
         <div className="flex max-h-[75vh] items-center justify-center overflow-hidden rounded-lg bg-black">
           {isVideo(attachment.contentType, attachment.name) ? (
             <video src={url} controls autoPlay className="max-h-[75vh] max-w-full" />
@@ -632,17 +727,29 @@ function PreviewDialog({
             <img src={url} alt={attachment.name} className="max-h-[75vh] max-w-full object-contain" />
           )}
         </div>
+        )}
         <div className="flex justify-end gap-2">
-          <a href={url} download={attachment.name} className="flex h-8 items-center gap-1.5 rounded-[9px] border border-foreground/10 bg-ws-control px-3 text-[13px] text-ws-2 hover:bg-ws-hover">
+          <button
+            type="button"
+            onClick={() =>
+              download({
+                name: attachment.name,
+                textUrl: `${url}?raw=1`,
+                asIs: () => downloadHref(url, attachment.name),
+              })
+            }
+            className="flex h-8 items-center gap-1.5 rounded-[9px] border border-foreground/10 bg-ws-control px-3 text-[13px] text-ws-2 hover:bg-ws-hover"
+          >
             <Download className="h-4 w-4" />
             {t.productionChatDownload}
-          </a>
+          </button>
           {canApprove ? (
             <button type="button" onClick={() => onApprove(attachment)} className="h-8 rounded-[9px] bg-success px-3 text-[13px] font-medium text-background hover:bg-success/90">
               {t.productionApproveThis}
             </button>
           ) : null}
         </div>
+        {downloadDialog}
       </DialogContent>
     </Dialog>
   )
@@ -661,6 +768,7 @@ function Composer({
   stepId,
   members,
   replyTo,
+  replyQuote,
   mention,
   onCancelReply,
   onSent,
@@ -668,6 +776,7 @@ function Composer({
   stepId: string
   members: ChatMember[]
   replyTo: ChatMessage | null
+  replyQuote: string | null
   /** Упоминание по клику извне: дописать `@имя` в поле. `at` — чтобы второй клик по тому же сработал. */
   mention: { id: string; name: string; at: number } | null
   onCancelReply: () => void
@@ -745,6 +854,7 @@ function Composer({
           body,
           attachmentIds: ready.map((p) => p.done!.id),
           replyTo: replyTo?.id,
+          quote: replyTo && replyQuote ? replyQuote : undefined,
           // Только те упоминания, чьё имя осталось в тексте.
           mentions: mentions.filter((m) => body.includes(`@${m.name}`)).map((m) => m.id),
         }),
@@ -780,7 +890,7 @@ function Composer({
         <div className="mb-1.5 flex items-center gap-2 rounded-md border-l-2 border-ws-accent/60 bg-ws-control px-2 py-1 text-[12px] text-ws-3">
           <CornerUpLeft className="h-3.5 w-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate">
-            <span className="font-medium">{replyTo.authorName}</span>: {replyTo.body || replyTo.attachments.map((a) => a.name).join(", ")}
+            <span className="font-medium">{replyTo.authorName}</span>: {replyQuote ? `«${replyQuote}»` : replyTo.body || replyTo.attachments.map((a) => a.name).join(", ")}
           </span>
           <button type="button" onClick={onCancelReply} aria-label={t.productionChatCancel} className="text-ws-4 hover:text-ws-1">
             <X className="h-3.5 w-3.5" />
